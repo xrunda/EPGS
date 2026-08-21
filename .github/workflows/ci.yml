@@ -137,6 +137,17 @@ jobs:
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/rules.e2e-spec.ts
 
+      # Issue #7: monitor workbench API e2e suite against this same real
+      # Postgres instance - covers combined filters, cross-day Asia/Shanghai
+      # boundaries, exact day edges, nulls, stable pagination, invalid-param
+      # 400s, summary==list, and the read-only detail endpoint. It seeds its
+      # own 6-rule/12-record fixture in beforeAll and wipes monitor_match ->
+      # monitor_record -> monitor_rule in afterAll, so the seed-count step
+      # below still sees exactly the 6 seeded RED rules.
+      - name: Monitor API e2e suite (real Postgres)
+        working-directory: apps/api
+        run: pnpm exec jest --config ./test/jest-e2e.json test/monitor.e2e-spec.ts
+
       # Issue #6: incremental sync job e2e suite against this same real
       # Postgres instance - covers first-run full window, normal
       # incremental sync, same-timestamp collisions, duplicate-batch

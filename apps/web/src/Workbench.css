@@ -96,9 +96,15 @@
   margin-top: 18px;
 }
 .workbench-card {
+  --card-accent: #176b78;
+  --card-focus: rgba(23, 107, 120, 0.26);
+  --card-wash: #f6faf9;
+
+  position: relative;
   display: grid;
   gap: 4px;
-  padding: 16px 20px;
+  overflow: hidden;
+  padding: 16px 42px 16px 20px;
   border: 1px solid #d2dfdd;
   border-radius: 10px;
   background: #fff;
@@ -107,12 +113,18 @@
   box-shadow: 0 8px 24px rgba(21, 63, 70, 0.05);
 }
 .workbench-card:hover {
-  border-color: #9bb6b7;
-  background: #f6faf9;
+  border-color: var(--card-accent);
+  background: var(--card-wash);
+}
+.workbench-card:focus-visible {
+  outline: 3px solid var(--card-focus);
+  outline-offset: 3px;
 }
 .workbench-card--active {
-  border-color: #176b78;
-  box-shadow: inset 0 0 0 1px #176b78;
+  border-color: var(--card-accent);
+  box-shadow:
+    inset 0 0 0 1px var(--card-accent),
+    0 8px 24px rgba(21, 63, 70, 0.08);
 }
 .workbench-card__label {
   font-size: 13px;
@@ -122,6 +134,47 @@
   color: #153f46;
   font-size: 28px;
   line-height: 1.1;
+}
+
+.workbench-card--red {
+  --card-accent: #d84a43;
+  --card-focus: rgba(216, 74, 67, 0.28);
+  --card-wash: #fff7f6;
+}
+.workbench-card--yellow {
+  --card-accent: #d7a20d;
+  --card-focus: rgba(215, 162, 13, 0.3);
+  --card-wash: #fffbef;
+}
+.workbench-card--green {
+  --card-accent: #3c9560;
+  --card-focus: rgba(60, 149, 96, 0.28);
+  --card-wash: #f4fbf6;
+}
+.workbench-card--red::after,
+.workbench-card--yellow::after,
+.workbench-card--green::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 46px;
+  height: 46px;
+  background: var(--card-accent);
+  clip-path: polygon(100% 0, 0 0, 100% 100%);
+  content: '';
+  pointer-events: none;
+}
+.workbench-card--red .workbench-card__label,
+.workbench-card--red .workbench-card__value {
+  color: #a73732;
+}
+.workbench-card--yellow .workbench-card__label,
+.workbench-card--yellow .workbench-card__value {
+  color: #7b5a00;
+}
+.workbench-card--green .workbench-card__label,
+.workbench-card--green .workbench-card__value {
+  color: #287044;
 }
 
 .workbench__table-wrap {

@@ -64,11 +64,12 @@ const SUMMARY_CARDS: Array<{
   key: keyof MonitorSummaryDto;
   label: string;
   level: '' | MonitorLevelDto;
+  tone?: 'red' | 'yellow' | 'green';
 }> = [
   { key: 'total', label: '全部', level: '' },
-  { key: 'red', label: '红色', level: 'RED' },
-  { key: 'yellow', label: '黄色', level: 'YELLOW' },
-  { key: 'green', label: '绿色', level: 'GREEN' },
+  { key: 'red', label: '红色', level: 'RED', tone: 'red' },
+  { key: 'yellow', label: '黄色', level: 'YELLOW', tone: 'yellow' },
+  { key: 'green', label: '绿色', level: 'GREEN', tone: 'green' },
   { key: 'unclassified', label: '未分级', level: 'UNCLASSIFIED' },
 ];
 
@@ -393,7 +394,7 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
         {SUMMARY_CARDS.map((card) => (
           <button
             key={card.key}
-            className={`workbench-card${appliedFilters.level === card.level ? ' workbench-card--active' : ''}`}
+            className={`workbench-card${card.tone ? ` workbench-card--${card.tone}` : ''}${appliedFilters.level === card.level ? ' workbench-card--active' : ''}`}
             type="button"
             onClick={() => selectLevel(card.level)}
           >

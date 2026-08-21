@@ -110,6 +110,20 @@ describe('Workbench', () => {
     expect(within(cards).getByText('未分级')).toBeInTheDocument();
     expect(within(cards).getByText('1')).toBeInTheDocument();
 
+    expect(within(cards).getByRole('button', { name: /红色/ })).toHaveClass('workbench-card--red');
+    expect(within(cards).getByRole('button', { name: /黄色/ })).toHaveClass(
+      'workbench-card--yellow',
+    );
+    expect(within(cards).getByRole('button', { name: /绿色/ })).toHaveClass(
+      'workbench-card--green',
+    );
+    expect(within(cards).getByRole('button', { name: /全部/ })).not.toHaveClass(
+      /workbench-card--(?:red|yellow|green)/,
+    );
+    expect(within(cards).getByRole('button', { name: /未分级/ })).not.toHaveClass(
+      /workbench-card--(?:red|yellow|green)/,
+    );
+
     const row1 = screen.getByRole('row', { name: /测试患者甲/ });
     expect(within(row1).getByText('红色')).toBeInTheDocument();
     expect(within(row1).getByText('内镜中心')).toBeInTheDocument();

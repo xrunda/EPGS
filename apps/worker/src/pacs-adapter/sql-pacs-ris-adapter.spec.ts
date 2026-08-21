@@ -6,203 +6,195 @@ import {
 } from './sql-pacs-ris-adapter';
 
 const SINCE = new Date('2026-08-01T00:00:00.000Z');
+const UNTIL = new Date('2026-08-04T00:00:00.000Z');
 
 describe('buildFetchReportsQuery', () => {
-  it('throws when since is missing', () => {
-    // @ts-expect-error intentionally omitting required field
-    expect(() => buildFetchReportsQuery({ pageSize: 10 })).toThrow(/since/);
+  it('queries the confirmed IRIS tables and fields', () => {
+    const { sql } = buildFetchReportsQuery({ since: SINCE, until: UNTIL, pageSize: 10 });
+
+    expect(sql).toContain('FROM Ens_RISReportResult a');
+    expect(sql).toContain('LEFT JOIN PA_Adm pa ON pa.PAADM_RowID = a.RISR_VisitNumber');
+    expect(sql).toContain('LEFT JOIN PA_PatMas pp ON a.RISR_PatientID = pp.PAPMI_RowId1');
+    expect(sql).toContain('a.RISR_ExamID AS SOURCE_RECORD_ID');
+    expect(sql).toContain('pp.PAPMI_No AS PATIENT_REGISTRATION_NO');
+    expect(sql).toContain('pa.PAADM_DepCode_DR->CTLOC_Desc AS DEPARTMENT');
+    expect(sql).toContain('pa.PAADM_CurrentBed_DR->BED_Code AS BED_NO');
+    expect(sql).toContain('a.RISR_ExamDesc AS REPORT_CONTENT');
+    expect(sql).toContain('a.RISR_DiagDesc AS DIAGNOSIS');
   });
 
-  it('always includes a lower and upper time bound using bound params, not literals', () => {
-    const { sql, boundParams } = buildFetchReportsQuery({ since: SINCE, pageSize: 10 });
-
-    expect(sql).toContain('r.SOURCE_UPDATED_AT >= @since');
-    expect(sql).toContain('r.SOURCE_UPDATED_AT < @until');
-    expect(boundParams.since).toBe(SINCE);
-    expect(boundParams.until).toBeInstanceOf(Date);
-  });
-
-  it('uses TOP (@pageSize) and caps pageSize at MAX_PAGE_SIZE', () => {
-    const { sql, boundParams } = buildFetchReportsQuery({ since: SINCE, pageSize: 999999 });
-
-    expect(sql).toContain('TOP (@pageSize)');
-    expect(boundParams.pageSize).toBe(MAX_PAGE_SIZE);
-  });
-
-  it('floors pageSize at 1 for non-positive input', () => {
-    const { boundParams } = buildFetchReportsQuery({ since: SINCE, pageSize: -5 });
-    expect(boundParams.pageSize).toBe(1);
-  });
-
-  it('binds department/deviceId as parameters rather than concatenating into SQL', () => {
+  it('uses positional parameters for the bounded Shanghai date-time window and ES system code', () => {
     const { sql, boundParams } = buildFetchReportsQuery({
       since: SINCE,
+      until: UNTIL,
       pageSize: 10,
-      department: "消化内科'; DROP TABLE PATIENTINFO; --",
-      deviceId: 'SCOPE-01',
     });
 
-    expect(sql).toContain('loc.DEPARTMENT_NAME = @department');
-    expect(sql).toContain('s.DEVICE_ID = @deviceId');
-    expect(sql).not.toContain('DROP TABLE');
-    expect(boundParams.department).toBe("消化内科'; DROP TABLE PATIENTINFO; --");
-    expect(boundParams.deviceId).toBe('SCOPE-01');
+    expect(sql).toContain('SELECT TOP ?');
+    expect(sql).toContain("COALESCE(a.RISR_ReportTime, '00:00:00') >= ?");
+    expect(sql).toContain("COALESCE(a.RISR_ReportTime, '00:00:00') < ?");
+    expect(sql).toContain('a.RISR_SysCode = ?');
+    expect(boundParams).toEqual([
+      10,
+      '2026-08-01',
+      '2026-08-01',
+      '08:00:00',
+      '2026-08-04',
+      '2026-08-04',
+      '08:00:00',
+      'ES',
+    ]);
   });
 
-  it('produces static SQL text regardless of param values (no string interpolation of values)', () => {
-    const a = buildFetchReportsQuery({ since: SINCE, pageSize: 10, department: 'A' });
-    const b = buildFetchReportsQuery({ since: SINCE, pageSize: 10, department: 'B' });
-    expect(a.sql).toBe(b.sql);
+  it('caps pageSize at MAX_PAGE_SIZE', () => {
+    const { boundParams } = buildFetchReportsQuery({
+      since: SINCE,
+      until: UNTIL,
+      pageSize: 999999,
+    });
+    expect(boundParams[0]).toBe(MAX_PAGE_SIZE);
   });
 
-  it('joins STUDYINFO/PATIENTINFO/REPORTINFO/REPORTCONTENT/LOC on the documented keys', () => {
-    const { sql } = buildFetchReportsQuery({ since: SINCE, pageSize: 10 });
+  it('binds the department filter and never interpolates its value', () => {
+    const department = "消化内科'; DELETE FROM PA_Adm; --";
+    const { sql, boundParams } = buildFetchReportsQuery({
+      since: SINCE,
+      until: UNTIL,
+      pageSize: 10,
+      department,
+    });
 
-    expect(sql).toContain('FROM STUDYINFO s');
-    expect(sql).toContain('INNER JOIN PATIENTINFO p ON s.PAT_ID = p.PAT_ID');
-    expect(sql).toContain('INNER JOIN REPORTINFO r ON r.ST_ACCNUM = s.ST_ACCNUM');
+    expect(sql).toContain('pa.PAADM_DepCode_DR->CTLOC_Desc = ?');
+    expect(sql).not.toContain('DELETE FROM');
+    expect(boundParams).toContain(department);
+  });
+
+  it('orders deterministically by report date, time, and examination id', () => {
+    const { sql } = buildFetchReportsQuery({ since: SINCE, until: UNTIL, pageSize: 10 });
     expect(sql).toContain(
-      'LEFT JOIN REPORTCONTENT rc ON rc.ST_ACCNUM = s.ST_ACCNUM AND rc.REPORT_ID = r.REPORT_ID',
+      "ORDER BY a.RISR_ReportDate ASC, COALESCE(a.RISR_ReportTime, '00:00:00') ASC, a.RISR_ExamID ASC",
     );
   });
 
-  it('selects the converged read-only field set (no status/sex/age columns)', () => {
-    const { sql } = buildFetchReportsQuery({ since: SINCE, pageSize: 10 });
-
-    expect(sql).toContain('AS SOURCE_RECORD_ID');
-    expect(sql).toContain('AS PATIENT_TYPE_CODE');
-    expect(sql).toContain('AS PATIENT_TYPE_NAME');
-    expect(sql).toContain('AS REPORT_CONTENT');
-    expect(sql).toContain('AS DIAGNOSIS');
-    expect(sql).not.toContain('REPORT_STATUS');
-    expect(sql).not.toContain('SEX_CODE');
-    expect(sql).not.toContain('AGE');
-    expect(sql).not.toContain('INPATIENT_NO');
-  });
-
-  it('orders deterministically for stable keyset pagination', () => {
-    const { sql } = buildFetchReportsQuery({ since: SINCE, pageSize: 10 });
-    expect(sql).toContain('ORDER BY r.SOURCE_UPDATED_AT ASC, r.REPORT_ID ASC');
-  });
-
-  it('rejects an invalid cursor', () => {
-    expect(() => buildFetchReportsQuery({ since: SINCE, pageSize: 10, cursor: 'garbage' })).toThrow(
-      /cursor/,
+  it('uses a null-safe report time in cursor pagination', async () => {
+    const cursor = Buffer.from(
+      JSON.stringify({ date: '2026-08-02', time: '00:00:00', id: 'ES20260802013' }),
+      'utf8',
+    ).toString('base64');
+    const { sql, boundParams } = buildFetchReportsQuery({
+      since: SINCE,
+      until: UNTIL,
+      pageSize: 10,
+      cursor,
+    });
+    expect(sql).toContain("COALESCE(a.RISR_ReportTime, '00:00:00') > ?");
+    expect(sql).toContain("COALESCE(a.RISR_ReportTime, '00:00:00') = ?");
+    expect(boundParams).toEqual(
+      expect.arrayContaining(['2026-08-02', '00:00:00', 'ES20260802013']),
     );
   });
 
-  it('applies a keyset predicate when a valid cursor is provided', () => {
-    const cursor = Buffer.from('2026-08-01T01:00:00.000Z|RPT-000001', 'utf8').toString('base64');
-    const { sql, boundParams } = buildFetchReportsQuery({ since: SINCE, pageSize: 10, cursor });
-
-    expect(sql).toContain('r.SOURCE_UPDATED_AT > @cursorTs');
-    expect(sql).toContain('r.REPORT_ID > @cursorId');
-    expect(boundParams.cursorId).toBe('RPT-000001');
-    expect((boundParams.cursorTs as Date).toISOString()).toBe('2026-08-01T01:00:00.000Z');
+  it('rejects unsupported device filters instead of silently ignoring them', () => {
+    expect(() =>
+      buildFetchReportsQuery({ since: SINCE, until: UNTIL, pageSize: 10, deviceId: 'SCOPE-01' }),
+    ).toThrow(/deviceId/);
   });
 });
 
 describe('SqlPacsRisAdapter', () => {
-  it('throws a clear error when no query executor is configured', async () => {
-    const adapter = new SqlPacsRisAdapter();
-    await expect(adapter.fetchReports({ since: SINCE, pageSize: 10 })).rejects.toThrow(
-      /ParameterizedQueryExecutor/,
-    );
-  });
-
-  it('rejects a non-positive pageSize before touching the executor', async () => {
-    const executor: ParameterizedQueryExecutor = { query: jest.fn() };
-    const adapter = new SqlPacsRisAdapter(executor);
-
-    await expect(adapter.fetchReports({ since: SINCE, pageSize: 0 })).rejects.toThrow(/pageSize/);
-    expect(executor.query).not.toHaveBeenCalled();
-  });
-
-  it('maps raw rows to PacsReportDto and derives nextCursor only when a full page is returned', async () => {
+  it('maps confirmed IRIS columns to the canonical read-only fields', async () => {
     const rows = [
       {
-        SOURCE_RECORD_ID: 'ACC-1',
+        SOURCE_RECORD_ID: 'ES20260802013',
+        PATIENT_REGISTRATION_NO: '0000533611',
         PATIENT_NAME: '测试患者甲',
-        DEPARTMENT_NAME: '消化内科',
-        BED_NO: '12',
+        DEPARTMENT: '消化内科',
+        BED_NO: '40',
         PATIENT_TYPE_CODE: 'I',
-        PATIENT_TYPE_NAME: '住院',
-        EXAM_ITEM: '胃镜检查',
-        EXAM_TIME: '2026-08-01T01:00:00.000Z',
-        REPORT_ID: 'RPT-1',
-        REPORT_CONTENT: '所见描述',
-        DIAGNOSIS: '诊断意见',
-        SOURCE_UPDATED_AT: '2026-08-01T02:00:05.000Z',
+        EXAM_ITEM: '电子结肠镜检查',
+        EXAM_DATE: '2026-08-02',
+        EXAM_TIME: '10:31:18',
+        REPORT_CONTENT: '合成检查所见',
+        DIAGNOSIS: '合成诊断',
       },
     ];
     const executor: ParameterizedQueryExecutor = { query: jest.fn().mockResolvedValue(rows) };
     const adapter = new SqlPacsRisAdapter(executor);
 
-    const result = await adapter.fetchReports({ since: SINCE, pageSize: 1 });
-
-    expect(executor.query).toHaveBeenCalledTimes(1);
-    const [sql, params] = (executor.query as jest.Mock).mock.calls[0];
-    expect(typeof sql).toBe('string');
-    expect(params).toMatchObject({ since: SINCE, pageSize: 1 });
+    const result = await adapter.fetchReports({ since: SINCE, until: UNTIL, pageSize: 10 });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({
-      sourceRecordId: 'ACC-1',
+      sourceRecordId: 'ES20260802013',
+      patientRegistrationNo: '0000533611',
       patientName: '测试患者甲',
       department: '消化内科',
-      bedNo: '12',
+      bedNo: '40',
       patientTypeCode: 'I',
-      patientTypeName: '住院',
-      examItem: '胃镜检查',
-      reportId: 'RPT-1',
-      reportContent: '所见描述',
-      diagnosis: '诊断意见',
+      examItem: '电子结肠镜检查',
+      examDate: '2026-08-02',
+      examTimeText: '10:31:18',
+      reportContent: '合成检查所见',
+      diagnosis: '合成诊断',
     });
     expect(result.items[0].examTime).toBeInstanceOf(Date);
     expect(result.items[0].sourceUpdatedAt).toBeInstanceOf(Date);
-    // Page came back full (1 row for pageSize 1), so there may be more.
-    expect(result.nextCursor).toBeDefined();
   });
 
-  it('returns no nextCursor when fewer rows than pageSize come back (last page)', async () => {
-    const executor: ParameterizedQueryExecutor = { query: jest.fn().mockResolvedValue([]) };
-    const adapter = new SqlPacsRisAdapter(executor);
-
-    const result = await adapter.fetchReports({ since: SINCE, pageSize: 10 });
-
-    expect(result.items).toHaveLength(0);
-    expect(result.nextCursor).toBeUndefined();
-  });
-
-  it('passes through nullable snapshot fields and unknown patient type code verbatim', async () => {
+  it('preserves nullable department, bed, report content, and diagnosis', async () => {
     const rows = [
       {
-        SOURCE_RECORD_ID: 'ACC-2',
-        PATIENT_NAME: '测试患者乙',
-        DEPARTMENT_NAME: null,
+        SOURCE_RECORD_ID: 'ES20260802014',
+        PATIENT_REGISTRATION_NO: null,
+        PATIENT_NAME: null,
+        DEPARTMENT: null,
         BED_NO: null,
-        PATIENT_TYPE_CODE: 'Z',
-        PATIENT_TYPE_NAME: null,
-        EXAM_ITEM: '肠镜检查',
-        EXAM_TIME: '2026-08-01T01:00:00.000Z',
-        REPORT_ID: 'RPT-2',
+        PATIENT_TYPE_CODE: 'O',
+        EXAM_ITEM: null,
+        EXAM_DATE: '2026-08-02',
+        EXAM_TIME: null,
         REPORT_CONTENT: null,
         DIAGNOSIS: null,
-        SOURCE_UPDATED_AT: '2026-08-01T02:00:05.000Z',
       },
     ];
     const executor: ParameterizedQueryExecutor = { query: jest.fn().mockResolvedValue(rows) };
     const adapter = new SqlPacsRisAdapter(executor);
 
-    const result = await adapter.fetchReports({ since: SINCE, pageSize: 10 });
-
+    const result = await adapter.fetchReports({ since: SINCE, until: UNTIL, pageSize: 10 });
     expect(result.items[0]).toMatchObject({
       department: null,
       bedNo: null,
-      patientTypeCode: 'Z',
-      patientTypeName: null,
+      patientRegistrationNo: null,
+      patientName: null,
+      examItem: null,
+      examTimeText: null,
       reportContent: null,
       diagnosis: null,
     });
+  });
+
+  it('rejects rows without RISR_ExamID', async () => {
+    const executor: ParameterizedQueryExecutor = {
+      query: jest.fn().mockResolvedValue([
+        {
+          SOURCE_RECORD_ID: '',
+          PATIENT_REGISTRATION_NO: '0000533612',
+          PATIENT_NAME: '测试患者乙',
+          DEPARTMENT: null,
+          BED_NO: null,
+          PATIENT_TYPE_CODE: 'O',
+          EXAM_ITEM: '电子胃镜检查',
+          EXAM_DATE: '2026-08-02',
+          EXAM_TIME: '09:00:00',
+          REPORT_CONTENT: null,
+          DIAGNOSIS: null,
+        },
+      ]),
+    };
+    const adapter = new SqlPacsRisAdapter(executor);
+
+    await expect(
+      adapter.fetchReports({ since: SINCE, until: UNTIL, pageSize: 10 }),
+    ).rejects.toThrow(/RISR_ExamID/);
   });
 });

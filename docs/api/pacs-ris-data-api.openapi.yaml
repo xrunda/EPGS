@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EPGS IRIS/Caché 内镜数据 API
-  version: 2.0.0
+  version: 2.1.0
   description: |
     医院 IRIS/Caché 数据库网关提供给 EPGS Worker 的只读接口。
     数据来自 Ens_RISReportResult、PA_Adm、PA_PatMas，仅限 RISR_SysCode='ES'。
@@ -32,7 +32,7 @@ paths:
       summary: 按日期窗口分页读取内镜结果
       description: |
         后端始终附加 RISR_SysCode='ES'。日期和所有筛选必须参数绑定。
-        稳定 sourceRecordId 的实际表达式由 Issue #24 实库核验后确定。
+        RISR_ExamID（检查号）作为稳定 sourceRecordId。
       parameters:
         - $ref: '#/components/parameters/RequestId'
         - name: dateFrom
@@ -119,7 +119,7 @@ paths:
         - name: sourceRecordId
           in: path
           required: true
-          description: 实库核验确认的稳定结果记录 ID
+          description: Ens_RISReportResult.RISR_ExamID 检查号
           schema:
             type: string
             minLength: 1
@@ -215,15 +215,18 @@ components:
       additionalProperties: false
       required:
         - sourceRecordId
-        - patientName
-        - patientTypeName
         - examDate
       properties:
         sourceRecordId:
           type: string
-          description: 实库核验确认的稳定结果记录 ID
+          description: Ens_RISReportResult.RISR_ExamID 检查号
+        patientRegistrationNo:
+          type: string
+          nullable: true
+          description: PA_PatMas.PAPMI_No 登记号；不得用作报告主键
         patientName:
           type: string
+          nullable: true
           description: PA_PatMas.PAPMI_Name
         department:
           type: string
@@ -239,7 +242,8 @@ components:
           description: PA_Adm.PAADM_Type 原值
         patientTypeName:
           type: string
-          description: 经医院字典确认的中文含义；未知时包含源代码
+          nullable: true
+          description: 经医院字典确认的中文含义；字典未确认时为 null
         examItem:
           type: string
           nullable: true
@@ -442,11 +446,12 @@ components:
         data:
           items:
             - sourceRecordId: TEST-RIS-0001
+              patientRegistrationNo: TEST-REG-0001
               patientName: 测试患者甲
               department: 测试科室
               bedNo: TEST-12
               patientTypeCode: I
-              patientTypeName: 住院
+              patientTypeName: null
               examItem: 电子胃镜检查
               examDate: '2026-08-21'
               examTime: '10:05:30'

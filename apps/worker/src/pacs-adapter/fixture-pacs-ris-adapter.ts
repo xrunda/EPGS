@@ -8,6 +8,7 @@ const MAX_PAGE_SIZE = 500;
 
 interface FixtureRecord {
   sourceRecordId: string;
+  patientRegistrationNo?: string | null;
   patientName: string;
   department: string | null;
   bedNo: string | null;
@@ -26,15 +27,19 @@ function toDate(value: string): Date {
 }
 
 function toDto(record: FixtureRecord): PacsReportDto {
+  const examTimestamp = toDate(record.examTime);
   return {
     sourceRecordId: record.sourceRecordId,
+    patientRegistrationNo: record.patientRegistrationNo ?? null,
+    examDate: record.examTime.slice(0, 10),
+    examTimeText: record.examTime.slice(11, 19),
     patientName: record.patientName,
     department: record.department,
     bedNo: record.bedNo,
     patientTypeCode: record.patientTypeCode,
     patientTypeName: record.patientTypeName,
     examItem: record.examItem,
-    examTime: toDate(record.examTime),
+    examTime: examTimestamp,
     reportId: record.reportId,
     reportContent: record.reportContent,
     diagnosis: record.diagnosis,

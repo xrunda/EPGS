@@ -500,7 +500,10 @@ describe('Sync job (e2e, real Postgres)', () => {
 
 function makeReport(overrides: Partial<PacsReportDto> = {}): PacsReportDto {
   return {
-    sourceRecordId: 'ACC-DEFAULT',
+    sourceRecordId: 'RPT-DEFAULT',
+    patientRegistrationNo: 'IP-TEST-0001',
+    examDate: '2026-08-20',
+    examTimeText: '00:00:00',
     patientName: '测试患者',
     department: '消化内科',
     bedNo: '1',
@@ -515,7 +518,6 @@ function makeReport(overrides: Partial<PacsReportDto> = {}): PacsReportDto {
     ...overrides,
   };
 }
-
 /** Simple in-memory adapter returning all `items` whose sourceUpdatedAt falls in [since, until) in one page - enough for these targeted scenario tests without re-implementing FixturePacsRisAdapter's fuller pagination. */
 class StubAdapter implements PacsRisAdapter {
   constructor(public items: PacsReportDto[]) {}

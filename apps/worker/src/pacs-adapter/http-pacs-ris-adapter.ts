@@ -106,20 +106,27 @@ function nullableString(value: unknown, field: string): string | null {
  * as UTC+08:00 (China has no DST) and normalized to the UTC instant.
  * A missing `examTime` is treated as 00:00:00 local.
  */
-function combineExamDateTime(examDate: unknown, examTime: unknown): Date {
-  const dateStr = requireString(examDate, 'examDate');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    throw new PacsHttpContractError(`PacsReport.examDate must be a YYYY-MM-DD date: "${dateStr}"`);
-  }
-  const timeStr = examTime === null || examTime === undefined ? '00:00:00' : examTime;
-  if (typeof timeStr !== 'string' || !/^\d{2}:\d{2}:\d{2}$/.test(timeStr)) {
-    throw new PacsHttpContractError(`PacsReport.examTime must be an HH:mm:ss time or null`);
-  }
-  const parsed = new Date(`${dateStr}T${timeStr}+08:00`);
+function combineExamDateTime(examDate: string, examTime: string | null): Date {
+  const parsed = new Date(`${examDate}T${examTime ?? '00:00:00'}+08:00`);
   if (Number.isNaN(parsed.getTime())) {
     throw new PacsHttpContractError(`PacsReport.examDate/examTime is not a valid date-time`);
   }
   return parsed;
+}
+
+function requireDateText(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new PacsHttpContractError(`PacsReport.${field} must be a YYYY-MM-DD string`);
+  }
+  return value;
+}
+
+function nullableTimeText(value: unknown, field: string): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?$/.test(value)) {
+    throw new PacsHttpContractError(`PacsReport.${field} must be an HH:mm:ss time string or null`);
+  }
+  return value;
 }
 
 /**
@@ -143,15 +150,20 @@ export function mapWireReportToDto(raw: unknown): PacsReportDto {
   }
   const r = raw as Record<string, unknown>;
   const sourceRecordId = requireString(r.sourceRecordId, 'sourceRecordId');
-  const examTime = combineExamDateTime(r.examDate, r.examTime);
+  const examDate = requireDateText(r.examDate, 'examDate');
+  const examTimeText = nullableTimeText(r.examTime, 'examTime');
+  const examTime = combineExamDateTime(examDate, examTimeText);
   return {
     sourceRecordId,
-    patientName: requireString(r.patientName, 'patientName'),
+    patientRegistrationNo: nullableString(r.patientRegistrationNo, 'patientRegistrationNo'),
+    patientName: nullableString(r.patientName, 'patientName'),
     department: nullableString(r.department, 'department'),
     bedNo: nullableString(r.bedNo, 'bedNo'),
     patientTypeCode: nullableString(r.patientTypeCode, 'patientTypeCode'),
     patientTypeName: nullableString(r.patientTypeName, 'patientTypeName'),
-    examItem: requireString(r.examItem, 'examItem'),
+    examItem: nullableString(r.examItem, 'examItem'),
+    examDate,
+    examTimeText,
     examTime,
     reportId: sourceRecordId,
     reportContent: nullableString(r.reportContent, 'reportContent'),
@@ -167,8 +179,17 @@ function generateRequestId(): string {
   return `epgs-worker-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function toShanghaiDate(value: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value);
+}
+
 /**
- * PacsRisAdapter implementation that calls the real #20 database gateway
+ * PacsRisAdapter implementation that calls the #24 IRIS database gateway
  * contract (docs/api/pacs-ris-data-api.md /
  * docs/api/pacs-ris-data-api.openapi.yaml) over HTTP.
  *
@@ -213,18 +234,16 @@ export class HttpPacsRisAdapter implements PacsRisAdapter {
     if (!params.pageSize || params.pageSize <= 0) {
       throw new Error('fetchReports: params.pageSize must be a positive integer');
     }
+    if (params.deviceId) {
+      throw new Error('fetchReports: deviceId is not available in the confirmed IRIS schema');
+    }
     const pageSize = Math.min(params.pageSize, MAX_PAGE_SIZE);
 
     const url = new URL(`${this.baseUrl}/reports`);
-    url.searchParams.set('updatedFrom', params.since.toISOString());
-    if (params.until) {
-      url.searchParams.set('updatedTo', params.until.toISOString());
-    }
+    url.searchParams.set('dateFrom', toShanghaiDate(params.since));
+    url.searchParams.set('dateTo', toShanghaiDate(params.until ?? new Date()));
     if (params.department) {
       url.searchParams.set('department', params.department);
-    }
-    if (params.deviceId) {
-      url.searchParams.set('deviceId', params.deviceId);
     }
     if (params.cursor) {
       url.searchParams.set('cursor', params.cursor);

@@ -77,12 +77,102 @@ beforeEach(() => {
   mockAgent.disableNetConnect();
   pool = mockAgent.get(ORIGIN);
 });
-
 afterEach(async () => {
   await mockAgent.close();
 });
 
 describe('HttpPacsRisAdapter', () => {
+  it('maps the canonical IRIS gateway date and time fields', () => {
+    const dto = mapWireReportToDto({
+      sourceRecordId: 'ES20260802013',
+      patientRegistrationNo: '0000533611',
+      patientName: '测试患者甲',
+      department: '测试科室',
+      bedNo: '40',
+      patientTypeCode: 'I',
+      patientTypeName: null,
+      examItem: '电子结肠镜检查',
+      examDate: '2026-08-02',
+      examTime: '10:31:18',
+      reportContent: '合成检查所见',
+      diagnosis: '合成诊断',
+    });
+
+    expect(dto.sourceRecordId).toBe('ES20260802013');
+    expect(dto.patientRegistrationNo).toBe('0000533611');
+    expect(dto.examDate).toBe('2026-08-02');
+    expect(dto.examTimeText).toBe('10:31:18');
+    expect(dto.examTime).toEqual(new Date('2026-08-02T10:31:18+08:00'));
+    expect(dto.sourceUpdatedAt).toEqual(dto.examTime);
+  });
+
+  it('uses the #24 dateFrom/dateTo query contract', async () => {
+    pool
+      .intercept({
+        path: (path: string) => {
+          const url = new URL(path, ORIGIN);
+          return (
+            url.pathname === '/api/v1/endoscopy/reports' &&
+            url.searchParams.get('dateFrom') === '2026-08-21' &&
+            url.searchParams.get('dateTo') === '2026-08-22' &&
+            !url.searchParams.has('updatedFrom') &&
+            !url.searchParams.has('updatedTo')
+          );
+        },
+        method: 'GET',
+      })
+      .reply(200, envelope({ items: [], nextCursor: null, hasMore: false }));
+
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'test-token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({
+        since: new Date('2026-08-21T00:00:00Z'),
+        until: new Date('2026-08-22T00:00:00Z'),
+        pageSize: 200,
+      }),
+    ).resolves.toMatchObject({ items: [] });
+  });
+
+  it('always supplies required dateTo when the caller omits until', async () => {
+    pool
+      .intercept({
+        path: (path: string) => {
+          const url = new URL(path, ORIGIN);
+          return url.searchParams.has('dateFrom') && url.searchParams.has('dateTo');
+        },
+        method: 'GET',
+      })
+      .reply(200, envelope({ items: [], nextCursor: null, hasMore: false }));
+
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'test-token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 }),
+    ).resolves.toMatchObject({ items: [] });
+  });
+
+  it('rejects deviceId because the confirmed IRIS contract has no device field', async () => {
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'test-token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({
+        since: new Date('2026-08-21T00:00:00Z'),
+        pageSize: 200,
+        deviceId: 'SCOPE-01',
+      }),
+    ).rejects.toThrow(/deviceId/);
+  });
+
   it('maps a contract-shaped page response to FetchReportsResult / PacsReportDto', async () => {
     pool
       .intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' })

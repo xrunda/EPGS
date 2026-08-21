@@ -9,7 +9,8 @@
  * fields: source stable ID, patient/study display fields, and the report
  * body. No workflow/review status, no sex/age/inpatient number, no
  * disposition fields - see docs/api/pacs-ris-data-api.md §9 for the
- * removed legacy contract fields.
+ * removed legacy contract fields. The IRIS adapter also retains the
+ * confirmed registration number and source date/time text used by #24.
  *
  * IMPORTANT: nothing in this file may contain real patient data. These
  * are type/shape definitions only.
@@ -31,28 +32,26 @@
  *   them (e.g. `reportId = sourceRecordId`, `sourceUpdatedAt = examTime`).
  */
 export interface PacsReportDto {
-  /**
-   * Stable source record ID (来源稳定 ID) - the confirmed stable primary
-   * key from the source system. Primary half of the idempotent sync key
-   * (with reportId/reportVersion on MonitorRecord).
-   */
+  /** Ens_RISReportResult.RISR_ExamID; canonical stable source identifier. */
   sourceRecordId: string;
-  /** PATIENTINFO patient name, verbatim from source. HIGH sensitivity. */
-  patientName: string;
+  /** PA_PatMas.PAPMI_No; patient registration number, never a report key. */
+  patientRegistrationNo: string | null;
+  /** PA_PatMas.PAPMI_Name; nullable because the source join is a LEFT JOIN. */
+  patientName: string | null;
   /** Ordering/performing department at time of sync. */
   department: string | null;
   /** Current bed number; empty for outpatient/unknown -> display as "—". */
   bedNo: string | null;
-  /** Patient type code from the source (PAADM_Type raw value, e.g. I/O). */
+  /** PA_Adm.PAADM_Type raw code. Human-readable mapping is pending confirmation. */
   patientTypeCode: string | null;
-  /**
-   * Confirmed Chinese meaning of patientTypeCode (住院/门诊/…). NULL until
-   * the hospital dictionary confirms the mapping - unknown values must not
-   * be guessed.
-   */
+  /** Human-readable patient type when a verified dictionary is available. */
   patientTypeName: string | null;
-  /** Exam/procedure item name (e.g. "电子胃镜检查"). */
-  examItem: string;
+  /** Ens_RISReportResult.RISR_ReportDate, formatted YYYY-MM-DD. */
+  examDate: string;
+  /** Ens_RISReportResult.RISR_ReportTime, formatted HH:mm:ss when present. */
+  examTimeText: string | null;
+  /** Exam/procedure item name (e.g. "胃镜", "肠镜"). */
+  examItem: string | null;
   /** Exam start/performed time. */
   examTime: Date;
   /** REPORTINFO primary key for this specific report record/version. Internal sync bookkeeping. */

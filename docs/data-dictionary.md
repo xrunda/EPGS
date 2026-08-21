@@ -2,7 +2,8 @@
 
 本文档描述 `apps/api/prisma/schema.prisma` 中监测业务库的表结构、字段含义、
 敏感级别与保留策略。适用范围：`monitor_rule`、`monitor_record`、
-`monitor_match`、`sync_job_log` 四张核心表及相关枚举。
+`monitor_match`、`sync_job_log` 四张监测核心表、Issue #31 的 `app_user` 本地账号表
+及相关枚举。
 
 > 范围说明（issue #26）：本库已**移除闭环上报模型**。不再保存/展示
 > 待上报/已上报/已知晓/已处理/误报等处置状态与 `monitor_action` 处置时间线，
@@ -31,6 +32,21 @@
 | `MatchField`    | `FINDINGS` `IMPRESSION` `REPORT_TEXT` `STUDY_DESCRIPTION` `OTHER` | 命中/规则作用的报告字段，具体解释权在 issue #5 匹配引擎。                   |
 | `MatchMode`     | `EXACT` `CONTAINS` `REGEX`                                        | 关键词匹配方式。                                                            |
 | `SyncJobStatus` | `RUNNING` `SUCCEEDED` `FAILED` `PARTIAL`                          | 同步任务运行结果。                                                          |
+
+## app_user — 本地登录账号
+
+`app_user` 不保存患者数据，也不建立会话记录。密码只保存 Argon2id 不可逆哈希；
+`passwordVersion` 在修改或管理员重置密码时递增，用于使旧 JWT 失效。
+
+| 字段                    | 类型                | 敏感级别 | 说明                                |
+| ----------------------- | ------------------- | -------- | ----------------------------------- |
+| `id`                    | UUID PK             | LOW      | 本地用户主键                        |
+| `username`              | varchar(50), unique | MEDIUM   | 标准化为小写的登录账号              |
+| `displayName`           | varchar(100)        | MEDIUM   | 页面显示名称                        |
+| `passwordHash`          | varchar(255)        | **HIGH** | Argon2id 哈希，禁止返回、记录或导出 |
+| `passwordVersion`       | int                 | LOW      | 密码版本，默认 1                    |
+| `isActive`              | boolean             | LOW      | 账号是否可登录                      |
+| `createdAt`/`updatedAt` | timestamptz         | LOW      | 创建和更新时间                      |
 
 ## monitor_rule — 关键词规则
 
@@ -150,10 +166,12 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
 - 迁移文件：
   - `apps/api/prisma/migrations/20260821040339_init_monitoring_schema/migration.sql`（issue #3 建表）
   - `apps/api/prisma/migrations/20260821073851_remove_closed_loop_readonly/migration.sql`（issue #26 移除闭环模型）
+  - `apps/api/prisma/migrations/20260821093500_add_local_auth/migration.sql`（issue #31 增加本地账号）
 - 回滚脚本（Prisma Migrate 本身没有内建 down-migration 机制，回滚脚本需手动执行，
   详见脚本头部注释）：
   - `20260821040339_init_monitoring_schema/rollback.sql`
   - `20260821073851_remove_closed_loop_readonly/rollback.sql`
+  - `20260821093500_add_local_auth/rollback.sql`
 - **生产数据确认门（issue #26）**：`remove_closed_loop_readonly` 迁移开头包含
   PL/pgSQL 数据门禁——若 `monitor_action` 仍存在任何数据，或任意
   `monitor_record.handling_status <> 'PENDING'`，迁移会抛出异常并中止。

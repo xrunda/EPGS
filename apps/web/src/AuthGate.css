@@ -1,0 +1,268 @@
+:root {
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  color: #16343a;
+  background: #edf4f2;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.auth-loading {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  color: #527177;
+  letter-spacing: 0.04em;
+}
+
+.login-page {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(360px, 0.92fr) minmax(480px, 1.08fr);
+  background: #f7faf9;
+}
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(48px, 8vw, 120px);
+  color: #effbf8;
+  background: #126b66;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-brand::after {
+  content: '';
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 50%;
+  right: -180px;
+  bottom: -160px;
+}
+
+.login-brand__mark {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 50%);
+  border-radius: 14px;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+}
+
+.login-brand p {
+  margin: 28px 0 10px;
+}
+.login-brand h1 {
+  max-width: 520px;
+  margin: 0 0 20px;
+  font-size: clamp(32px, 4vw, 54px);
+  line-height: 1.12;
+  letter-spacing: -0.04em;
+}
+.login-brand > span:last-child {
+  color: #b9ded8;
+}
+
+.login-panel {
+  display: grid;
+  place-items: center;
+  padding: 40px;
+}
+.login-panel__content {
+  width: min(100%, 420px);
+}
+.login-kicker {
+  margin: 0 0 8px;
+  color: #16847c;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+.login-panel h2,
+.auth-modal h2 {
+  margin: 0;
+  color: #15373b;
+  font-size: 30px;
+  letter-spacing: -0.03em;
+}
+.login-intro {
+  margin: 12px 0 30px;
+  color: #6a7f83;
+}
+.login-panel form,
+.auth-modal form {
+  display: grid;
+  gap: 18px;
+}
+.login-panel label,
+.auth-modal label {
+  display: grid;
+  gap: 8px;
+  color: #284b50;
+  font-weight: 650;
+}
+.login-panel input,
+.auth-modal input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 13px 14px;
+  border: 1px solid #cddbd8;
+  border-radius: 9px;
+  background: white;
+  color: #15373b;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+.login-panel input:focus,
+.auth-modal input:focus {
+  border-color: #16847c;
+  outline: 3px solid rgb(22 132 124 / 15%);
+}
+.login-panel button,
+.auth-modal__actions button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 18px;
+  color: white;
+  background: #126b66;
+  font-weight: 750;
+  transition:
+    transform 150ms ease,
+    background 150ms ease;
+}
+.login-panel button:active,
+.auth-modal__actions button:active {
+  transform: scale(0.98);
+}
+.login-panel button:disabled,
+.auth-modal__actions button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+.login-help {
+  margin-top: 22px;
+  color: #7b8f92;
+  font-size: 13px;
+  text-align: center;
+}
+.auth-error,
+.auth-success {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.auth-error {
+  color: #9c2f2f;
+  background: #fff0ef;
+}
+.auth-success {
+  color: #176158;
+  background: #e5f4ef;
+}
+.auth-error--reserved {
+  min-height: 20px;
+  margin: -4px 0 0;
+  padding: 0;
+  background: transparent;
+}
+
+.auth-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(12 35 37 / 52%);
+}
+.auth-modal {
+  width: min(100%, 480px);
+  padding: 28px;
+  border-radius: 16px;
+  background: #fdfefe;
+  box-shadow: 0 28px 80px rgb(12 35 37 / 28%);
+}
+.auth-modal__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.auth-modal__close {
+  align-self: flex-start;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  color: #527177;
+  background: #edf4f2;
+  font-size: 24px;
+}
+.auth-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.auth-modal__actions .secondary {
+  color: #36575b;
+  background: #e7efed;
+}
+
+@media (max-width: 760px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+  .login-brand {
+    min-height: 210px;
+    padding: 34px 28px;
+    justify-content: flex-end;
+  }
+  .login-brand h1 {
+    font-size: 30px;
+    margin-bottom: 8px;
+  }
+  .login-brand p {
+    margin: 20px 0 6px;
+  }
+  .login-brand__mark {
+    width: 44px;
+    height: 44px;
+  }
+  .login-panel {
+    padding: 36px 24px 48px;
+    place-items: start center;
+  }
+  .auth-modal-backdrop {
+    padding: 0;
+    align-items: end;
+  }
+  .auth-modal {
+    box-sizing: border-box;
+    border-radius: 16px 16px 0 0;
+    padding: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

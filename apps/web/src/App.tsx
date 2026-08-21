@@ -1,10 +1,20 @@
 import { useState } from 'react';
 import { ApiStatus } from './ApiStatus';
 import { RulesModal } from './RulesModal';
+import { AuthGate } from './AuthGate';
+import type { AuthUser } from './authApi';
 import './App.css';
 
 /** Application shell for the endoscopy monitoring workbench. */
-function App(): JSX.Element {
+function Workbench({
+  user,
+  logout,
+  openChangePassword,
+}: {
+  user: AuthUser;
+  logout(): Promise<void>;
+  openChangePassword(): void;
+}): JSX.Element {
   const [rulesOpen, setRulesOpen] = useState(false);
 
   return (
@@ -14,8 +24,15 @@ function App(): JSX.Element {
           <span className="app-brand__mark">EP</span>
           <span>菏泽市肿瘤中医医院</span>
         </div>
-        <nav aria-label="主导航">
+        <nav aria-label="主导航" className="app-header__nav">
           <strong>内镜中心</strong>
+          <span className="app-user">{user.displayName}</span>
+          <button type="button" onClick={openChangePassword}>
+            修改密码
+          </button>
+          <button type="button" onClick={() => void logout()}>
+            退出登录
+          </button>
         </nav>
       </header>
       <section className="app-workbench">
@@ -31,9 +48,13 @@ function App(): JSX.Element {
       <div className="app-status">
         <ApiStatus />
       </div>
-      <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} />
+      <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} actorId={user.username} />
     </main>
   );
+}
+
+function App(): JSX.Element {
+  return <AuthGate>{(session) => <Workbench {...session} />}</AuthGate>;
 }
 
 export default App;

@@ -8,6 +8,15 @@ describe('App', () => {
       'fetch',
       vi.fn().mockImplementation((input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              user: { id: 'user-1', username: 'doctor', displayName: '测试医生' },
+            }),
+          });
+        }
         if (url.includes('/api/rules')) {
           return Promise.resolve({
             ok: true,
@@ -26,9 +35,9 @@ describe('App', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the placeholder heading', async () => {
+  it('renders the authenticated workbench heading', async () => {
     render(<App />);
-    expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
 
     // Let the ApiStatus effect's fetch promise resolve so this test
     // doesn't leak a pending state update into the next one.
@@ -48,11 +57,19 @@ describe('App', () => {
   it('opens monitor rule configuration without leaving the current page', async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole('button', { name: '监测规则' }));
+    fireEvent.click(await screen.findByRole('button', { name: '监测规则' }));
 
     expect(screen.getByRole('dialog', { name: '监测规则配置' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('api-status')).toHaveTextContent('API 已连接'));
     expect(await screen.findByText('没有符合条件的监测规则')).toBeInTheDocument();
+  });
+
+  it('shows the current user with password and logout actions', async () => {
+    render(<App />);
+
+    expect(await screen.findByText('测试医生')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '修改密码' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument();
   });
 });

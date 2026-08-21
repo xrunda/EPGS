@@ -45,6 +45,25 @@ body {
   padding: 0 4px;
   border-bottom: 3px solid #6fc1cb;
   font-size: 14px;
+  gap: 12px;
+}
+.app-header__nav button {
+  border: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: #d6eeea;
+}
+.app-header__nav button:hover,
+.app-header__nav button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.app-user {
+  padding-left: 18px;
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+  font-weight: 700;
 }
 .app-workbench {
   display: flex;
@@ -102,6 +121,14 @@ body {
   }
   .app-brand {
     font-size: 13px;
+  }
+  .app-header__nav strong,
+  .app-header__nav button:first-of-type {
+    display: none;
+  }
+  .app-user {
+    padding-left: 0;
+    border-left: 0;
   }
   .app-workbench {
     align-items: flex-start;

@@ -24,4 +24,9 @@ export const envValidationSchema = Joi.object({
   // Issue #6: used only to compute GET /api/system/sync-status health
   // staleness thresholds - see configuration.ts's AppConfig.syncIntervalMinutes doc.
   SYNC_INTERVAL_MINUTES: Joi.number().integer().min(1).max(5).default(3),
+  JWT_SECRET: Joi.string().min(32).required(),
+  JWT_EXPIRES_SECONDS: Joi.number().integer().min(300).max(86400).default(28800),
+  WEB_ORIGIN: Joi.string()
+    .uri({ scheme: [/https?/] })
+    .default('http://localhost:5173'),
 });

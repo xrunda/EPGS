@@ -16,6 +16,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://epgs:epgs@localhost:5432/epgs
       NODE_ENV: test
+      JWT_SECRET: ci-only-secret-at-least-32-characters
 
     steps:
       - name: Checkout
@@ -74,6 +75,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://epgs:epgs@localhost:5432/epgs
       NODE_ENV: test
+      JWT_SECRET: ci-only-secret-at-least-32-characters
 
     steps:
       - name: Checkout
@@ -148,6 +150,10 @@ jobs:
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/monitor.e2e-spec.ts
 
+      - name: Local authentication e2e suite (real Postgres)
+        working-directory: apps/api
+        run: pnpm exec jest --config ./test/jest-e2e.json test/auth.e2e-spec.ts
+
       # Issue #6: incremental sync job e2e suite against this same real
       # Postgres instance - covers first-run full window, normal
       # incremental sync, same-timestamp collisions, duplicate-batch
@@ -178,7 +184,9 @@ jobs:
           PGPASSWORD: epgs
 
       - name: Roll back migration
-        run: psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821040339_init_monitoring_schema/rollback.sql
+        run: |
+          psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821093500_add_local_auth/rollback.sql
+          psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821040339_init_monitoring_schema/rollback.sql
         env:
           PGPASSWORD: epgs
 

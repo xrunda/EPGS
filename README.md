@@ -122,16 +122,18 @@ exit immediately with a clear, non-secret-leaking error message (e.g.
 `Config validation error: "DATABASE_URL" is required`) rather than starting in a
 broken state.
 
-| Variable                        | Used by          | Purpose                                             | Example / default                            |
-| ------------------------------- | ---------------- | --------------------------------------------------- | -------------------------------------------- |
-| `NODE_ENV`                      | api, worker      | Runtime environment                                 | `development`                                |
-| `PORT`                          | api, worker, web | HTTP port for that app                              | api `3000`, worker `3001`, web `5173`        |
-| `TZ`                            | api, worker      | Process timezone                                    | `Asia/Shanghai`                              |
-| `LOG_LEVEL`                     | api, worker      | Minimum log level (`fatal`..`verbose`)              | `log`                                        |
-| `DATABASE_URL`                  | api, worker      | PostgreSQL connection string (required, no default) | `postgresql://epgs:epgs@localhost:5432/epgs` |
-| `SYNC_INTERVAL_MINUTES`         | worker           | Cadence for the (placeholder) sync job              | `15`                                         |
-| `VITE_API_BASE_URL`             | web              | Base URL web uses to call the API                   | `http://localhost:3000`                      |
-| `JWT_SECRET` / `SESSION_SECRET` | api (future)     | Auth placeholders — not wired up until issue #13    | _(unset)_                                    |
+| Variable                | Used by          | Purpose                                             | Example / default                            |
+| ----------------------- | ---------------- | --------------------------------------------------- | -------------------------------------------- |
+| `NODE_ENV`              | api, worker      | Runtime environment                                 | `development`                                |
+| `PORT`                  | api, worker, web | HTTP port for that app                              | api `3000`, worker `3001`, web `5173`        |
+| `TZ`                    | api, worker      | Process timezone                                    | `Asia/Shanghai`                              |
+| `LOG_LEVEL`             | api, worker      | Minimum log level (`fatal`..`verbose`)              | `log`                                        |
+| `DATABASE_URL`          | api, worker      | PostgreSQL connection string (required, no default) | `postgresql://epgs:epgs@localhost:5432/epgs` |
+| `SYNC_INTERVAL_MINUTES` | worker           | Cadence for the (placeholder) sync job              | `15`                                         |
+| `VITE_API_BASE_URL`     | web              | Base URL web uses to call the API                   | `http://localhost:3000`                      |
+| `JWT_SECRET`            | api              | 本地登录 JWT 签名密钥（至少 32 字符，必填）         | 无默认值                                     |
+| `JWT_EXPIRES_SECONDS`   | api              | 登录 Cookie 与 JWT 有效期（秒）                     | `28800`                                      |
+| `WEB_ORIGIN`            | api              | 允许携带 Cookie 调用 API 的前端来源                 | `http://localhost:5173`                      |
 
 See `.env.example` (root) and `apps/*/.env.example` for the full, commented list.
 
@@ -237,9 +239,30 @@ pnpm --filter api exec prisma db seed
 YELLOW/GREEN keyword lists are intentionally **not** seeded — they require sign-off
 from the endoscopy center first (see `docs/rules-api.md`'s "待确认事项").
 
-No real authentication/authorization exists yet for these write endpoints — see the
-`JWT_SECRET`/`SESSION_SECRET` row above and `apps/api/src/common/guards/
-rules-write.guard.ts` (issue #13 will replace this placeholder guard).
+All business endpoints require a valid local-login Cookie. Issue #31 provides only
+the authenticated/not-authenticated boundary; role-based rule permissions remain in
+issue #13.
+
+## Local authentication (issue #31)
+
+The web app checks `GET /api/auth/me` before rendering business data. Login uses a
+JWT stored only in an HttpOnly, SameSite=Lax Cookie; PostgreSQL stores an Argon2id
+password hash and never the plaintext password. See [`docs/auth.md`](docs/auth.md)
+for API, deployment and password-reset instructions.
+
+After applying migrations, create the first account interactively on the application
+server:
+
+```bash
+pnpm --filter @epgs/api auth:create-user --username admin --display-name "系统管理员"
+```
+
+If a user forgets the password, reset it from the same server. Password input is
+hidden and cannot be supplied as a command-line argument:
+
+```bash
+pnpm --filter @epgs/api auth:reset-password --username admin
+```
 
 ## Monitor API (issue #7)
 

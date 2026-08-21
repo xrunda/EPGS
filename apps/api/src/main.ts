@@ -21,6 +21,12 @@ async function bootstrap(): Promise<void> {
 
   app.useGlobalFilters(new GlobalExceptionFilter());
 
+  const configService = app.get(ConfigService);
+  app.enableCors({
+    origin: configService.getOrThrow<string>('webOrigin'),
+    credentials: true,
+  });
+
   // Nest-standard DTO validation (class-validator/class-transformer),
   // introduced by issue #4's rules module. whitelist/forbidNonWhitelisted
   // reject unexpected body fields instead of silently dropping them, and
@@ -45,7 +51,6 @@ async function bootstrap(): Promise<void> {
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, swaggerDocument);
 
-  const configService = app.get(ConfigService);
   const port = configService.get<number>('port') ?? 3000;
 
   await app.listen(port);

@@ -23,9 +23,9 @@
 - `POST /api/rules/import/validate`
 - `POST /api/rules/import/confirm`
 
-API 地址读取 `VITE_API_BASE_URL`，未配置时使用 `http://localhost:3000`。当前后端尚未完成正式身份鉴权，前端临时使用 `actorId=web-operator`；接入身份功能后应改为当前登录用户标识。
+API 地址读取 `VITE_API_BASE_URL`，未配置时使用 `http://localhost:3000`。请求携带 HttpOnly 会话 Cookie，规则变更的 `actorId` 使用当前登录账号。
 
-“操作日志”按钮当前为禁用提示入口。访问审计和服务端写权限由 Issue #13 实现，前端只读模式不能替代服务端授权。
+“操作日志”按钮当前为禁用提示入口。Issue #31 仅校验是否登录；角色、访问审计和服务端规则写权限仍由 Issue #13 实现，前端只读模式不能替代服务端授权。
 
 ## CSV 模板
 

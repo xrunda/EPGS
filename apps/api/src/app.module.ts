@@ -8,6 +8,7 @@ import { MonitorModule } from './monitor/monitor.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RulesModule } from './rules/rules.module';
 import { SystemModule } from './system/system.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SystemModule } from './system/system.module';
       },
     }),
     PrismaModule,
+    AuthModule,
     HealthModule,
     MonitorModule,
     RulesModule,

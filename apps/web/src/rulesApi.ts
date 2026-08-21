@@ -29,6 +29,7 @@ export class RulesApiError extends Error {
 async function parseResponse<T>(response: Response): Promise<T> {
   const body = (await response.json()) as T | ErrorEnvelope;
   if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new Event('epgs:auth-required'));
     const error = (body as ErrorEnvelope).error;
     throw new RulesApiError(
       error?.message ?? '请求失败，请稍后重试',
@@ -40,7 +41,12 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  return {
+    method,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
 }
 
 export async function listRules(query: ListMonitorRulesQuery): Promise<PaginatedMonitorRules> {
@@ -50,7 +56,9 @@ export async function listRules(query: ListMonitorRulesQuery): Promise<Paginated
   if (query.isEnabled !== undefined) params.set('isEnabled', String(query.isEnabled));
   params.set('page', String(query.page ?? 1));
   params.set('pageSize', String(query.pageSize ?? 20));
-  return parseResponse(await fetch(`${API_BASE_URL}/api/rules?${params.toString()}`));
+  return parseResponse(
+    await fetch(`${API_BASE_URL}/api/rules?${params.toString()}`, { credentials: 'include' }),
+  );
 }
 
 export async function createRule(body: CreateMonitorRuleBody): Promise<MonitorRuleDto> {
@@ -65,7 +73,11 @@ export async function validateRulesImport(file: File): Promise<ImportValidateRes
   const form = new FormData();
   form.append('file', file);
   return parseResponse(
-    await fetch(`${API_BASE_URL}/api/rules/import/validate`, { method: 'POST', body: form }),
+    await fetch(`${API_BASE_URL}/api/rules/import/validate`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    }),
   );
 }
 

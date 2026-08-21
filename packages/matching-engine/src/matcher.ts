@@ -43,16 +43,16 @@ function levelRank(level: MonitorLevel): number {
   return idx === -1 ? LEVEL_PRIORITY.length : idx;
 }
 
-function buildDisclaimer(input: MatchInput): MatchDisclaimer {
-  const disclaimer: MatchDisclaimer = {
+/**
+ * The monitoring-only disclaimer is a fixed constant on every result
+ * (issue #26): no review/disposition status is carried into matching
+ * anymore, so there is nothing caller-driven to echo.
+ */
+function buildDisclaimer(): MatchDisclaimer {
+  return {
     monitoringOnly: true,
-    isReviewed: input.isReviewed,
     message: DISCLAIMER_MESSAGE,
   };
-  if (input.reportStatus !== undefined) {
-    disclaimer.reportStatus = input.reportStatus;
-  }
-  return disclaimer;
 }
 
 /**
@@ -65,8 +65,10 @@ function buildDisclaimer(input: MatchInput): MatchDisclaimer {
  * twice with equal (deep-equal) inputs always yields deep-equal outputs.
  */
 export function matchReport(input: MatchInput): MatchResult {
-  const normalizedFindings = input.describeText !== null ? normalizeForMatch(input.describeText) : null;
-  const normalizedImpression = input.diagnoseText !== null ? normalizeForMatch(input.diagnoseText) : null;
+  const normalizedFindings =
+    input.describeText !== null ? normalizeForMatch(input.describeText) : null;
+  const normalizedImpression =
+    input.diagnoseText !== null ? normalizeForMatch(input.diagnoseText) : null;
 
   const matchedRules: MatchedRule[] = [];
 
@@ -133,6 +135,6 @@ export function matchReport(input: MatchInput): MatchResult {
     reportVersion: input.reportVersion,
     level,
     matchedRules,
-    disclaimer: buildDisclaimer(input),
+    disclaimer: buildDisclaimer(),
   };
 }

@@ -87,7 +87,6 @@ describe('buildFetchReportsQuery', () => {
       pageSize: 10,
       cursor,
     });
-
     expect(sql).toContain("COALESCE(a.RISR_ReportTime, '00:00:00') > ?");
     expect(sql).toContain("COALESCE(a.RISR_ReportTime, '00:00:00') = ?");
     expect(boundParams).toEqual(
@@ -138,6 +137,8 @@ describe('SqlPacsRisAdapter', () => {
       reportContent: '合成检查所见',
       diagnosis: '合成诊断',
     });
+    expect(result.items[0].examTime).toBeInstanceOf(Date);
+    expect(result.items[0].sourceUpdatedAt).toBeInstanceOf(Date);
   });
 
   it('preserves nullable department, bed, report content, and diagnosis', async () => {

@@ -19,6 +19,10 @@ export const PACS_RIS_ADAPTER = Symbol('PACS_RIS_ADAPTER');
  * - Use `RISR_ExamID` as `sourceRecordId` and never use the patient
  *   registration number as a report key.
  *
+ * Per issue #26 no workflow/review status is read or mapped - the DTO
+ * carries only the confirmed source snapshot fields (see
+ * docs/api/pacs-ris-data-api.md §9 for the removed legacy fields).
+ *
  * See docs/pacs-ris-adapter.md for the confirmed source schema and the
  * remaining production-environment verification items.
  */

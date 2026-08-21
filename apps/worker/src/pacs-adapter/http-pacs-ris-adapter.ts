@@ -1,11 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  FetchReportsParams,
-  FetchReportsResult,
-  PacsPatientSex,
-  PacsReportDto,
-  PacsReportStatus,
-} from '@epgs/shared-types';
+import { FetchReportsParams, FetchReportsResult, PacsReportDto } from '@epgs/shared-types';
 import { PacsRisAdapter } from './pacs-ris-adapter.interface';
 
 /** Hard ceiling on page size, mirrored from the #20 contract's `pageSize` max. */
@@ -87,46 +81,6 @@ interface RawEnvelope {
   message?: unknown;
 }
 
-const KNOWN_STATUSES: ReadonlySet<string> = new Set<PacsReportStatus>([
-  PacsReportStatus.EXAM_IN_PROGRESS,
-  PacsReportStatus.AWAITING_REPORT,
-  PacsReportStatus.DRAFT,
-  PacsReportStatus.PENDING_REVIEW,
-  PacsReportStatus.REVIEWED,
-  PacsReportStatus.FINAL_REVIEWED,
-  PacsReportStatus.UNKNOWN,
-]);
-
-/**
- * Maps the #20 contract's `reportStatus` (docs/api/pacs-ris-data-api.md
- * section 9's "标准状态" table) to the internal PacsReportStatus enum
- * (packages/shared-types/src/pacs-ris.ts).
- *
- * MAPPING NOTE: the #20 contract's standard status vocabulary
- * (EXAM_IN_PROGRESS/AWAITING_REPORT/DRAFT/PENDING_REVIEW/REVIEWED/
- * FINAL_REVIEWED/UNKNOWN) was designed to already match issue #2's
- * PacsReportStatus enum name-for-name and value-for-value - this is not
- * a coincidence: both were derived from the same PACS/RIS workflow
- * vocabulary. There is therefore no lossy or ambiguous mapping to
- * document here. However, this adapter still does NOT trust the wire
- * value blindly: any string that is not one of the seven known enum
- * members (e.g. a future gateway version adding a new status, or a
- * transport/serialization bug) maps to PacsReportStatus.UNKNOWN rather
- * than being cast through, per the "不确定的地方全部映射为 UNKNOWN,
- * 不擅自猜测" instruction. The original wire value is preserved in
- * `rawStatusCode` for observability either way.
- */
-function mapContractStatus(raw: unknown): PacsReportStatus {
-  if (typeof raw === 'string' && KNOWN_STATUSES.has(raw)) {
-    return raw as PacsReportStatus;
-  }
-  return PacsReportStatus.UNKNOWN;
-}
-
-function mapSex(raw: unknown): PacsPatientSex {
-  return raw === 'M' || raw === 'F' ? raw : 'UNKNOWN';
-}
-
 function requireString(value: unknown, field: string): string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new PacsHttpContractError(`PacsReport.${field} must be a non-empty string`);
@@ -142,13 +96,20 @@ function nullableString(value: unknown, field: string): string | null {
   return value;
 }
 
-function requireDate(value: unknown, field: string): Date {
-  if (typeof value !== 'string') {
-    throw new PacsHttpContractError(`PacsReport.${field} must be an RFC 3339 date-time string`);
-  }
-  const parsed = new Date(value);
+/**
+ * Combines the contract's `examDate` (date, required) and `examTime`
+ * (time-of-day, optional) into a single UTC `Date` instant for the DTO.
+ *
+ * The source system's exam times are Asia/Shanghai wall-clock times; the
+ * repo-wide convention is that `Date` objects hold UTC instants (see
+ * apps/worker/src/sync/time-format.ts), so the wall-clock is interpreted
+ * as UTC+08:00 (China has no DST) and normalized to the UTC instant.
+ * A missing `examTime` is treated as 00:00:00 local.
+ */
+function combineExamDateTime(examDate: string, examTime: string | null): Date {
+  const parsed = new Date(`${examDate}T${examTime ?? '00:00:00'}+08:00`);
   if (Number.isNaN(parsed.getTime())) {
-    throw new PacsHttpContractError(`PacsReport.${field} is not a valid date-time: "${value}"`);
+    throw new PacsHttpContractError(`PacsReport.examDate/examTime is not a valid date-time`);
   }
   return parsed;
 }
@@ -168,86 +129,46 @@ function nullableTimeText(value: unknown, field: string): string | null {
   return value;
 }
 
-function nullableDate(value: unknown, field: string): Date | null {
-  if (value === null || value === undefined) return null;
-  return requireDate(value, field);
-}
-
-function nullableNumber(value: unknown, field: string): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'number') {
-    throw new PacsHttpContractError(`PacsReport.${field} must be a number or null`);
-  }
-  return value;
-}
-
 /**
  * Validates and maps one #20 `PacsReport` wire object to the internal
- * PacsReportDto. Field names are identical between the two contracts
- * (both derived from the same source schema - see
- * docs/api/pacs-ris-data-api.md section 9 vs
- * packages/shared-types/src/pacs-ris.ts), so this is mostly a typed,
- * defensive passthrough rather than a renaming/reshaping layer. Every
- * field is still explicitly validated rather than cast, because this
- * payload crosses a network/organizational boundary (#20 is owned by a
- * different team) and a malformed single record must fail loudly as a
- * per-record error (caught by the sync job) instead of poisoning
- * downstream matching with `undefined`/`NaN`.
+ * PacsReportDto. Per the read-only display contract (#28) the wire field
+ * names match the DTO for the display fields; every field is still
+ * explicitly validated rather than cast, because this payload crosses a
+ * network/organizational boundary and a malformed single record must fail
+ * loudly as a per-record error (caught by the sync job) instead of
+ * poisoning downstream matching with `undefined`/`NaN`.
+ *
+ * Derivation note (issue #26): the gateway contract no longer provides
+ * `reportId` or `sourceUpdatedAt` (see docs/api/pacs-ris-data-api.md §9).
+ * They are internal sync bookkeeping only, so this mapper derives them as
+ * `reportId = sourceRecordId` and `sourceUpdatedAt = examTime` (the
+ * combined exam instant) - sufficient for idempotency/change-detection.
  */
 export function mapWireReportToDto(raw: unknown): PacsReportDto {
   if (typeof raw !== 'object' || raw === null) {
     throw new PacsHttpContractError('PacsReport item is not an object');
   }
   const r = raw as Record<string, unknown>;
-  const reportId = requireString(r.sourceRecordId ?? r.reportId, 'sourceRecordId');
-  const canonicalWire = r.examDate !== undefined;
-  const patientRegistrationNo = canonicalWire
-    ? nullableString(r.patientRegistrationNo, 'patientRegistrationNo')
-    : requireString(r.patientId, 'patientId');
-  const examDate = canonicalWire
-    ? requireDateText(r.examDate, 'examDate')
-    : requireDate(r.examTime, 'examTime').toISOString().slice(0, 10);
-  const examTimeText = canonicalWire
-    ? nullableTimeText(r.examTime, 'examTime')
-    : requireDate(r.examTime, 'examTime').toISOString().slice(11, 19);
-  const examTime = canonicalWire
-    ? new Date(`${examDate}T${examTimeText ?? '00:00:00'}+08:00`)
-    : requireDate(r.examTimestamp ?? r.examTime, 'examTime');
-  const reportContent = nullableString(r.reportContent ?? r.describeText, 'reportContent');
-  const diagnosis = nullableString(r.diagnosis ?? r.diagnoseText, 'diagnosis');
+  const sourceRecordId = requireString(r.sourceRecordId, 'sourceRecordId');
+  const examDate = requireDateText(r.examDate, 'examDate');
+  const examTimeText = nullableTimeText(r.examTime, 'examTime');
+  const examTime = combineExamDateTime(examDate, examTimeText);
   return {
-    sourceRecordId: reportId,
-    patientRegistrationNo,
-    patientTypeCode: nullableString(r.patientTypeCode, 'patientTypeCode'),
-    patientTypeName: nullableString(r.patientTypeName, 'patientTypeName'),
-    examDate,
-    examTimeText,
-    reportContent,
-    diagnosis,
-    patientId: patientRegistrationNo ?? '',
-    inpatientNo: nullableString(r.inpatientNo, 'inpatientNo'),
-    patientName: canonicalWire
-      ? nullableString(r.patientName, 'patientName')
-      : requireString(r.patientName, 'patientName'),
-    sex: mapSex(r.sex),
-    age: nullableNumber(r.age, 'age'),
+    sourceRecordId,
+    patientRegistrationNo: nullableString(r.patientRegistrationNo, 'patientRegistrationNo'),
+    patientName: nullableString(r.patientName, 'patientName'),
     department: nullableString(r.department, 'department'),
     bedNo: nullableString(r.bedNo, 'bedNo'),
-    studyAccessionNo: typeof r.studyAccessionNo === 'string' ? r.studyAccessionNo : reportId,
-    examItem: canonicalWire
-      ? nullableString(r.examItem, 'examItem')
-      : requireString(r.examItem, 'examItem'),
+    patientTypeCode: nullableString(r.patientTypeCode, 'patientTypeCode'),
+    patientTypeName: nullableString(r.patientTypeName, 'patientTypeName'),
+    examItem: nullableString(r.examItem, 'examItem'),
+    examDate,
+    examTimeText,
     examTime,
-    reportId,
-    reportStatus: mapContractStatus(r.reportStatus),
-    rawStatusCode: nullableString(r.rawStatusCode, 'rawStatusCode'),
-    reportSavedAt: nullableDate(r.reportSavedAt, 'reportSavedAt'),
-    reportSubmittedAt: nullableDate(r.reportSubmittedAt, 'reportSubmittedAt'),
-    reportReviewedAt: nullableDate(r.reportReviewedAt, 'reportReviewedAt'),
-    describeText: reportContent,
-    diagnoseText: diagnosis,
-    sourceUpdatedAt:
-      r.sourceUpdatedAt == null ? examTime : requireDate(r.sourceUpdatedAt, 'sourceUpdatedAt'),
+    reportId: sourceRecordId,
+    reportContent: nullableString(r.reportContent, 'reportContent'),
+    diagnosis: nullableString(r.diagnosis, 'diagnosis'),
+    sourceUpdatedAt: examTime,
   };
 }
 

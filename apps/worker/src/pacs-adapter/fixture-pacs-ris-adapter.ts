@@ -1,35 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  FetchReportsParams,
-  FetchReportsResult,
-  PacsPatientSex,
-  PacsReportDto,
-} from '@epgs/shared-types';
+import { FetchReportsParams, FetchReportsResult, PacsReportDto } from '@epgs/shared-types';
 import { PacsRisAdapter } from './pacs-ris-adapter.interface';
-import { mapRawStatus } from './status-mapping';
 import rawFixture from './fixtures/reports.fixture.json';
 
 /** Hard ceiling on page size, mirrored from SqlPacsRisAdapter's LIMIT/TOP guard. */
 const MAX_PAGE_SIZE = 500;
 
 interface FixtureRecord {
-  patientId: string;
-  inpatientNo: string | null;
+  sourceRecordId: string;
+  patientRegistrationNo?: string | null;
   patientName: string;
-  sex: PacsPatientSex;
-  age: number | null;
   department: string | null;
   bedNo: string | null;
-  studyAccessionNo: string;
+  patientTypeCode: string | null;
+  patientTypeName: string | null;
   examItem: string;
   examTime: string;
   reportId: string;
-  reportStatusRaw: string | null;
-  reportSavedAt: string | null;
-  reportSubmittedAt: string | null;
-  reportReviewedAt: string | null;
-  describeText: string | null;
-  diagnoseText: string | null;
+  reportContent: string | null;
+  diagnosis: string | null;
   sourceUpdatedAt: string;
 }
 
@@ -37,39 +26,23 @@ function toDate(value: string): Date {
   return new Date(value);
 }
 
-function toNullableDate(value: string | null): Date | null {
-  return value == null ? null : new Date(value);
-}
-
 function toDto(record: FixtureRecord): PacsReportDto {
   const examTimestamp = toDate(record.examTime);
   return {
-    sourceRecordId: record.reportId,
-    patientRegistrationNo: record.inpatientNo ?? record.patientId,
-    patientTypeCode: record.inpatientNo == null ? 'O' : 'I',
-    patientTypeName: null,
+    sourceRecordId: record.sourceRecordId,
+    patientRegistrationNo: record.patientRegistrationNo ?? null,
     examDate: record.examTime.slice(0, 10),
     examTimeText: record.examTime.slice(11, 19),
-    reportContent: record.describeText,
-    diagnosis: record.diagnoseText,
-    patientId: record.patientId,
-    inpatientNo: record.inpatientNo,
     patientName: record.patientName,
-    sex: record.sex,
-    age: record.age,
     department: record.department,
     bedNo: record.bedNo,
-    studyAccessionNo: record.studyAccessionNo,
+    patientTypeCode: record.patientTypeCode,
+    patientTypeName: record.patientTypeName,
     examItem: record.examItem,
     examTime: examTimestamp,
     reportId: record.reportId,
-    reportStatus: mapRawStatus(record.reportStatusRaw),
-    rawStatusCode: record.reportStatusRaw,
-    reportSavedAt: toNullableDate(record.reportSavedAt),
-    reportSubmittedAt: toNullableDate(record.reportSubmittedAt),
-    reportReviewedAt: toNullableDate(record.reportReviewedAt),
-    describeText: record.describeText,
-    diagnoseText: record.diagnoseText,
+    reportContent: record.reportContent,
+    diagnosis: record.diagnosis,
     sourceUpdatedAt: toDate(record.sourceUpdatedAt),
   };
 }
@@ -82,19 +55,19 @@ function toDto(record: FixtureRecord): PacsReportDto {
  *
  * Behavioral notes (mirrors SqlPacsRisAdapter's documented contract):
  * - Returns ALL report rows/versions in range, not just the latest
- *   version per accession number. Multiple REPORTINFO rows sharing the
- *   same studyAccessionNo (report re-saves/revisions) are surfaced as
- *   separate PacsReportDto items; callers (issue #6 sync job) decide
- *   how to reconcile versions using `reportId` + `sourceUpdatedAt`. The
- *   adapter does not silently drop older versions - that would lose
- *   information about what a clinician actually saw at each point.
+ *   version per source record. Multiple report rows sharing the same
+ *   sourceRecordId (report re-saves/revisions) are surfaced as separate
+ *   PacsReportDto items; callers (issue #6 sync job) decide how to
+ *   reconcile versions using `reportId` + `sourceUpdatedAt`. The adapter
+ *   does not silently drop older versions - that would lose information
+ *   about what a clinician actually saw at each point.
  * - Ordering is deterministic: sourceUpdatedAt ascending, then
  *   reportId ascending as a tiebreaker - required for stable
  *   cursor-based pagination.
- * - Duplicate accession numbers across different patients/studies (a
- *   source data-quality edge case) are passed through as-is; the
- *   adapter does not attempt to deduplicate or merge them since it has
- *   no reliable way to know which is authoritative.
+ * - Duplicate source record IDs across different patients/studies (a
+ *   source data-quality edge case) are passed through as-is; the adapter
+ *   does not attempt to deduplicate or merge them since it has no
+ *   reliable way to know which is authoritative.
  */
 @Injectable()
 export class FixturePacsRisAdapter implements PacsRisAdapter {

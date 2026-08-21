@@ -1,10 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import {
-  FetchReportsParams,
-  FetchReportsResult,
-  PacsReportDto,
-  PacsReportStatus,
-} from '@epgs/shared-types';
+import { FetchReportsParams, FetchReportsResult, PacsReportDto } from '@epgs/shared-types';
 import { PacsRisAdapter } from './pacs-ris-adapter.interface';
 
 /** Hard ceiling on page size so no caller can force an unbounded scan. */
@@ -91,30 +86,18 @@ function toDto(row: IrisReportRow): PacsReportDto {
   return {
     sourceRecordId,
     patientRegistrationNo,
-    patientTypeCode: row.PATIENT_TYPE_CODE,
-    patientTypeName: null,
-    examDate,
-    examTimeText,
-    reportContent: row.REPORT_CONTENT,
-    diagnosis: row.DIAGNOSIS,
-    patientId: patientRegistrationNo ?? '',
-    inpatientNo: null,
     patientName: row.PATIENT_NAME,
-    sex: 'UNKNOWN',
-    age: null,
     department: row.DEPARTMENT,
     bedNo: row.BED_NO,
-    studyAccessionNo: sourceRecordId,
+    patientTypeCode: row.PATIENT_TYPE_CODE,
+    patientTypeName: null,
     examItem: row.EXAM_ITEM,
+    examDate,
+    examTimeText,
     examTime: sourceUpdatedAt,
     reportId: sourceRecordId,
-    reportStatus: PacsReportStatus.UNKNOWN,
-    rawStatusCode: null,
-    reportSavedAt: null,
-    reportSubmittedAt: null,
-    reportReviewedAt: null,
-    describeText: row.REPORT_CONTENT,
-    diagnoseText: row.DIAGNOSIS,
+    reportContent: row.REPORT_CONTENT,
+    diagnosis: row.DIAGNOSIS,
     sourceUpdatedAt,
   };
 }

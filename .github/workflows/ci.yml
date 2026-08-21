@@ -46,3 +46,86 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  db-migrations:
+    runs-on: ubuntu-latest
+
+    # Issue #3: validates the monitor_* Prisma migrations against a real
+    # Postgres instance - forward migration on an empty DB, idempotent
+    # re-apply, constraint behavior (unique/enum/FK), rollback, and
+    # re-migration after rollback. Kept as its own job (separate from
+    # build-and-test) so issue #1's DB-free CI guarantee for the base
+    # build/lint/test/typecheck job is untouched.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: epgs
+          POSTGRES_PASSWORD: epgs
+          POSTGRES_DB: epgs
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U epgs -d epgs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://epgs:epgs@localhost:5432/epgs
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma validate + format check
+        working-directory: apps/api
+        run: |
+          pnpm exec prisma validate
+          pnpm exec prisma format
+          git diff --exit-code prisma/schema.prisma
+
+      - name: Apply migrations to empty database
+        working-directory: apps/api
+        run: pnpm exec prisma migrate deploy
+
+      - name: Re-apply migrations (idempotency check)
+        working-directory: apps/api
+        run: pnpm exec prisma migrate deploy
+
+      - name: Assert no schema drift vs migrations
+        working-directory: apps/api
+        run: pnpm exec prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code
+
+      - name: Constraint + index smoke test
+        working-directory: apps/api
+        run: pnpm exec ts-node --transpile-only prisma/scripts/verify-constraints.ts
+
+      - name: Roll back migration
+        run: psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821040339_init_monitoring_schema/rollback.sql
+        env:
+          PGPASSWORD: epgs
+
+      - name: Clear migration history row for rolled-back migration
+        run: psql "$DATABASE_URL" -c "DELETE FROM \"_prisma_migrations\" WHERE migration_name = '20260821040339_init_monitoring_schema';"
+        env:
+          PGPASSWORD: epgs
+
+      - name: Re-apply migration after rollback (upgrade path still works)
+        working-directory: apps/api
+        run: pnpm exec prisma migrate deploy

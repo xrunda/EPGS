@@ -1,12 +1,11 @@
 /**
- * Stable internal DTOs for the PACS/RIS read-only adapter (issue #2).
+ * Internal DTOs for the IRIS/Caché read-only adapter (issue #24).
  *
  * These types decouple downstream consumers (the sync job in issue #6,
  * and potentially apps/api for read models in later issues) from the
- * PACS/RIS vendor schema (PATIENTINFO / STUDYINFO / REPORTINFO /
- * REPORTCONTENT / LOC / STUDYSTATUS). See docs/pacs-ris-adapter.md for
- * the assumed source schema, join keys, and what still needs production
- * verification.
+ * confirmed hospital schema (Ens_RISReportResult / PA_Adm / PA_PatMas).
+ * Legacy PACS fields remain temporarily for compatibility with the
+ * already-merged sync job and are removed by issue #26.
  *
  * IMPORTANT: nothing in this file may contain real patient data. These
  * are type/shape definitions only.
@@ -68,12 +67,32 @@ export type PacsPatientSex = 'M' | 'F' | 'UNKNOWN';
  *   docs/pacs-ris-adapter.md).
  */
 export interface PacsReportDto {
+  /** Ens_RISReportResult.RISR_ExamID; canonical stable source identifier. */
+  sourceRecordId: string;
+  /** PA_PatMas.PAPMI_No; patient registration number, never a report key. */
+  patientRegistrationNo: string | null;
+  /** PA_Adm.PAADM_Type raw code. Human-readable mapping is pending confirmation. */
+  patientTypeCode: string | null;
+  /** Human-readable patient type when a verified dictionary is available. */
+  patientTypeName: string | null;
+  /** Ens_RISReportResult.RISR_ReportDate, formatted YYYY-MM-DD. */
+  examDate: string;
+  /** Ens_RISReportResult.RISR_ReportTime, formatted HH:mm:ss when present. */
+  examTimeText: string | null;
+  /** Ens_RISReportResult.RISR_ExamDesc verbatim. */
+  reportContent: string | null;
+  /** Ens_RISReportResult.RISR_DiagDesc verbatim. */
+  diagnosis: string | null;
+
+  // Compatibility fields retained until issue #26 removes the old PACS
+  // workflow model consumed by the already-merged sync job.
   /** PATIENTINFO.PAT_ID (assumed stable internal patient identifier). */
+  /** @deprecated Use patientRegistrationNo. */
   patientId: string;
   /** PATIENTINFO inpatient/admission number, if the study is inpatient. */
   inpatientNo: string | null;
   /** PATIENTINFO patient name, verbatim from source. */
-  patientName: string;
+  patientName: string | null;
   sex: PacsPatientSex;
   /** Age at time of study, as recorded by source (not recomputed). */
   age: number | null;
@@ -82,12 +101,14 @@ export interface PacsReportDto {
   /** Bed number, inpatient studies only. */
   bedNo: string | null;
   /** STUDYINFO.ST_ACCNUM - the accession number joining Study/Report/Content. */
+  /** @deprecated Use sourceRecordId. */
   studyAccessionNo: string;
   /** Exam/procedure item name (e.g. "胃镜", "肠镜"). */
-  examItem: string;
+  examItem: string | null;
   /** Exam start/performed time. */
   examTime: Date;
   /** REPORTINFO primary key for this specific report record/version. */
+  /** @deprecated Use sourceRecordId. */
   reportId: string;
   /** Normalized workflow status - see PacsReportStatus. */
   reportStatus: PacsReportStatus;

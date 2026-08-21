@@ -42,7 +42,16 @@ function toNullableDate(value: string | null): Date | null {
 }
 
 function toDto(record: FixtureRecord): PacsReportDto {
+  const examTimestamp = toDate(record.examTime);
   return {
+    sourceRecordId: record.reportId,
+    patientRegistrationNo: record.inpatientNo ?? record.patientId,
+    patientTypeCode: record.inpatientNo == null ? 'O' : 'I',
+    patientTypeName: null,
+    examDate: record.examTime.slice(0, 10),
+    examTimeText: record.examTime.slice(11, 19),
+    reportContent: record.describeText,
+    diagnosis: record.diagnoseText,
     patientId: record.patientId,
     inpatientNo: record.inpatientNo,
     patientName: record.patientName,
@@ -52,7 +61,7 @@ function toDto(record: FixtureRecord): PacsReportDto {
     bedNo: record.bedNo,
     studyAccessionNo: record.studyAccessionNo,
     examItem: record.examItem,
-    examTime: toDate(record.examTime),
+    examTime: examTimestamp,
     reportId: record.reportId,
     reportStatus: mapRawStatus(record.reportStatusRaw),
     rawStatusCode: record.reportStatusRaw,

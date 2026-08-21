@@ -41,7 +41,10 @@ let pool: Interceptable;
 
 function mockFetch(): typeof fetch {
   return ((input: string | URL | Request, init?: RequestInit) =>
-    undiciFetch(input as string, { ...init, dispatcher: mockAgent } as never)) as unknown as typeof fetch;
+    undiciFetch(
+      input as string,
+      { ...init, dispatcher: mockAgent } as never,
+    )) as unknown as typeof fetch;
 }
 
 function syntheticReport(overrides: Record<string, unknown> = {}) {
@@ -84,13 +87,44 @@ afterEach(async () => {
 });
 
 describe('HttpPacsRisAdapter', () => {
+  it('maps the canonical IRIS gateway date and time fields', () => {
+    const dto = mapWireReportToDto({
+      sourceRecordId: 'ES20260802013',
+      patientRegistrationNo: '0000533611',
+      patientName: '测试患者甲',
+      department: '测试科室',
+      bedNo: '40',
+      patientTypeCode: 'I',
+      patientTypeName: null,
+      examItem: '电子结肠镜检查',
+      examDate: '2026-08-02',
+      examTime: '10:31:18',
+      reportContent: '合成检查所见',
+      diagnosis: '合成诊断',
+    });
+
+    expect(dto.sourceRecordId).toBe('ES20260802013');
+    expect(dto.patientRegistrationNo).toBe('0000533611');
+    expect(dto.examDate).toBe('2026-08-02');
+    expect(dto.examTimeText).toBe('10:31:18');
+    expect(dto.examTime).toEqual(new Date('2026-08-02T10:31:18+08:00'));
+    expect(dto.sourceUpdatedAt).toEqual(dto.examTime);
+  });
+
   it('maps a contract-shaped page response to FetchReportsResult / PacsReportDto', async () => {
     pool
       .intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' })
       .reply(200, envelope({ items: [syntheticReport()], nextCursor: 'cursor-2', hasMore: true }));
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'test-token', fetchImpl: mockFetch() });
-    const result = await adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 });
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'test-token',
+      fetchImpl: mockFetch(),
+    });
+    const result = await adapter.fetchReports({
+      since: new Date('2026-08-21T00:00:00Z'),
+      pageSize: 200,
+    });
 
     expect(result.items).toHaveLength(1);
     expect(result.nextCursor).toBe('cursor-2');
@@ -101,22 +135,110 @@ describe('HttpPacsRisAdapter', () => {
     expect(dto.reportReviewedAt).toBeNull();
   });
 
+  it('uses the #24 dateFrom/dateTo query contract', async () => {
+    pool
+      .intercept({
+        path: (path: string) => {
+          const url = new URL(path, ORIGIN);
+          return (
+            url.pathname === '/api/v1/endoscopy/reports' &&
+            url.searchParams.get('dateFrom') === '2026-08-21' &&
+            url.searchParams.get('dateTo') === '2026-08-22' &&
+            !url.searchParams.has('updatedFrom') &&
+            !url.searchParams.has('updatedTo')
+          );
+        },
+        method: 'GET',
+      })
+      .reply(200, envelope({ items: [], nextCursor: null, hasMore: false }));
+
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'test-token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({
+        since: new Date('2026-08-21T00:00:00Z'),
+        until: new Date('2026-08-22T00:00:00Z'),
+        pageSize: 200,
+      }),
+    ).resolves.toMatchObject({ items: [] });
+  });
+
+  it('always supplies required dateTo when the caller omits until', async () => {
+    pool
+      .intercept({
+        path: (path: string) => {
+          const url = new URL(path, ORIGIN);
+          return url.searchParams.has('dateFrom') && url.searchParams.has('dateTo');
+        },
+        method: 'GET',
+      })
+      .reply(200, envelope({ items: [], nextCursor: null, hasMore: false }));
+
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'test-token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 }),
+    ).resolves.toMatchObject({ items: [] });
+  });
+
+  it('rejects deviceId because the confirmed IRIS contract has no device field', async () => {
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'test-token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({
+        since: new Date('2026-08-21T00:00:00Z'),
+        pageSize: 200,
+        deviceId: 'SCOPE-01',
+      }),
+    ).rejects.toThrow(/deviceId/);
+  });
+
   it('walks multiple pages by forwarding the returned cursor as the next request cursor', async () => {
     pool
       .intercept({
         path: (path) => path.startsWith('/api/v1/endoscopy/reports') && !path.includes('cursor='),
         method: 'GET',
       })
-      .reply(200, envelope({ items: [syntheticReport({ reportId: 'R-1' })], nextCursor: 'page-2', hasMore: true }));
+      .reply(
+        200,
+        envelope({
+          items: [syntheticReport({ reportId: 'R-1' })],
+          nextCursor: 'page-2',
+          hasMore: true,
+        }),
+      );
     pool
       .intercept({
         path: (path) => path.includes('cursor=page-2'),
         method: 'GET',
       })
-      .reply(200, envelope({ items: [syntheticReport({ reportId: 'R-2' })], nextCursor: null, hasMore: false }));
+      .reply(
+        200,
+        envelope({
+          items: [syntheticReport({ reportId: 'R-2' })],
+          nextCursor: null,
+          hasMore: false,
+        }),
+      );
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'test-token', fetchImpl: mockFetch() });
-    const page1 = await adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 });
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'test-token',
+      fetchImpl: mockFetch(),
+    });
+    const page1 = await adapter.fetchReports({
+      since: new Date('2026-08-21T00:00:00Z'),
+      pageSize: 200,
+    });
     expect(page1.nextCursor).toBe('page-2');
     const page2 = await adapter.fetchReports({
       since: new Date('2026-08-21T00:00:00Z'),
@@ -134,7 +256,10 @@ describe('HttpPacsRisAdapter', () => {
       const headers = opts.headers as Record<string, string>;
       capturedAuth = headers['authorization'] ?? headers['Authorization'];
       capturedRequestId = headers['x-request-id'] ?? headers['X-Request-Id'];
-      return { statusCode: 200, data: JSON.stringify(envelope({ items: [], nextCursor: null, hasMore: false })) };
+      return {
+        statusCode: 200,
+        data: JSON.stringify(envelope({ items: [], nextCursor: null, hasMore: false })),
+      };
     });
 
     const adapter = new HttpPacsRisAdapter({
@@ -152,10 +277,14 @@ describe('HttpPacsRisAdapter', () => {
       .intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' })
       .reply(401, { requestId: 'req-1', code: 'UNAUTHENTICATED', message: 'missing token' });
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'bad-token', fetchImpl: mockFetch() });
-    await expect(adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 })).rejects.toThrow(
-      PacsHttpAuthError,
-    );
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'bad-token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 }),
+    ).rejects.toThrow(PacsHttpAuthError);
   });
 
   it('maps 403 to PacsHttpAuthError', async () => {
@@ -163,10 +292,14 @@ describe('HttpPacsRisAdapter', () => {
       .intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' })
       .reply(403, { requestId: 'req-1', code: 'FORBIDDEN', message: 'no access' });
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'token', fetchImpl: mockFetch() });
-    await expect(adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 })).rejects.toThrow(
-      PacsHttpAuthError,
-    );
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 }),
+    ).rejects.toThrow(PacsHttpAuthError);
   });
 
   it('maps 503 DATA_SOURCE_UNAVAILABLE to PacsHttpTransientError (retryable by the sync job)', async () => {
@@ -174,10 +307,14 @@ describe('HttpPacsRisAdapter', () => {
       .intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' })
       .reply(503, { requestId: 'req-1', code: 'DATA_SOURCE_UNAVAILABLE', message: 'db down' });
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'token', fetchImpl: mockFetch() });
-    await expect(adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 })).rejects.toThrow(
-      PacsHttpTransientError,
-    );
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 }),
+    ).rejects.toThrow(PacsHttpTransientError);
   });
 
   it('maps 429 RATE_LIMITED to PacsHttpTransientError', async () => {
@@ -185,18 +322,28 @@ describe('HttpPacsRisAdapter', () => {
       .intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' })
       .reply(429, { requestId: 'req-1', code: 'RATE_LIMITED', message: 'slow down' });
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'token', fetchImpl: mockFetch() });
-    await expect(adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 })).rejects.toThrow(
-      PacsHttpTransientError,
-    );
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 }),
+    ).rejects.toThrow(PacsHttpTransientError);
   });
 
   it('maps 500 to PacsHttpTransientError and does not expose response internals in the thrown message', async () => {
-    pool
-      .intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' })
-      .reply(500, { requestId: 'req-1', code: 'INTERNAL_ERROR', message: 'stack trace leaking SQL...' });
+    pool.intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' }).reply(500, {
+      requestId: 'req-1',
+      code: 'INTERNAL_ERROR',
+      message: 'stack trace leaking SQL...',
+    });
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'token', fetchImpl: mockFetch() });
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'token',
+      fetchImpl: mockFetch(),
+    });
     try {
       await adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 });
       throw new Error('expected fetchReports to throw');
@@ -218,9 +365,9 @@ describe('HttpPacsRisAdapter', () => {
       timeoutMs: 10,
       fetchImpl: mockFetch(),
     });
-    await expect(adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 })).rejects.toThrow(
-      PacsHttpTransientError,
-    );
+    await expect(
+      adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 }),
+    ).rejects.toThrow(PacsHttpTransientError);
   });
 
   it('raises PacsHttpContractError when the 200 response body is missing data.items', async () => {
@@ -228,10 +375,14 @@ describe('HttpPacsRisAdapter', () => {
       .intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' })
       .reply(200, { requestId: 'req-1', serverTime: '2026-08-21T02:06:00Z', data: {} });
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'token', fetchImpl: mockFetch() });
-    await expect(adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 })).rejects.toThrow(
-      PacsHttpContractError,
-    );
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 }),
+    ).rejects.toThrow(PacsHttpContractError);
   });
 
   it('raises PacsHttpContractError for a malformed individual report item (missing required field)', async () => {
@@ -244,10 +395,14 @@ describe('HttpPacsRisAdapter', () => {
       }),
     );
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'token', fetchImpl: mockFetch() });
-    await expect(adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 })).rejects.toThrow(
-      PacsHttpContractError,
-    );
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'token',
+      fetchImpl: mockFetch(),
+    });
+    await expect(
+      adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 200 }),
+    ).rejects.toThrow(PacsHttpContractError);
   });
 
   it('clamps pageSize to the 500 contract ceiling', async () => {
@@ -255,10 +410,17 @@ describe('HttpPacsRisAdapter', () => {
     pool.intercept({ path: /\/api\/v1\/endoscopy\/reports\?.*/, method: 'GET' }).reply((opts) => {
       const url = new URL(`http://x${opts.path}`);
       capturedPageSize = url.searchParams.get('pageSize');
-      return { statusCode: 200, data: JSON.stringify(envelope({ items: [], nextCursor: null, hasMore: false })) };
+      return {
+        statusCode: 200,
+        data: JSON.stringify(envelope({ items: [], nextCursor: null, hasMore: false })),
+      };
     });
 
-    const adapter = new HttpPacsRisAdapter({ baseUrl: BASE_URL, serviceToken: 'token', fetchImpl: mockFetch() });
+    const adapter = new HttpPacsRisAdapter({
+      baseUrl: BASE_URL,
+      serviceToken: 'token',
+      fetchImpl: mockFetch(),
+    });
     await adapter.fetchReports({ since: new Date('2026-08-21T00:00:00Z'), pageSize: 5000 });
     expect(capturedPageSize).toBe('500');
   });

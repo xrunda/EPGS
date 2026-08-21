@@ -153,6 +153,21 @@ function requireDate(value: unknown, field: string): Date {
   return parsed;
 }
 
+function requireDateText(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new PacsHttpContractError(`PacsReport.${field} must be a YYYY-MM-DD string`);
+  }
+  return value;
+}
+
+function nullableTimeText(value: unknown, field: string): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?$/.test(value)) {
+    throw new PacsHttpContractError(`PacsReport.${field} must be an HH:mm:ss time string or null`);
+  }
+  return value;
+}
+
 function nullableDate(value: unknown, field: string): Date | null {
   if (value === null || value === undefined) return null;
   return requireDate(value, field);
@@ -184,26 +199,55 @@ export function mapWireReportToDto(raw: unknown): PacsReportDto {
     throw new PacsHttpContractError('PacsReport item is not an object');
   }
   const r = raw as Record<string, unknown>;
+  const reportId = requireString(r.sourceRecordId ?? r.reportId, 'sourceRecordId');
+  const canonicalWire = r.examDate !== undefined;
+  const patientRegistrationNo = canonicalWire
+    ? nullableString(r.patientRegistrationNo, 'patientRegistrationNo')
+    : requireString(r.patientId, 'patientId');
+  const examDate = canonicalWire
+    ? requireDateText(r.examDate, 'examDate')
+    : requireDate(r.examTime, 'examTime').toISOString().slice(0, 10);
+  const examTimeText = canonicalWire
+    ? nullableTimeText(r.examTime, 'examTime')
+    : requireDate(r.examTime, 'examTime').toISOString().slice(11, 19);
+  const examTime = canonicalWire
+    ? new Date(`${examDate}T${examTimeText ?? '00:00:00'}+08:00`)
+    : requireDate(r.examTimestamp ?? r.examTime, 'examTime');
+  const reportContent = nullableString(r.reportContent ?? r.describeText, 'reportContent');
+  const diagnosis = nullableString(r.diagnosis ?? r.diagnoseText, 'diagnosis');
   return {
-    patientId: requireString(r.patientId, 'patientId'),
+    sourceRecordId: reportId,
+    patientRegistrationNo,
+    patientTypeCode: nullableString(r.patientTypeCode, 'patientTypeCode'),
+    patientTypeName: nullableString(r.patientTypeName, 'patientTypeName'),
+    examDate,
+    examTimeText,
+    reportContent,
+    diagnosis,
+    patientId: patientRegistrationNo ?? '',
     inpatientNo: nullableString(r.inpatientNo, 'inpatientNo'),
-    patientName: requireString(r.patientName, 'patientName'),
+    patientName: canonicalWire
+      ? nullableString(r.patientName, 'patientName')
+      : requireString(r.patientName, 'patientName'),
     sex: mapSex(r.sex),
     age: nullableNumber(r.age, 'age'),
     department: nullableString(r.department, 'department'),
     bedNo: nullableString(r.bedNo, 'bedNo'),
-    studyAccessionNo: requireString(r.studyAccessionNo, 'studyAccessionNo'),
-    examItem: requireString(r.examItem, 'examItem'),
-    examTime: requireDate(r.examTime, 'examTime'),
-    reportId: requireString(r.reportId, 'reportId'),
+    studyAccessionNo: typeof r.studyAccessionNo === 'string' ? r.studyAccessionNo : reportId,
+    examItem: canonicalWire
+      ? nullableString(r.examItem, 'examItem')
+      : requireString(r.examItem, 'examItem'),
+    examTime,
+    reportId,
     reportStatus: mapContractStatus(r.reportStatus),
     rawStatusCode: nullableString(r.rawStatusCode, 'rawStatusCode'),
     reportSavedAt: nullableDate(r.reportSavedAt, 'reportSavedAt'),
     reportSubmittedAt: nullableDate(r.reportSubmittedAt, 'reportSubmittedAt'),
     reportReviewedAt: nullableDate(r.reportReviewedAt, 'reportReviewedAt'),
-    describeText: nullableString(r.describeText, 'describeText'),
-    diagnoseText: nullableString(r.diagnoseText, 'diagnoseText'),
-    sourceUpdatedAt: requireDate(r.sourceUpdatedAt, 'sourceUpdatedAt'),
+    describeText: reportContent,
+    diagnoseText: diagnosis,
+    sourceUpdatedAt:
+      r.sourceUpdatedAt == null ? examTime : requireDate(r.sourceUpdatedAt, 'sourceUpdatedAt'),
   };
 }
 
@@ -214,8 +258,17 @@ function generateRequestId(): string {
   return `epgs-worker-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function toShanghaiDate(value: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value);
+}
+
 /**
- * PacsRisAdapter implementation that calls the real #20 database gateway
+ * PacsRisAdapter implementation that calls the #24 IRIS database gateway
  * contract (docs/api/pacs-ris-data-api.md /
  * docs/api/pacs-ris-data-api.openapi.yaml) over HTTP.
  *
@@ -260,18 +313,16 @@ export class HttpPacsRisAdapter implements PacsRisAdapter {
     if (!params.pageSize || params.pageSize <= 0) {
       throw new Error('fetchReports: params.pageSize must be a positive integer');
     }
+    if (params.deviceId) {
+      throw new Error('fetchReports: deviceId is not available in the confirmed IRIS schema');
+    }
     const pageSize = Math.min(params.pageSize, MAX_PAGE_SIZE);
 
     const url = new URL(`${this.baseUrl}/reports`);
-    url.searchParams.set('updatedFrom', params.since.toISOString());
-    if (params.until) {
-      url.searchParams.set('updatedTo', params.until.toISOString());
-    }
+    url.searchParams.set('dateFrom', toShanghaiDate(params.since));
+    url.searchParams.set('dateTo', toShanghaiDate(params.until ?? new Date()));
     if (params.department) {
       url.searchParams.set('department', params.department);
-    }
-    if (params.deviceId) {
-      url.searchParams.set('deviceId', params.deviceId);
     }
     if (params.cursor) {
       url.searchParams.set('cursor', params.cursor);
@@ -340,7 +391,9 @@ export class HttpPacsRisAdapter implements PacsRisAdapter {
         // classify by status so retry behavior is correct.
         throw this.errorForStatus(response.status, 'NON_JSON_ERROR_BODY', requestId);
       }
-      throw new PacsHttpContractError(`PACS/RIS gateway returned non-JSON 200 body (requestId=${requestId})`);
+      throw new PacsHttpContractError(
+        `PACS/RIS gateway returned non-JSON 200 body (requestId=${requestId})`,
+      );
     }
 
     if (response.ok) {
@@ -357,12 +410,24 @@ export class HttpPacsRisAdapter implements PacsRisAdapter {
     // report - not something a retry fixes. None of these should be
     // retried by the sync job's backoff loop.
     if (status === 401 || status === 403 || status === 400 || status === 404) {
-      this.logger.warn(`fetchReports auth/client error requestId=${requestId} status=${status} code=${code}`);
-      return new PacsHttpAuthError(status, code, `PACS/RIS gateway rejected request: ${status} ${code}`);
+      this.logger.warn(
+        `fetchReports auth/client error requestId=${requestId} status=${status} code=${code}`,
+      );
+      return new PacsHttpAuthError(
+        status,
+        code,
+        `PACS/RIS gateway rejected request: ${status} ${code}`,
+      );
     }
     // 429/503/5xx: transient - the sync job's retry/backoff should
     // handle these without advancing its cursor.
-    this.logger.warn(`fetchReports transient error requestId=${requestId} status=${status} code=${code}`);
-    return new PacsHttpTransientError(status, code, `PACS/RIS gateway transient error: ${status} ${code}`);
+    this.logger.warn(
+      `fetchReports transient error requestId=${requestId} status=${status} code=${code}`,
+    );
+    return new PacsHttpTransientError(
+      status,
+      code,
+      `PACS/RIS gateway transient error: ${status} ${code}`,
+    );
   }
 }

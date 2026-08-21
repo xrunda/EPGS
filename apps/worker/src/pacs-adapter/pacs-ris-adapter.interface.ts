@@ -9,18 +9,18 @@ import { FetchReportsParams, FetchReportsResult } from '@epgs/shared-types';
 export const PACS_RIS_ADAPTER = Symbol('PACS_RIS_ADAPTER');
 
 /**
- * Read-only data access contract for PACS/RIS endoscopy exam and report
+ * Read-only data access contract for IRIS/Caché endoscopy exam and report
  * data. Implementations MUST:
  *
  * - Never write, update, or delete anything in the source system.
  * - Bound every query by time range and page size (no unbounded scans).
- * - Return REPORTCONTENT text (`describeText` / `diagnoseText`) verbatim,
+ * - Return `RISR_ExamDesc` / `RISR_DiagDesc` text verbatim,
  *   with no cleansing/rewriting.
- * - Map unrecognized source statuses to `PacsReportStatus.UNKNOWN`
- *   rather than guessing.
+ * - Use `RISR_ExamID` as `sourceRecordId` and never use the patient
+ *   registration number as a report key.
  *
- * See docs/pacs-ris-adapter.md for the assumed source schema and the
- * list of items that need production-environment verification.
+ * See docs/pacs-ris-adapter.md for the confirmed source schema and the
+ * remaining production-environment verification items.
  */
 export interface PacsRisAdapter {
   /**

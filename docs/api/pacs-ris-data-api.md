@@ -38,9 +38,8 @@ GET /api/v1/endoscopy/reports
 | `cursor`      | string  | 否   | 不透明续页游标                         |
 | `pageSize`    | integer | 否   | 默认 200，范围 1–500                   |
 
-固定排序为检查日期、检查时间、稳定源记录 ID 升序。稳定 ID 在 #24 中确认；
-在其确认前接口不得上线。若源库无更新时间，EPGS 会重复读取日期窗口并按稳定
-ID 去重。
+固定排序为检查日期、检查时间、检查号升序。`RISR_ExamID` 已正式确定为
+`sourceRecordId`；若源库无更新时间，EPGS 重复读取日期窗口并按该字段去重。
 
 响应示例：
 
@@ -52,6 +51,7 @@ ID 去重。
     "items": [
       {
         "sourceRecordId": "TEST-RIS-0001",
+        "patientRegistrationNo": "TEST-REG-0001",
         "patientName": "测试患者甲",
         "department": "测试科室",
         "bedNo": "TEST-12",
@@ -76,8 +76,8 @@ ID 去重。
 GET /api/v1/endoscopy/reports/{sourceRecordId}
 ```
 
-- 返回与列表数据项相同的九项源字段。
-- `sourceRecordId` 必须对应实库确认的稳定记录主键。
+- 返回与列表数据项相同的源字段。
+- `sourceRecordId` 对应 `RISR_ExamID`（检查号）。
 - 不存在返回 `404 REPORT_NOT_FOUND`。
 - 不提供任何 POST、PUT、PATCH、DELETE 动作。
 
@@ -101,19 +101,20 @@ GET /api/v1/endoscopy/health
 
 ## 7. 字段定义
 
-| 字段              | 类型/可空   | 来源                             |
-| ----------------- | ----------- | -------------------------------- |
-| `sourceRecordId`  | string      | 待确认的稳定结果记录 ID          |
-| `patientName`     | string      | `PAPMI_Name`                     |
-| `department`      | string/null | `PAADM_DepCode_DR->CTLOC_Desc`   |
-| `bedNo`           | string/null | `PAADM_CurrentBed_DR->BED_Code`  |
-| `patientTypeCode` | string/null | `PAADM_Type` 原值                |
-| `patientTypeName` | string      | 经确认的中文含义；未知值不得猜测 |
-| `examItem`        | string/null | `RISR_ItemDesc`                  |
-| `examDate`        | date        | `RISR_ReportDate`                |
-| `examTime`        | time/null   | `RISR_ReportTime`                |
-| `reportContent`   | string/null | `RISR_ExamDesc` 原文             |
-| `diagnosis`       | string/null | `RISR_DiagDesc` 原文             |
+| 字段                    | 类型/可空   | 来源                                       |
+| ----------------------- | ----------- | ------------------------------------------ |
+| `sourceRecordId`        | string      | `RISR_ExamID` 检查号                       |
+| `patientRegistrationNo` | string/null | `PAPMI_No` 登记号                          |
+| `patientName`           | string/null | `PAPMI_Name`                               |
+| `department`            | string/null | `PAADM_DepCode_DR->CTLOC_Desc`             |
+| `bedNo`                 | string/null | `PAADM_CurrentBed_DR->BED_Code`            |
+| `patientTypeCode`       | string/null | `PAADM_Type` 原值                          |
+| `patientTypeName`       | string/null | 字典确认前为 null，不根据 I/O 猜测中文含义 |
+| `examItem`              | string/null | `RISR_ItemDesc`                            |
+| `examDate`              | date        | `RISR_ReportDate`                          |
+| `examTime`              | time/null   | `RISR_ReportTime`                          |
+| `reportContent`         | string/null | `RISR_ExamDesc` 原文                       |
+| `diagnosis`             | string/null | `RISR_DiagDesc` 原文                       |
 
 患者类型截图中出现的 `I`、`O` 不能仅凭经验认定，必须以医院字典核验结果为准。
 
@@ -144,7 +145,7 @@ GET /api/v1/endoscopy/health
 
 ## 10. 后端联调交付
 
-- 实库稳定主键、患者类型字典、日期/时间语义核验结果。
+- 患者类型字典、日期/时间语义及报告修改时间核验结果。
 - 参数化查询实现和只读账号权限证明。
 - 两页以上窗口分页测试，无重复、无漏读。
 - 空科室、空床号、空诊断和同时间多记录测试。

@@ -10,7 +10,7 @@
 
 - `Ens_RISReportResult`：检查结果、报告内容和诊断。
 - `PA_Adm`：就诊科室、当前床号和患者类型。
-- `PA_PatMas`：患者姓名。
+- `PA_PatMas`：患者登记号、姓名。
 - `RISR_SysCode = 'ES'`：内镜系统数据范围。
 
 IRIS/Caché SQL 使用对象引用箭头语法，例如：
@@ -27,7 +27,9 @@ IRIS/Caché SQL 使用对象引用箭头语法，例如：
 数据库地址、账号或密码。
 
 ```sql
-SELECT
+SELECT TOP ?
+  a.RISR_ExamID AS SourceRecordId,
+  pp.PAPMI_No AS PatientRegistrationNo,
   pp.PAPMI_Name AS PatientName,
   pa.PAADM_DepCode_DR->CTLOC_Desc AS Department,
   pa.PAADM_CurrentBed_DR->BED_Code AS BedNo,
@@ -40,49 +42,53 @@ SELECT
 FROM Ens_RISReportResult a
 LEFT JOIN PA_Adm pa ON pa.PAADM_RowID = a.RISR_VisitNumber
 LEFT JOIN PA_PatMas pp ON a.RISR_PatientID = pp.PAPMI_RowId1
-WHERE a.RISR_ReportDate BETWEEN ? AND ?
+WHERE (a.RISR_ReportDate > ? OR
+      (a.RISR_ReportDate = ? AND COALESCE(a.RISR_ReportTime, '00:00:00') >= ?))
+  AND (a.RISR_ReportDate < ? OR
+      (a.RISR_ReportDate = ? AND COALESCE(a.RISR_ReportTime, '00:00:00') < ?))
   AND a.RISR_SysCode = ?
+ORDER BY a.RISR_ReportDate,
+         COALESCE(a.RISR_ReportTime, '00:00:00'),
+         a.RISR_ExamID
 ```
 
 生产实现不得把日期或 `ES` 直接拼接到 SQL 字符串；必须使用 IRIS 驱动支持的
-参数绑定。日期边界采用 `BETWEEN` 还是 `[from, to)` 需要结合字段类型验证后
-固定，并通过跨日测试证明无重复、无漏读。
+参数绑定。适配器当前采用上海时间 `[from, to)` 半开区间，并以检查日期、空值
+归零后的检查时间、检查号进行稳定分页；上线联调仍需核对数据库会话时间语义。
 
 ## 3. 已确认字段映射
 
-| 标准字段          | 实际表达式                         | 页面用途             | 可空       |
-| ----------------- | ---------------------------------- | -------------------- | ---------- |
-| `patientName`     | `pp.PAPMI_Name`                    | 姓名                 | 待实库统计 |
-| `department`      | `pa.PAADM_DepCode_DR->CTLOC_Desc`  | 科室、筛选           | 是         |
-| `bedNo`           | `pa.PAADM_CurrentBed_DR->BED_Code` | 床号                 | 是         |
-| `patientTypeCode` | `pa.PAADM_Type`                    | 类型、筛选           | 待实库统计 |
-| `examItem`        | `a.RISR_ItemDesc`                  | 检查项目、筛选       | 待实库统计 |
-| `examDate`        | `a.RISR_ReportDate`                | 检查日期、日期筛选   | 否         |
-| `examTime`        | `a.RISR_ReportTime`                | 检查时间             | 待实库统计 |
-| `reportContent`   | `a.RISR_ExamDesc`                  | 报告内容、关键词匹配 | 是         |
-| `diagnosis`       | `a.RISR_DiagDesc`                  | 诊断、关键词匹配     | 是         |
+| 标准字段                | 实际表达式                         | 页面用途                   | 可空       |
+| ----------------------- | ---------------------------------- | -------------------------- | ---------- |
+| `sourceRecordId`        | `a.RISR_ExamID`                    | 检查号、唯一标识、详情查询 | 否         |
+| `patientRegistrationNo` | `pp.PAPMI_No`                      | 登记号                     | 是         |
+| `patientName`           | `pp.PAPMI_Name`                    | 姓名                       | 待实库统计 |
+| `department`            | `pa.PAADM_DepCode_DR->CTLOC_Desc`  | 科室、筛选                 | 是         |
+| `bedNo`                 | `pa.PAADM_CurrentBed_DR->BED_Code` | 床号                       | 是         |
+| `patientTypeCode`       | `pa.PAADM_Type`                    | 类型、筛选                 | 待实库统计 |
+| `examItem`              | `a.RISR_ItemDesc`                  | 检查项目、筛选             | 待实库统计 |
+| `examDate`              | `a.RISR_ReportDate`                | 检查日期、日期筛选         | 否         |
+| `examTime`              | `a.RISR_ReportTime`                | 检查时间                   | 待实库统计 |
+| `reportContent`         | `a.RISR_ExamDesc`                  | 报告内容、关键词匹配       | 是         |
+| `diagnosis`             | `a.RISR_DiagDesc`                  | 诊断、关键词匹配           | 是         |
 
 页面和 API 暂不依赖以下旧字段，因为当前查询没有提供可靠来源：
 
-- 住院号、患者 ID 展示值、性别、年龄。
+- 住院号、患者内部 ID、性别、年龄。
 - 报告审核状态、原始状态码。
 - 报告保存、提交、审核和最后更新时间。
-- 报告版本号、检查号和设备号。
+- 报告版本号和设备号。
 - 上报状态及任何处置时间。
 
 未来如能稳定读取，应通过独立 Issue 增加，不得在当前实现中猜测或填充假值。
 
 ## 4. 上线前必须确认
 
-### 4.1 稳定源记录 ID
+### 4.1 稳定源记录 ID（已确认）
 
-当前 SELECT 没有返回 `Ens_RISReportResult` 的稳定主键。后端必须确认实际的
-行 ID/报告 ID 表达式，并通过 API 返回为 `sourceRecordId`。
-
-- 禁止用姓名、日期、科室、床号或报告正文拼接永久主键。
-- `RISR_VisitNumber` 和 `RISR_PatientID` 可作为关联和排查字段，但不能未经
-  验证就当作报告唯一 ID。
-- 在稳定 ID 未确认前，只能进行人工查询验证，不得上线自动同步。
+- `a.RISR_ExamID`（检查号）正式映射为 `sourceRecordId`，用于去重、分页和详情查询。
+- `pp.PAPMI_No`（登记号）映射为 `patientRegistrationNo`，只用于患者识别和授权展示，不作为报告主键。
+- `RISR_VisitNumber` 和 `RISR_PatientID` 仅用于表关联及问题排查。
 
 ### 4.2 增量更新策略
 

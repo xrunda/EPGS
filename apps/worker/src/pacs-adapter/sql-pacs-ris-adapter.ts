@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { FetchReportsParams, FetchReportsResult, PacsReportDto } from '@epgs/shared-types';
 import { PacsRisAdapter } from './pacs-ris-adapter.interface';
-import { mapRawStatus } from './status-mapping';
 
 /** Hard ceiling on page size so no caller can force an unbounded scan. */
 export const MAX_PAGE_SIZE = 500;
@@ -37,25 +36,24 @@ export const PACS_SQL_EXECUTOR = Symbol('PACS_SQL_EXECUTOR');
  * docs/pacs-ris-adapter.md "待生产环境核验" for the full list of
  * assumptions that need confirmation before this adapter is pointed at
  * a real database.
+ *
+ * Converged to the read-only display field set (issue #26): no workflow/
+ * review status, no sex/age/inpatient number. SOURCE_RECORD_ID,
+ * REPORT_ID and SOURCE_UPDATED_AT are the sync idempotency/change-detection
+ * key (internal bookkeeping, not displayed).
  */
 interface PacsRawRow {
-  PAT_ID: string;
-  INPATIENT_NO: string | null;
+  SOURCE_RECORD_ID: string;
   PATIENT_NAME: string;
-  SEX_CODE: string | null;
-  AGE: number | null;
   DEPARTMENT_NAME: string | null;
   BED_NO: string | null;
-  ST_ACCNUM: string;
+  PATIENT_TYPE_CODE: string | null;
+  PATIENT_TYPE_NAME: string | null;
   EXAM_ITEM: string;
   EXAM_TIME: Date | string;
   REPORT_ID: string;
-  REPORT_STATUS: string | null;
-  REPORT_SAVED_AT: Date | string | null;
-  REPORT_SUBMITTED_AT: Date | string | null;
-  REPORT_REVIEWED_AT: Date | string | null;
-  RPT_DESCRIBE: string | null;
-  RPT_DIAGNOSE: string | null;
+  REPORT_CONTENT: string | null;
+  DIAGNOSIS: string | null;
   SOURCE_UPDATED_AT: Date | string;
 }
 
@@ -63,36 +61,19 @@ function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
-function toNullableDate(value: Date | string | null): Date | null {
-  if (value == null) return null;
-  return toDate(value);
-}
-
-function mapSex(raw: string | null): PacsReportDto['sex'] {
-  if (raw === 'M' || raw === 'F') return raw;
-  return 'UNKNOWN';
-}
-
 function toDto(row: PacsRawRow): PacsReportDto {
   return {
-    patientId: row.PAT_ID,
-    inpatientNo: row.INPATIENT_NO,
+    sourceRecordId: row.SOURCE_RECORD_ID,
     patientName: row.PATIENT_NAME,
-    sex: mapSex(row.SEX_CODE),
-    age: row.AGE,
     department: row.DEPARTMENT_NAME,
     bedNo: row.BED_NO,
-    studyAccessionNo: row.ST_ACCNUM,
+    patientTypeCode: row.PATIENT_TYPE_CODE,
+    patientTypeName: row.PATIENT_TYPE_NAME,
     examItem: row.EXAM_ITEM,
     examTime: toDate(row.EXAM_TIME),
     reportId: row.REPORT_ID,
-    reportStatus: mapRawStatus(row.REPORT_STATUS),
-    rawStatusCode: row.REPORT_STATUS,
-    reportSavedAt: toNullableDate(row.REPORT_SAVED_AT),
-    reportSubmittedAt: toNullableDate(row.REPORT_SUBMITTED_AT),
-    reportReviewedAt: toNullableDate(row.REPORT_REVIEWED_AT),
-    describeText: row.RPT_DESCRIBE,
-    diagnoseText: row.RPT_DIAGNOSE,
+    reportContent: row.REPORT_CONTENT,
+    diagnosis: row.DIAGNOSIS,
     sourceUpdatedAt: toDate(row.SOURCE_UPDATED_AT),
   };
 }
@@ -160,23 +141,17 @@ export function buildFetchReportsQuery(params: FetchReportsParams): {
   // concatenated into the SQL string itself.
   const sql = `
     SELECT TOP (@pageSize)
-      p.PAT_ID           AS PAT_ID,
-      p.INPATIENT_NO     AS INPATIENT_NO,
-      p.PATIENT_NAME     AS PATIENT_NAME,
-      p.SEX_CODE         AS SEX_CODE,
-      p.AGE              AS AGE,
+      s.ST_ACCNUM         AS SOURCE_RECORD_ID,
+      p.PATIENT_NAME      AS PATIENT_NAME,
       loc.DEPARTMENT_NAME AS DEPARTMENT_NAME,
-      s.BED_NO           AS BED_NO,
-      s.ST_ACCNUM        AS ST_ACCNUM,
-      s.EXAM_ITEM        AS EXAM_ITEM,
-      s.EXAM_TIME        AS EXAM_TIME,
-      r.REPORT_ID        AS REPORT_ID,
-      r.REPORT_STATUS    AS REPORT_STATUS,
-      r.REPORT_SAVED_AT  AS REPORT_SAVED_AT,
-      r.REPORT_SUBMITTED_AT AS REPORT_SUBMITTED_AT,
-      r.REPORT_REVIEWED_AT  AS REPORT_REVIEWED_AT,
-      rc.RPT_DESCRIBE    AS RPT_DESCRIBE,
-      rc.RPT_DIAGNOSE    AS RPT_DIAGNOSE,
+      s.BED_NO            AS BED_NO,
+      p.PATIENT_TYPE_CODE AS PATIENT_TYPE_CODE,
+      p.PATIENT_TYPE_NAME AS PATIENT_TYPE_NAME,
+      s.EXAM_ITEM         AS EXAM_ITEM,
+      s.EXAM_TIME         AS EXAM_TIME,
+      r.REPORT_ID         AS REPORT_ID,
+      rc.RPT_DESCRIBE     AS REPORT_CONTENT,
+      rc.RPT_DIAGNOSE     AS DIAGNOSIS,
       r.SOURCE_UPDATED_AT AS SOURCE_UPDATED_AT
     FROM STUDYINFO s
       INNER JOIN PATIENTINFO p ON s.PAT_ID = p.PAT_ID
@@ -211,14 +186,13 @@ function decodeKeysetCursor(cursor: string | undefined): { ts: Date; id: string 
  * implementation is NOT connected to any real database by this issue -
  * it depends on an injected `ParameterizedQueryExecutor` so the SQL
  * template, param binding, and row-mapping logic can be fully unit
- * tested without a live connection. Issue #6 (or a follow-up) wires a
- * concrete executor (e.g. `mssql`) behind this interface.
+ * tested without a live connection. Issue #24 owns the real IRIS/Caché
+ * adapter rewrite.
  *
  * Access model (design intent, enforced operationally not in code):
  * the DB user configured via PACS_DB_* env vars must be a dedicated
- * read-only account with SELECT-only grants on PATIENTINFO, STUDYINFO,
- * REPORTINFO, REPORTCONTENT, LOC (and STUDYSTATUS if separate from
- * REPORTINFO.REPORT_STATUS) - see docs/pacs-ris-adapter.md.
+ * read-only account with SELECT-only grants on the source tables - see
+ * docs/pacs-ris-adapter.md.
  */
 @Injectable()
 export class SqlPacsRisAdapter implements PacsRisAdapter {

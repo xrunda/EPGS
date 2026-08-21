@@ -86,8 +86,18 @@ describe('matchReport', () => {
       describeText: '食管黏膜光滑，未见明显异常。',
       diagnoseText: '考虑贲门失弛缓症；建议随访息肉。',
       rules: [
-        buildRule({ ruleId: 'rule-red', keyword: '贲门失弛缓症', level: 'RED', matchField: 'IMPRESSION' }),
-        buildRule({ ruleId: 'rule-green', keyword: '息肉', level: 'GREEN', matchField: 'IMPRESSION' }),
+        buildRule({
+          ruleId: 'rule-red',
+          keyword: '贲门失弛缓症',
+          level: 'RED',
+          matchField: 'IMPRESSION',
+        }),
+        buildRule({
+          ruleId: 'rule-green',
+          keyword: '息肉',
+          level: 'GREEN',
+          matchField: 'IMPRESSION',
+        }),
       ],
     });
 
@@ -123,7 +133,9 @@ describe('matchReport', () => {
     const input = buildInput({
       describeText: '',
       diagnoseText: null,
-      rules: [buildRule({ ruleId: 'rule-1', keyword: '肿物', level: 'RED', matchField: 'REPORT_TEXT' })],
+      rules: [
+        buildRule({ ruleId: 'rule-1', keyword: '肿物', level: 'RED', matchField: 'REPORT_TEXT' }),
+      ],
     });
     const result = matchReport(input);
     expect(result.level).toBe('UNCLASSIFIED');
@@ -141,7 +153,13 @@ describe('matchReport', () => {
     const input = buildInput({
       diagnoseText: '考虑贲门失弛缓症',
       rules: [
-        buildRule({ ruleId: 'rule-1', keyword: '贲门失弛缓症', level: 'RED', matchField: 'IMPRESSION', enabled: false }),
+        buildRule({
+          ruleId: 'rule-1',
+          keyword: '贲门失弛缓症',
+          level: 'RED',
+          matchField: 'IMPRESSION',
+          enabled: false,
+        }),
       ],
     });
     const result = matchReport(input);
@@ -157,7 +175,14 @@ describe('matchReport', () => {
     const text = '诊断：贲门失弛缓症（考虑）。';
     const input = buildInput({
       diagnoseText: text,
-      rules: [buildRule({ ruleId: 'rule-1', keyword: '贲门失弛缓症', level: 'RED', matchField: 'IMPRESSION' })],
+      rules: [
+        buildRule({
+          ruleId: 'rule-1',
+          keyword: '贲门失弛缓症',
+          level: 'RED',
+          matchField: 'IMPRESSION',
+        }),
+      ],
     });
     const result = matchReport(input);
     expect(result.level).toBe('RED');
@@ -169,7 +194,15 @@ describe('matchReport', () => {
   it('matches a half-width-only keyword when source text uses full-width punctuation, via EXACT boundary mode', () => {
     const input = buildInput({
       diagnoseText: '胃溃疡（Ａ级），建议随访',
-      rules: [buildRule({ ruleId: 'rule-1', keyword: '胃溃疡', level: 'YELLOW', matchField: 'IMPRESSION', matchMode: 'EXACT' })],
+      rules: [
+        buildRule({
+          ruleId: 'rule-1',
+          keyword: '胃溃疡',
+          level: 'YELLOW',
+          matchField: 'IMPRESSION',
+          matchMode: 'EXACT',
+        }),
+      ],
     });
     const result = matchReport(input);
     expect(result.level).toBe('YELLOW');
@@ -182,7 +215,9 @@ describe('matchReport', () => {
   it('merges repeated keyword occurrences in the same field into one MatchedRule with occurrenceCount', () => {
     const input = buildInput({
       diagnoseText: '息肉可见于胃窦，另见息肉一枚于胃体，考虑多发息肉。',
-      rules: [buildRule({ ruleId: 'rule-1', keyword: '息肉', level: 'GREEN', matchField: 'IMPRESSION' })],
+      rules: [
+        buildRule({ ruleId: 'rule-1', keyword: '息肉', level: 'GREEN', matchField: 'IMPRESSION' }),
+      ],
     });
     const result = matchReport(input);
     expect(result.matchedRules).toHaveLength(1);
@@ -201,7 +236,9 @@ describe('matchReport', () => {
     const input = buildInput({
       describeText: '食管可见肿物样隆起。',
       diagnoseText: '考虑贲门失弛缓症。',
-      rules: [buildRule({ ruleId: 'rule-all', keyword: '肿物', level: 'RED', matchField: 'REPORT_TEXT' })],
+      rules: [
+        buildRule({ ruleId: 'rule-all', keyword: '肿物', level: 'RED', matchField: 'REPORT_TEXT' }),
+      ],
     });
     const result = matchReport(input);
     expect(result.matchedRules).toHaveLength(1);
@@ -212,7 +249,14 @@ describe('matchReport', () => {
     const input = buildInput({
       describeText: '可见息肉一枚',
       diagnoseText: '考虑息肉',
-      rules: [buildRule({ ruleId: 'rule-cross', keyword: '息肉', level: 'GREEN', matchField: 'REPORT_TEXT' })],
+      rules: [
+        buildRule({
+          ruleId: 'rule-cross',
+          keyword: '息肉',
+          level: 'GREEN',
+          matchField: 'REPORT_TEXT',
+        }),
+      ],
     });
     const result = matchReport(input);
     expect(result.matchedRules).toHaveLength(2);
@@ -224,7 +268,14 @@ describe('matchReport', () => {
     const input = buildInput({
       describeText: '可见息肉一枚',
       diagnoseText: '未提及息肉',
-      rules: [buildRule({ ruleId: 'rule-findings-only', keyword: '息肉', level: 'GREEN', matchField: 'FINDINGS' })],
+      rules: [
+        buildRule({
+          ruleId: 'rule-findings-only',
+          keyword: '息肉',
+          level: 'GREEN',
+          matchField: 'FINDINGS',
+        }),
+      ],
     });
     const result = matchReport(input);
     expect(result.matchedRules).toHaveLength(1);
@@ -238,7 +289,14 @@ describe('matchReport', () => {
   it('matches "肿物" inside "未见肿物" under CONTAINS mode - negation is NOT detected (by design, left to human review)', () => {
     const input = buildInput({
       describeText: '胃底、胃体黏膜光滑，未见肿物。',
-      rules: [buildRule({ ruleId: 'rule-negation', keyword: '肿物', level: 'RED', matchField: 'FINDINGS' })],
+      rules: [
+        buildRule({
+          ruleId: 'rule-negation',
+          keyword: '肿物',
+          level: 'RED',
+          matchField: 'FINDINGS',
+        }),
+      ],
     });
     const result = matchReport(input);
 
@@ -261,12 +319,25 @@ describe('matchReport', () => {
     const input: MatchInput = buildInput({
       describeText: '食管可见肿物样隆起，未见明显出血。',
       diagnoseText: '考虑贲门失弛缓症，建议随访息肉。',
-      isReviewed: false,
-      reportStatus: 'PRELIMINARY',
       rules: [
-        buildRule({ ruleId: 'rule-red', keyword: '贲门失弛缓症', level: 'RED', matchField: 'IMPRESSION' }),
-        buildRule({ ruleId: 'rule-green', keyword: '息肉', level: 'GREEN', matchField: 'IMPRESSION' }),
-        buildRule({ ruleId: 'rule-all', keyword: '肿物', level: 'YELLOW', matchField: 'REPORT_TEXT' }),
+        buildRule({
+          ruleId: 'rule-red',
+          keyword: '贲门失弛缓症',
+          level: 'RED',
+          matchField: 'IMPRESSION',
+        }),
+        buildRule({
+          ruleId: 'rule-green',
+          keyword: '息肉',
+          level: 'GREEN',
+          matchField: 'IMPRESSION',
+        }),
+        buildRule({
+          ruleId: 'rule-all',
+          keyword: '肿物',
+          level: 'YELLOW',
+          matchField: 'REPORT_TEXT',
+        }),
       ],
     });
 
@@ -282,7 +353,9 @@ describe('matchReport', () => {
   });
 
   it('does not mutate the rules array or any rule object passed in', () => {
-    const rules = [buildRule({ ruleId: 'rule-1', keyword: '息肉', level: 'GREEN', matchField: 'IMPRESSION' })];
+    const rules = [
+      buildRule({ ruleId: 'rule-1', keyword: '息肉', level: 'GREEN', matchField: 'IMPRESSION' }),
+    ];
     const rulesJson = JSON.stringify(rules);
     const input = buildInput({ diagnoseText: '息肉息肉息肉', rules });
     matchReport(input);
@@ -290,34 +363,25 @@ describe('matchReport', () => {
   });
 
   // -------------------------------------------------------------------
-  // Disclaimer / isReviewed passthrough.
+  // Disclaimer (constant since issue #26 - no review status is carried).
   // -------------------------------------------------------------------
-  it('attaches a monitoring-only disclaimer reflecting isReviewed=false', () => {
+  it('always attaches the fixed monitoring-only disclaimer', () => {
     const input = buildInput({
       diagnoseText: '考虑贲门失弛缓症',
-      isReviewed: false,
-      reportStatus: 'PRELIMINARY',
-      rules: [buildRule({ ruleId: 'rule-1', keyword: '贲门失弛缓症', level: 'RED', matchField: 'IMPRESSION' })],
+      rules: [
+        buildRule({
+          ruleId: 'rule-1',
+          keyword: '贲门失弛缓症',
+          level: 'RED',
+          matchField: 'IMPRESSION',
+        }),
+      ],
     });
     const result = matchReport(input);
     expect(result.disclaimer).toEqual({
       monitoringOnly: true,
-      isReviewed: false,
-      reportStatus: 'PRELIMINARY',
       message: '仅用于监测，不作为正式诊断',
     });
-  });
-
-  it('attaches the same disclaimer message even when isReviewed=true (level is attention-tier, not diagnosis)', () => {
-    const input = buildInput({
-      diagnoseText: '考虑贲门失弛缓症',
-      isReviewed: true,
-      rules: [buildRule({ ruleId: 'rule-1', keyword: '贲门失弛缓症', level: 'RED', matchField: 'IMPRESSION' })],
-    });
-    const result = matchReport(input);
-    expect(result.disclaimer.monitoringOnly).toBe(true);
-    expect(result.disclaimer.isReviewed).toBe(true);
-    expect(result.disclaimer.message).toBe('仅用于监测，不作为正式诊断');
   });
 
   // -------------------------------------------------------------------
@@ -326,7 +390,16 @@ describe('matchReport', () => {
   it('supports REGEX matchMode', () => {
     const input = buildInput({
       diagnoseText: '病灶大小约2.5cm，考虑CA可能',
-      rules: [buildRule({ ruleId: 'rule-regex', keyword: 'CA|癌', level: 'RED', matchField: 'IMPRESSION', matchMode: 'REGEX', caseSensitive: true })],
+      rules: [
+        buildRule({
+          ruleId: 'rule-regex',
+          keyword: 'CA|癌',
+          level: 'RED',
+          matchField: 'IMPRESSION',
+          matchMode: 'REGEX',
+          caseSensitive: true,
+        }),
+      ],
     });
     const result = matchReport(input);
     expect(result.level).toBe('RED');
@@ -336,7 +409,15 @@ describe('matchReport', () => {
   it('treats a malformed REGEX rule as no-match rather than throwing', () => {
     const input = buildInput({
       diagnoseText: '考虑贲门失弛缓症',
-      rules: [buildRule({ ruleId: 'rule-bad-regex', keyword: '(', level: 'RED', matchField: 'IMPRESSION', matchMode: 'REGEX' })],
+      rules: [
+        buildRule({
+          ruleId: 'rule-bad-regex',
+          keyword: '(',
+          level: 'RED',
+          matchField: 'IMPRESSION',
+          matchMode: 'REGEX',
+        }),
+      ],
     });
     expect(() => matchReport(input)).not.toThrow();
     const result = matchReport(input);

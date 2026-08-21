@@ -5,7 +5,6 @@ import { FetchReportsResult, PacsReportDto } from '@epgs/shared-types';
 import { PacsRisAdapter } from '../pacs-adapter/pacs-ris-adapter.interface';
 import { resolveCursor, encodeCursor, SYNC_JOB_NAME } from './sync-cursor';
 import { withRetry } from './retry';
-import { mapToRecordReportStatus, isReviewed } from './report-status-mapping';
 import { formatShanghai } from './time-format';
 
 export interface SyncRunnerOptions {
@@ -43,7 +42,7 @@ function isRetryableBatchError(err: unknown): boolean {
  * This is a defense-in-depth measure, not the primary safety mechanism:
  * the primary mechanism is that callers of this function must only ever
  * pass non-patient-data strings (error class names, HTTP status/codes,
- * reportId/studyAccessionNo, adapter error messages - all of which are
+ * reportId/sourceRecordId, adapter error messages - all of which are
  * source identifiers, not clinical content per docs/data-dictionary.md).
  * As a second layer, this function also truncates length so a
  * pathological error message cannot bloat the log column.
@@ -58,7 +57,7 @@ function summarize(message: string, maxLen = 500): string {
  * adapter -> match + upsert each report -> finalize SyncJobLog.
  *
  * Idempotency: every MonitorRecord write is a Prisma upsert on the
- * natural key (studyAccessionNo, reportId, reportVersion) - see
+ * natural key (sourceRecordId, reportId, reportVersion) - see
  * schema.prisma. MonitorMatch rows are only (re)created when the
  * report's content actually changed (detected via sourceUpdatedAt
  * moving forward for the same natural key) - see upsertReport below.
@@ -149,14 +148,16 @@ export async function runSync(
         } catch (err) {
           failureCount += 1;
           // Only non-patient-data identifiers in the summary: reportId /
-          // studyAccessionNo are source keys, not clinical content or
+          // sourceRecordId are source keys, not clinical content or
           // patient names (see docs/data-dictionary.md sensitivity table).
           const message = err instanceof Error ? err.message : 'unknown error';
           errorSummaries.push(
-            summarize(`reportId=${item.reportId} accession=${item.studyAccessionNo}: ${message}`),
+            summarize(
+              `reportId=${item.reportId} sourceRecordId=${item.sourceRecordId}: ${message}`,
+            ),
           );
           logger.warn(
-            `sync run ${jobLog.id}: failed to process reportId=${item.reportId} accession=${item.studyAccessionNo}: ${message}`,
+            `sync run ${jobLog.id}: failed to process reportId=${item.reportId} sourceRecordId=${item.sourceRecordId}: ${message}`,
           );
         }
       }
@@ -178,7 +179,10 @@ export async function runSync(
         successCount,
         failureCount,
         cursorEnd,
-        errorSummary: errorSummaries.length > 0 ? summarize(errorSummaries.slice(0, 20).join(' | '), 4000) : null,
+        errorSummary:
+          errorSummaries.length > 0
+            ? summarize(errorSummaries.slice(0, 20).join(' | '), 4000)
+            : null,
         finishedAt: new Date(),
       },
     });
@@ -187,14 +191,24 @@ export async function runSync(
       `sync run ${jobLog.id} finished status=${status} read=${readCount} success=${successCount} failure=${failureCount}`,
     );
 
-    return { jobLogId: jobLog.id, status, readCount, successCount, failureCount, windowStart: since, windowEnd, cursorEnd };
+    return {
+      jobLogId: jobLog.id,
+      status,
+      readCount,
+      successCount,
+      failureCount,
+      windowStart: since,
+      windowEnd,
+      cursorEnd,
+    };
   } catch (err) {
     // Whole-batch failure (adapter exhausted retries, or a non-retryable
     // adapter error like auth). Commit only up through the last fully
     // processed page's high-water mark - NEVER windowEnd - so the next
     // run's `since` (via resolveCursor) does not skip unprocessed data.
     const message = err instanceof Error ? err.message : 'unknown error';
-    const cursorEnd = committedCursor.getTime() > since.getTime() ? encodeCursor(committedCursor) : null;
+    const cursorEnd =
+      committedCursor.getTime() > since.getTime() ? encodeCursor(committedCursor) : null;
 
     await prisma.syncJobLog.update({
       where: { id: jobLog.id },
@@ -226,17 +240,15 @@ export async function runSync(
 
 async function loadEnabledRules(prisma: PrismaClient): Promise<RuleSnapshot[]> {
   const rows = await prisma.monitorRule.findMany({ where: { isEnabled: true } });
-  return rows.map(
-    (r): RuleSnapshot => ({
-      ruleId: r.id,
-      ruleVersion: r.version,
-      keyword: r.keyword,
-      level: r.level,
-      matchField: r.matchField,
-      matchMode: r.matchMode,
-      enabled: r.isEnabled,
-    }),
-  );
+  return rows.map((r): RuleSnapshot => ({
+    ruleId: r.id,
+    ruleVersion: r.version,
+    keyword: r.keyword,
+    level: r.level,
+    matchField: r.matchField,
+    matchMode: r.matchMode,
+    enabled: r.isEnabled,
+  }));
 }
 
 /**
@@ -277,7 +289,7 @@ async function upsertReportWithConcurrencyRetry(
  *
  * "Only if new/changed" is enforced by comparing the incoming
  * `sourceUpdatedAt` against the existing row's `sourceUpdatedAt` for the
- * SAME (studyAccessionNo, reportId, reportVersion) tuple:
+ * SAME (sourceRecordId, reportId, reportVersion) tuple:
  * - No existing row -> new MonitorRecord + fresh match run (first sync
  *   of a brand-new report).
  * - Existing row with an EARLIER OR EQUAL sourceUpdatedAt -> this is a
@@ -304,43 +316,49 @@ async function upsertReportWithConcurrencyRetry(
  * the same version concurrently by a second worker (see the
  * concurrent-workers test).
  */
-async function upsertReport(prisma: PrismaClient, item: PacsReportDto, rules: RuleSnapshot[]): Promise<void> {
+async function upsertReport(
+  prisma: PrismaClient,
+  item: PacsReportDto,
+  rules: RuleSnapshot[],
+): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const reportVersion = resolveReportVersion(item);
-    const reportStatus = mapToRecordReportStatus(item.reportStatus);
 
     const existing = await tx.monitorRecord.findUnique({
       where: {
         uq_monitor_record_source_version: {
-          studyAccessionNo: item.studyAccessionNo,
+          sourceRecordId: item.sourceRecordId,
           reportId: item.reportId,
           reportVersion,
         },
       },
     });
 
-    const alreadyUpToDate = existing != null && existing.sourceUpdatedAt.getTime() >= item.sourceUpdatedAt.getTime();
+    const alreadyUpToDate =
+      existing != null && existing.sourceUpdatedAt.getTime() >= item.sourceUpdatedAt.getTime();
 
     const record = await tx.monitorRecord.upsert({
       where: {
         uq_monitor_record_source_version: {
-          studyAccessionNo: item.studyAccessionNo,
+          sourceRecordId: item.sourceRecordId,
           reportId: item.reportId,
           reportVersion,
         },
       },
       create: {
-        studyAccessionNo: item.studyAccessionNo,
+        sourceRecordId: item.sourceRecordId,
         reportId: item.reportId,
         reportVersion,
         sourceUpdatedAt: item.sourceUpdatedAt,
         patientName: item.patientName || null,
-        patientIdMasked: maskPatientId(item.patientId),
-        inpatientNo: item.inpatientNo,
         department: item.department,
-        studyDescription: item.examItem,
-        studyTime: item.examTime,
-        reportStatus,
+        bedNo: item.bedNo,
+        patientTypeCode: item.patientTypeCode,
+        patientTypeName: item.patientTypeName,
+        examItem: item.examItem,
+        examTime: item.examTime,
+        reportContent: item.reportContent,
+        diagnosis: item.diagnosis,
         // currentLevel/firstMatchedAt/lastMatchedAt are set below, after
         // matching - defaults here are just the schema's UNCLASSIFIED/
         // null starting point for a brand-new row.
@@ -352,22 +370,26 @@ async function upsertReport(prisma: PrismaClient, item: PacsReportDto, rules: Ru
             // no content change), but do not touch currentLevel/
             // firstMatchedAt/lastMatchedAt.
             patientName: item.patientName || null,
-            patientIdMasked: maskPatientId(item.patientId),
-            inpatientNo: item.inpatientNo,
             department: item.department,
-            studyDescription: item.examItem,
-            studyTime: item.examTime,
-            reportStatus,
+            bedNo: item.bedNo,
+            patientTypeCode: item.patientTypeCode,
+            patientTypeName: item.patientTypeName,
+            examItem: item.examItem,
+            examTime: item.examTime,
+            reportContent: item.reportContent,
+            diagnosis: item.diagnosis,
           }
         : {
             sourceUpdatedAt: item.sourceUpdatedAt,
             patientName: item.patientName || null,
-            patientIdMasked: maskPatientId(item.patientId),
-            inpatientNo: item.inpatientNo,
             department: item.department,
-            studyDescription: item.examItem,
-            studyTime: item.examTime,
-            reportStatus,
+            bedNo: item.bedNo,
+            patientTypeCode: item.patientTypeCode,
+            patientTypeName: item.patientTypeName,
+            examItem: item.examItem,
+            examTime: item.examTime,
+            reportContent: item.reportContent,
+            diagnosis: item.diagnosis,
           },
     });
 
@@ -378,9 +400,8 @@ async function upsertReport(prisma: PrismaClient, item: PacsReportDto, rules: Ru
     const matchResult = matchReport({
       reportId: item.reportId,
       reportVersion,
-      describeText: item.describeText,
-      diagnoseText: item.diagnoseText,
-      isReviewed: isReviewed(item.reportStatus),
+      describeText: item.reportContent,
+      diagnoseText: item.diagnosis,
       rules,
     });
 
@@ -416,7 +437,10 @@ async function upsertReport(prisma: PrismaClient, item: PacsReportDto, rules: Ru
       where: { id: record.id },
       data: {
         currentLevel: matchResult.level,
-        firstMatchedAt: matchResult.matchedRules.length > 0 ? (record.firstMatchedAt ?? matchedAtOrNow()) : record.firstMatchedAt,
+        firstMatchedAt:
+          matchResult.matchedRules.length > 0
+            ? (record.firstMatchedAt ?? matchedAtOrNow())
+            : record.firstMatchedAt,
         lastMatchedAt: matchResult.matchedRules.length > 0 ? new Date() : record.lastMatchedAt,
       },
     });
@@ -430,16 +454,4 @@ function matchedAtOrNow(): Date {
 /** MonitorRecord.reportVersion defaults to 1 - PacsReportDto has no explicit version field (see issue #2's DTO), so this sync job treats each distinct reportId as its own version-1 record. A future source-provided version signal, if #20 adds one, should replace this. */
 function resolveReportVersion(_item: PacsReportDto): number {
   return 1;
-}
-
-/**
- * Minimal, LOSSY masking for MonitorRecord.patientIdMasked: keeps only
- * the last 4 characters. This is a placeholder policy - the actual
- * masking rule needs sign-off per docs/data-dictionary.md's "待确认事项
- * #2: patientIdMasked 的脱敏规则". Documented here rather than silently
- * assumed.
- */
-function maskPatientId(patientId: string): string {
-  if (patientId.length <= 4) return '*'.repeat(patientId.length);
-  return `${'*'.repeat(patientId.length - 4)}${patientId.slice(-4)}`;
 }

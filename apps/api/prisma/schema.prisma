@@ -1,13 +1,19 @@
 // EPGS Prisma schema.
 //
-// Monitoring business data model for issue #3. Decoupled from PACS/RIS:
-// this schema only stores what EPGS itself needs to keep monitoring
-// results alive after the browser closes (rules, matches, current
-// highest level, sync job bookkeeping, and an append-only disposition
-// timeline). It does NOT store or duplicate PACS/RIS image data, and it
-// does NOT implement the keyword-matching algorithm (issue #5) or any
-// HTTP API (issue #4/#7/#8) - those consume this schema via Prisma
-// Client in later issues.
+// Monitoring business data model for issue #3, converged to a READ-ONLY
+// DISPLAY model by issue #26. Decoupled from PACS/RIS: this schema only
+// stores what EPGS itself needs to keep monitoring results displayable
+// after the browser closes (rules, matches, current highest level, the
+// read-only patient/study snapshot, and sync job bookkeeping). It does
+// NOT store or duplicate PACS/RIS image data, and it does NOT implement
+// the keyword-matching algorithm (issue #5) or any HTTP API
+// (issue #4/#7/#8) - those consume this schema via Prisma Client in
+// later issues.
+//
+// Per issue #26 there is NO closed-loop reporting/disposition model here:
+// no reporting / acknowledgment / handling / false-positive actions, no
+// status columns, no monitor_action table. Red/yellow/green levels are
+// display markers only - they affect color/sort/filter, nothing else.
 //
 // Field-level meaning, sensitivity classification and retention guidance
 // live in /docs/data-dictionary.md - read that alongside this file.
@@ -35,17 +41,6 @@ enum MonitorLevel {
   UNCLASSIFIED
 }
 
-/// Lifecycle status of the closed-loop disposition process for a
-/// monitor_record. Derived (denormalized) from the latest monitor_action
-/// in the append-only timeline; see monitor_record.handlingStatus doc.
-enum HandlingStatus {
-  PENDING
-  REPORTED
-  ACKNOWLEDGED
-  RESOLVED
-  FALSE_POSITIVE
-}
-
 /// Which field the keyword match (or rule) applies to. Kept intentionally
 /// generic/coarse - issue #5 owns the actual matching algorithm and may
 /// interpret these values more granularly at runtime.
@@ -62,24 +57,6 @@ enum MatchMode {
   EXACT
   CONTAINS
   REGEX
-}
-
-/// Upstream report review/finalization status snapshotted from PACS/RIS at
-/// sync time (not EPGS's own disposition status - see HandlingStatus).
-enum ReportStatus {
-  PRELIMINARY
-  FINAL
-  AMENDED
-  UNKNOWN
-}
-
-/// Action type recorded in the append-only monitor_action timeline.
-enum ActionType {
-  REPORTED
-  ACKNOWLEDGED
-  RESOLVED
-  MARKED_FALSE_POSITIVE
-  REOPENED
 }
 
 /// Outcome status of one sync_job_log run.
@@ -163,69 +140,82 @@ model MonitorRule {
 // ---------------------------------------------------------------------------
 
 /// One monitored study/report from the source PACS/RIS system, deduplicated
-/// on the source's natural key. Holds the CURRENT aggregate state (highest
-/// level reached, handling status) while full match evidence lives in
-/// monitor_match and full disposition history lives in monitor_action.
+/// on the source's stable record ID. READ-ONLY DISPLAY row (issue #26):
+/// it holds the snapshotted source fields, the current attention level and
+/// hit timing, while full match evidence lives in monitor_match. There is
+/// NO disposition/status lifecycle - level only affects display
+/// color/sort/filter.
 ///
-/// Idempotency: re-syncing the same study/report version must not create a
-/// duplicate row - see the @@unique constraint below, which sync jobs
-/// (issue #6/#8) must upsert against.
+/// Idempotency: re-syncing the same source record/report/version must not
+/// create a duplicate row - see the @@unique constraint below, which sync
+/// jobs (issue #6/#8) must upsert against. reportId/reportVersion/
+/// sourceUpdatedAt are internal sync bookkeeping, not displayed.
 model MonitorRecord {
   id String @id @default(uuid()) @db.Uuid
 
   // --- Source identity (natural key from PACS/RIS, read-only adapter) ----
 
-  /// Source system's study accession number. Primary half of the natural
-  /// key used for idempotent upserts from issue #2's read-only adapter.
-  studyAccessionNo String @map("study_accession_no") @db.VarChar(64)
+  /// Source system's stable record ID (来源稳定 ID). Primary half of the
+  /// natural key used for idempotent upserts from the read-only adapter.
+  sourceRecordId String @map("source_record_id") @db.VarChar(64)
 
   /// Source system's report identifier. Second half of the natural key -
   /// a study can have zero, one, or (after amendment) multiple reports
-  /// over time, each producing its own logical monitor_record.
+  /// over time, each producing its own logical monitor_record. Internal
+  /// sync bookkeeping (not displayed).
   reportId String @map("report_id") @db.VarChar(64)
 
   /// Report version/revision number from the source system (e.g.
   /// incremented on amendment). Used together with sourceUpdatedAt to
   /// detect whether a re-synced report actually changed and needs
-  /// re-matching, without creating a duplicate monitor_record.
+  /// re-matching, without creating a duplicate monitor_record. Internal
+  /// sync bookkeeping (not displayed).
   reportVersion Int @default(1) @map("report_version")
 
   /// Last-modified timestamp of the report as reported by the source
   /// system (not EPGS's own updatedAt). Used for idempotency / staleness
-  /// checks alongside reportVersion.
+  /// checks alongside reportVersion. Internal sync bookkeeping (not
+  /// displayed).
   sourceUpdatedAt DateTime @map("source_updated_at") @db.Timestamptz(6)
 
-  // --- Patient / study snapshot (minimized, display + audit only) -------
+  // --- Patient / study snapshot (read-only display, source of truth = RIS)
   // Snapshotted (not FK'd) because PACS/RIS is the system of record and
-  // EPGS must keep working even if the source record later changes or the
-  // patient is not resolvable. See data dictionary for sensitivity levels
-  // and the "minimum necessary for display + audit" rule.
+  // EPGS must keep displaying results even if the source record later
+  // changes or the patient is not resolvable. See data dictionary for
+  // sensitivity levels and the "minimum necessary for display" rule.
 
   /// Patient display name snapshot. HIGH sensitivity - see data dictionary.
   patientName String? @map("patient_name") @db.VarChar(100)
-
-  /// Masked/partial patient identifier for display (e.g. last 4 of ID),
-  /// never the full national ID. HIGH sensitivity.
-  patientIdMasked String? @map("patient_id_masked") @db.VarChar(50)
-
-  /// Inpatient/outpatient number snapshot. HIGH sensitivity.
-  inpatientNo String? @map("inpatient_no") @db.VarChar(64)
 
   /// Ordering/performing department at time of sync. Used for workbench
   /// filtering.
   department String? @db.VarChar(100)
 
-  /// Study modality/description snapshot (e.g. "胃镜", "肠镜"), for display.
-  studyDescription String? @map("study_description") @db.VarChar(255)
+  /// Current bed number (PAADM_CurrentBed_DR->BED_Code). Empty for
+  /// outpatient/unknown -> display as "—".
+  bedNo String? @map("bed_no") @db.VarChar(50)
 
-  /// Timestamp the study/exam was performed, per source system.
-  studyTime DateTime? @map("study_time") @db.Timestamptz(6)
+  /// Patient type code from the source (PAADM_Type raw value, e.g. I/O).
+  patientTypeCode String? @map("patient_type_code") @db.VarChar(20)
+
+  /// Confirmed Chinese meaning of patientTypeCode (住院/门诊/…). NULL until
+  /// the hospital dictionary confirms the mapping - unknown values must not
+  /// be guessed.
+  patientTypeName String? @map("patient_type_name") @db.VarChar(50)
+
+  /// Exam/study item snapshot (e.g. "电子胃镜检查"), for display and filter.
+  examItem String? @map("exam_item") @db.VarChar(255)
+
+  /// Date/time the exam was performed, per source system.
+  examTime DateTime? @map("exam_time") @db.Timestamptz(6)
 
   // --- Aggregate monitoring state (denormalized for fast workbench reads) -
 
   /// Highest MonitorLevel across all current monitor_match rows for this
   /// record. Denormalized/maintained by the matching engine (issue #5) so
-  /// the workbench can filter/sort without joining monitor_match.
+  /// the workbench can filter/sort without joining monitor_match. A display
+  /// marker only - affects color/sort/filter, no business action (issue
+  /// #26).
   currentLevel MonitorLevel @default(UNCLASSIFIED) @map("current_level")
 
   /// First time any rule matched this record.
@@ -235,40 +225,28 @@ model MonitorRecord {
   /// after a report amendment).
   lastMatchedAt DateTime? @map("last_matched_at") @db.Timestamptz(6)
 
-  /// Upstream report review/finalization status snapshot.
-  reportStatus ReportStatus @default(UNKNOWN) @map("report_status")
+  // --- Report content snapshot (read-only display) ------------------------
 
-  /// EPGS's own closed-loop disposition status. Denormalized from the
-  /// latest monitor_action row for this record - see monitor_action for
-  /// the authoritative append-only history this is derived from.
-  handlingStatus HandlingStatus @default(PENDING) @map("handling_status")
+  /// Full report findings/body text (RISR_ExamDesc 原文). Read-only display
+  /// snapshot; empty -> show placeholder, never hide the row.
+  reportContent String? @map("report_content") @db.Text
 
-  /// Optional cached report body, gated by the retention/encryption policy
-  /// described in the data dictionary. NULL unless caching is explicitly
-  /// enabled per that policy; not populated or read by this issue.
-  reportTextCache String? @map("report_text_cache") @db.Text
-
-  /// Expiry timestamp for reportTextCache, required whenever the cache is
-  /// populated (enforced at the application layer, not the DB layer, since
-  /// Postgres cannot conditionally-require a column based on another).
-  reportTextCacheExpiresAt DateTime? @map("report_text_cache_expires_at") @db.Timestamptz(6)
+  /// Diagnosis text (RISR_DiagDesc 原文). Read-only display snapshot.
+  diagnosis String? @db.Text
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   matches MonitorMatch[]
-  actions MonitorAction[]
 
-  /// Idempotency guard: the same source study/report/version must never
+  /// Idempotency guard: the same source record/report/version must never
   /// produce two rows. Sync jobs upsert on this key.
-  @@unique([studyAccessionNo, reportId, reportVersion], name: "uq_monitor_record_source_version")
+  @@unique([sourceRecordId, reportId, reportVersion], name: "uq_monitor_record_source_version")
   @@index([currentLevel])
   @@index([department])
-  @@index([reportStatus])
-  @@index([handlingStatus])
-  @@index([studyTime])
+  @@index([examTime])
   @@index([lastMatchedAt])
-  @@index([studyAccessionNo, reportId])
+  @@index([sourceRecordId, reportId])
   @@map("monitor_record")
 }
 
@@ -324,51 +302,6 @@ model MonitorMatch {
   @@index([level])
   @@index([matchedAt])
   @@map("monitor_match")
-}
-
-// ---------------------------------------------------------------------------
-// monitor_action - append-only closed-loop disposition timeline
-// ---------------------------------------------------------------------------
-
-/// One step in the closed-loop disposition timeline for a MonitorRecord:
-/// reported / acknowledged / resolved / marked false positive / reopened.
-///
-/// APPEND-ONLY BY CONTRACT: rows in this table must only ever be INSERTed.
-/// No application code (this issue or any future issue, e.g. #8's API)
-/// may UPDATE or DELETE a monitor_action row. MonitorRecord.handlingStatus
-/// is a denormalized projection that MUST be recomputed by taking the
-/// latest monitor_action row for that record - never by mutating history.
-/// This is a data-dictionary-documented convention; Prisma/Postgres do not
-/// mechanically forbid UPDATE/DELETE (no DB user/trigger lockdown is set
-/// up by this issue), so this comment plus /docs/data-dictionary.md is the
-/// authoritative constraint for issue #8 and any other consumer.
-model MonitorAction {
-  id String @id @default(uuid()) @db.Uuid
-
-  monitorRecordId String        @map("monitor_record_id") @db.Uuid
-  record          MonitorRecord @relation(fields: [monitorRecordId], references: [id], onDelete: Cascade)
-
-  actionType ActionType @map("action_type")
-
-  /// Operator account (external identity) who performed the action, e.g.
-  /// who reported it or who acknowledged it. Opaque string, see MonitorRule
-  /// createdBy/updatedBy for the same convention.
-  actorId String @map("actor_id") @db.VarChar(100)
-
-  /// For REPORTED actions: the recipient (department contact, clinician,
-  /// or role) the finding was reported to. NULL for action types where a
-  /// recipient does not apply.
-  recipientId String? @map("recipient_id") @db.VarChar(100)
-
-  /// Free-text note (e.g. reason for false-positive, resolution summary).
-  note String? @db.Text
-
-  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
-
-  @@index([monitorRecordId, occurredAt])
-  @@index([actionType])
-  @@index([occurredAt])
-  @@map("monitor_action")
 }
 
 // ---------------------------------------------------------------------------

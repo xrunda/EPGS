@@ -93,32 +93,22 @@ export interface RuleSnapshot {
   enabled: boolean;
 }
 
-/** Upstream report review/finalization status, mirrors Prisma enum `ReportStatus`. Optional/loose here since this package must not require the full Prisma enum. */
-export type ReportStatus = 'PRELIMINARY' | 'FINAL' | 'AMENDED' | 'UNKNOWN';
-
 /**
  * Input to `matchReport`. Pure data - no live report fetch, no DB handle.
+ *
+ * Per issue #26 the engine no longer takes any review/finalization status
+ * (isReviewed/reportStatus were removed with the closed-loop model) - the
+ * report body fields and rules are all it needs.
  */
 export interface MatchInput {
   /** Source report identifier (PacsReportDto.reportId / MonitorRecord.reportId), for traceability in results/logs. Not used for matching logic. */
   reportId: string;
   /** Report version at the time of matching (MonitorRecord.reportVersion / MonitorMatch.reportVersion). */
   reportVersion: number;
-  /** Exam findings text ("检查所见"), verbatim - equivalent to PacsReportDto.describeText. Null/empty is valid input (no findings text). */
+  /** Exam findings text ("检查所见"), verbatim - equivalent to PacsReportDto.reportContent. Null/empty is valid input (no findings text). */
   describeText: string | null;
-  /** Diagnostic impression text ("诊断意见"), verbatim - equivalent to PacsReportDto.diagnoseText. Null/empty is valid input. */
+  /** Diagnostic impression text ("诊断意见"), verbatim - equivalent to PacsReportDto.diagnosis. Null/empty is valid input. */
   diagnoseText: string | null;
-  /**
-   * Whether the *report itself* has completed human review upstream
-   * (e.g. PacsReportStatus FINAL_REVIEWED / REVIEWED). The engine does not
-   * infer this - the caller passes it through, and the engine only
-   * attaches a disclaimer flag to the output when it is false. This is
-   * NOT about whether the *match* has been triaged by an operator
-   * (that's MonitorAction/HandlingStatus, entirely out of scope here).
-   */
-  isReviewed: boolean;
-  /** Optional richer status snapshot, carried through to the result's disclaimer for display context. Purely informational - matching logic only branches on `isReviewed`. */
-  reportStatus?: ReportStatus;
   /** The enabled rule snapshot(s) to evaluate against this report. Order does not affect the result (matchReport sorts/aggregates deterministically). */
   rules: RuleSnapshot[];
 }
@@ -161,16 +151,12 @@ export interface MatchedRule {
 /**
  * Advisory flag attached to every MatchResult so upstream UI can render
  * "仅用于监测，不作为正式诊断" (monitoring-only, not a formal diagnosis)
- * without re-deriving it. Per issue #5 acceptance criteria this is
- * caller-driven (via MatchInput.isReviewed), never inferred by the engine.
+ * without re-deriving it. Per issue #26 this is a fixed constant on every
+ * result - the engine no longer carries any review/disposition status.
  */
 export interface MatchDisclaimer {
-  /** Always true - every result produced by this engine carries the monitoring-only disclaimer, regardless of review status. Levels are management attention tiers, never a clinical severity or diagnosis. */
+  /** Always true - every result produced by this engine carries the monitoring-only disclaimer. Levels are management attention tiers, never a clinical severity or diagnosis. */
   monitoringOnly: true;
-  /** Echoes MatchInput.isReviewed. */
-  isReviewed: boolean;
-  /** Echoes MatchInput.reportStatus, if provided. */
-  reportStatus?: ReportStatus;
   /** Human-readable disclaimer text (Chinese, matching the issue's required wording), for direct display without the UI needing its own copy. */
   message: string;
 }

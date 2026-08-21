@@ -167,18 +167,28 @@ ESLint + Prettier are configured at the root and extended by each app.
 
 ## Database / Prisma
 
-`apps/api/prisma/schema.prisma` defines the EPGS monitoring business schema (issue #3):
-`MonitorRule`, `MonitorRecord`, `MonitorMatch`, `MonitorAction`, `SyncJobLog` and their
-enums. This schema is decoupled from PACS/RIS — it does not duplicate imaging data and
-does not implement the keyword-matching algorithm (issue #5) or any HTTP API
-(issue #4/#7/#8). Field meaning, sensitivity classification and retention policy are
-documented in [`docs/data-dictionary.md`](docs/data-dictionary.md).
+`apps/api/prisma/schema.prisma` defines the EPGS monitoring business schema (issue #3,
+converged to read-only display data by issue #26): `MonitorRule`, `MonitorRecord`,
+`MonitorMatch`, `SyncJobLog` and their enums. The closed-loop reporting model
+(`MonitorAction`, `HandlingStatus`/`ActionType`/`ReportStatus` enums, and the
+disposition fields on `MonitorRecord`) was removed in the
+`remove_closed_loop_readonly` migration — records keep source snapshot + current level
+
+- hit evidence only. This schema is decoupled from PACS/RIS — it does not duplicate
+  imaging data and does not implement the keyword-matching algorithm (issue #5) or any
+  HTTP API (issue #4/#7/#8). Field meaning, sensitivity classification and retention
+  policy are documented in [`docs/data-dictionary.md`](docs/data-dictionary.md).
 
 The initial migration lives at
-`apps/api/prisma/migrations/20260821040339_init_monitoring_schema/migration.sql`, with
-a companion manual rollback script (`rollback.sql`) in the same directory — see that
-file's header comment for how to apply it (Prisma Migrate has no built-in "down"
-concept).
+`apps/api/prisma/migrations/20260821040339_init_monitoring_schema/migration.sql`.
+Issue #26 adds
+`apps/api/prisma/migrations/20260821073851_remove_closed_loop_readonly/migration.sql`,
+which drops the closed-loop model and converges `monitor_record` to the read-only
+field set. Both directories ship a companion manual rollback script (`rollback.sql`) —
+see each file's header comment for how to apply it (Prisma Migrate has no built-in
+"down" concept). The issue #26 migration begins with a PL/pgSQL data gate that aborts
+the upgrade unless the closed-loop tables are empty, forcing a backup + data-loss
+review before production migrations.
 
 `docker-compose.yml` provides a local Postgres for running/validating migrations:
 
@@ -253,8 +263,8 @@ container):
 2. Apply migrations to an empty database (`prisma migrate deploy`)
 3. Re-apply migrations to confirm idempotency (no pending migrations the second time)
 4. `prisma migrate diff` to assert the schema has no drift vs. the migration history
-5. `prisma/scripts/verify-constraints.ts` — idempotency, illegal-enum rejection, FK
-   RESTRICT/CASCADE behavior, append-only `monitor_action` reconstruction, and
+5. `prisma/scripts/verify-constraints.ts` — idempotency (source-key + keyword-hit
+   unique constraints), illegal-enum rejection, FK RESTRICT/CASCADE behavior, and
    workbench-filter index usage, all against real inserted rows
 6. (issue #4) `apps/api/test/rules.e2e-spec.ts` — full rules API lifecycle, duplicate/
    conflict detection, concurrent-edit (optimistic lock) scenarios, illegal enums, and

@@ -1,4 +1,3 @@
-import { PacsReportStatus } from '@epgs/shared-types';
 import { FixturePacsRisAdapter } from './fixture-pacs-ris-adapter';
 
 const WINDOW_START = new Date('2026-08-01T00:00:00.000Z');
@@ -34,8 +33,8 @@ describe('FixturePacsRisAdapter', () => {
       expect(item.sourceUpdatedAt.getTime()).toBeGreaterThanOrEqual(WINDOW_START.getTime());
       expect(item.sourceUpdatedAt.getTime()).toBeLessThan(WINDOW_END.getTime());
     }
-    // PAT-0007's record is on 2026-08-02, outside this window.
-    expect(result.items.some((i) => i.patientId === 'PAT-0007')).toBe(false);
+    // RPT-000008's record is on 2026-08-02, outside this window.
+    expect(result.items.some((i) => i.reportId === 'RPT-000008')).toBe(false);
   });
 
   it('paginates deterministically and a full walk via nextCursor covers every record exactly once', async () => {
@@ -92,63 +91,62 @@ describe('FixturePacsRisAdapter', () => {
     }
   });
 
-  it('handles a study with no inpatient number (outpatient)', async () => {
+  it('handles a study with no bed number (outpatient)', async () => {
     const result = await adapter.fetchReports({ since: WINDOW_START, pageSize: 50 });
     const outpatient = result.items.find((i) => i.reportId === 'RPT-000003');
 
     expect(outpatient).toBeDefined();
-    expect(outpatient?.inpatientNo).toBeNull();
+    expect(outpatient?.bedNo).toBeNull();
+    expect(outpatient?.patientTypeCode).toBe('O');
+    expect(outpatient?.patientTypeName).toBe('门诊');
   });
 
-  it('returns empty describe/diagnose text as-is (no coercion to null, no cleansing)', async () => {
+  it('returns empty reportContent/diagnosis as-is (no coercion to null, no cleansing)', async () => {
     const result = await adapter.fetchReports({ since: WINDOW_START, pageSize: 50 });
     const emptyReport = result.items.find((i) => i.reportId === 'RPT-000004');
 
     expect(emptyReport).toBeDefined();
-    expect(emptyReport?.describeText).toBe('');
-    expect(emptyReport?.diagnoseText).toBe('');
-    expect(emptyReport?.reportStatus).toBe(PacsReportStatus.DRAFT);
+    expect(emptyReport?.reportContent).toBe('');
+    expect(emptyReport?.diagnosis).toBe('');
   });
 
-  it('maps an unrecognized raw status to UNKNOWN and preserves the raw code', async () => {
+  it('passes an unknown patient type code through verbatim (name not guessed)', async () => {
     const result = await adapter.fetchReports({ since: WINDOW_START, pageSize: 50 });
-    const unknownStatusReport = result.items.find((i) => i.reportId === 'RPT-000005');
+    const unknownType = result.items.find((i) => i.reportId === 'RPT-000007');
 
-    expect(unknownStatusReport).toBeDefined();
-    expect(unknownStatusReport?.reportStatus).toBe(PacsReportStatus.UNKNOWN);
-    expect(unknownStatusReport?.rawStatusCode).toBe('VENDOR_CODE_99_UNDOCUMENTED');
+    expect(unknownType).toBeDefined();
+    expect(unknownType?.patientTypeCode).toBe('I');
+    expect(unknownType?.patientTypeName).toBeNull();
   });
 
-  it('surfaces multiple report versions for the same accession number as distinct items', async () => {
+  it('surfaces multiple report versions for the same source record as distinct items', async () => {
     const result = await adapter.fetchReports({ since: WINDOW_START, pageSize: 50 });
-    const sameAccession = result.items.filter((i) => i.studyAccessionNo === 'ACC-2026080100001');
+    const sameRecord = result.items.filter((i) => i.sourceRecordId === 'ACC-2026080100001');
 
-    expect(sameAccession).toHaveLength(2);
-    expect(sameAccession.map((i) => i.reportId).sort()).toEqual(['RPT-000001', 'RPT-000002']);
+    expect(sameRecord).toHaveLength(2);
+    expect(sameRecord.map((i) => i.reportId).sort()).toEqual(['RPT-000001', 'RPT-000002']);
     // Later version's content differs and is preserved verbatim, not merged.
-    const v2 = sameAccession.find((i) => i.reportId === 'RPT-000002');
-    expect(v2?.diagnoseText).toBe('慢性非萎缩性胃炎伴糜烂');
+    const v2 = sameRecord.find((i) => i.reportId === 'RPT-000002');
+    expect(v2?.diagnosis).toBe('慢性非萎缩性胃炎伴糜烂');
   });
 
-  it('passes through duplicate accession numbers across different patients without merging/dropping either', async () => {
+  it('passes through duplicate source record IDs across different patients without merging/dropping either', async () => {
     const result = await adapter.fetchReports({ since: WINDOW_START, pageSize: 50 });
-    const duplicateAccession = result.items.filter(
-      (i) => i.studyAccessionNo === 'ACC-2026080100002',
-    );
+    const duplicateRecord = result.items.filter((i) => i.sourceRecordId === 'ACC-2026080100002');
 
-    expect(duplicateAccession).toHaveLength(2);
-    const patientIds = duplicateAccession.map((i) => i.patientId).sort();
-    expect(patientIds).toEqual(['PAT-0002', 'PAT-0006']);
+    expect(duplicateRecord).toHaveLength(2);
+    const patientNames = duplicateRecord.map((i) => i.patientName).sort();
+    expect(patientNames).toEqual(['测试患者乙', '测试患者己']);
   });
 
-  it('preserves describeText/diagnoseText verbatim from the source fixture', async () => {
+  it('preserves reportContent/diagnosis verbatim from the source fixture', async () => {
     const result = await adapter.fetchReports({ since: WINDOW_START, pageSize: 50 });
     const record = result.items.find((i) => i.reportId === 'RPT-000001');
 
-    expect(record?.describeText).toBe(
+    expect(record?.reportContent).toBe(
       '食管黏膜光滑，齿状线清晰。胃底黏膜光滑，胃体黏膜光滑，未见明显异常隆起或凹陷。幽门圆形，开闭好。',
     );
-    expect(record?.diagnoseText).toBe('慢性非萎缩性胃炎');
+    expect(record?.diagnosis).toBe('慢性非萎缩性胃炎');
   });
 
   it('caps pageSize at the adapter maximum', async () => {

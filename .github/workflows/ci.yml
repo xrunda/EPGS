@@ -29,7 +29,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: '24'
           cache: pnpm
 
       - name: Install dependencies
@@ -87,7 +87,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: '24'
           cache: pnpm
 
       - name: Install dependencies
@@ -171,8 +171,14 @@ jobs:
         env:
           PGPASSWORD: epgs
 
-      - name: Clear migration history row for rolled-back migration
-        run: psql "$DATABASE_URL" -c "DELETE FROM \"_prisma_migrations\" WHERE migration_name = '20260821040339_init_monitoring_schema';"
+      # Issue #26: two migrations now exist, so clearing only migration-1's
+      # history row would leave migration-2 marked applied while its DDL was
+      # rolled back - the re-deploy below would then skip it and the drift
+      # gate would fail. Delete ALL migration history rows so the re-deploy
+      # re-applies both migrations (today this is a strict generalization:
+      # migration-1 was previously the only row).
+      - name: Clear migration history rows for rolled-back migration
+        run: psql "$DATABASE_URL" -c "DELETE FROM \"_prisma_migrations\";"
         env:
           PGPASSWORD: epgs
 

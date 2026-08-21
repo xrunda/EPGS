@@ -5,8 +5,11 @@ Traditional Chinese Medicine, Endoscopy Center).
 
 This repository currently contains the **engineering skeleton** only (issue #1). No
 medical/business logic, patient data, PACS/RIS integration, keyword matching, or real
-sync logic is implemented yet — those land in later issues (#2–#14). See
-`Doc/PRD.md` for the full product requirements.
+sync logic is implemented yet — those land in later issues (#2–#14).
+
+Product requirements and other working documents live outside this repository (`Doc/`
+is gitignored — it holds local-only PRDs, screenshots, and hospital-provided samples
+that must never reach a deployment target). Ask a maintainer for the current PRD.
 
 ## Architecture overview
 

@@ -37,16 +37,18 @@ apps/**/generated/
 # Claude Code working dir (AGENTS.md: never stage)
 .claude/
 
-# Hospital-provided mock export. Keep outside Git until its synthetic/
-# desensitized status has been reviewed; tests use the committed fixture CSV.
-# The export the hospital sent uses U+2011 (non-breaking hyphen) in the
-# filename, which an ASCII-hyphen pattern does NOT match (the U+2011 lead byte
-# differs from '-'). A single "moke*" glob covers the ASCII-hyphen variant, the
-# U+2011 variant, and the output of apps/worker's mock:convert entry alike - all
-# contain likely-real patient data and must never be staged (issue #42).
-Doc/moke*
+# Entire Doc/ directory: local-only scratch space (hospital mock exports,
+# real-SOAP-capture samples, screenshots, working notes). Hospital exports
+# in particular use U+2011 (non-breaking hyphen) in the filename, which an
+# ASCII-hyphen pattern does NOT match (the U+2011 lead byte differs from
+# '-') - a directory-level ignore sidesteps that entirely. Anything meant
+# to ship (PRD, architecture docs) belongs under docs/, not Doc/, and
+# nothing here should ever reach a deployment target (issue #42/#43: the
+# bastion host must run against the real SOAP gateway, never local mock
+# data, so this directory must not exist there at all).
+Doc/
 
 # Raw SOAP gateway captures (real patient data via curl/SoapUI against the
-# hospital's DHC/Ensemble EnsWebService) - never stage, same as Doc/moke*.
+# hospital's DHC/Ensemble EnsWebService) - never stage.
 tmp.md
 /tmp.*.md

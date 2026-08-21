@@ -1,0 +1,18 @@
+{
+  "name": "@epgs/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript types/interfaces used across apps/api, apps/worker, apps/web",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "echo \"@epgs/shared-types: no tests yet\" && exit 0",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

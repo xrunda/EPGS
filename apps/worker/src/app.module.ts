@@ -5,6 +5,7 @@ import { envValidationSchema } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { SyncModule } from './sync/sync.module';
 import { PacsAdapterModule } from './pacs-adapter/pacs-adapter.module';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { PacsAdapterModule } from './pacs-adapter/pacs-adapter.module';
         abortEarly: false,
       },
     }),
+    PrismaModule,
     HealthModule,
     SyncModule,
     PacsAdapterModule,

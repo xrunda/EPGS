@@ -96,9 +96,11 @@ jobs:
       # Rules API e2e suite below loads the full AppModule, whose
       # health.controller.ts imports @epgs/shared-types - build it first
       # so that import resolves (mirrors the root build/test/typecheck
-      # scripts' build:shared-types-first ordering).
-      - name: Build shared-types
-        run: pnpm run build:shared-types
+      # scripts' build:libs-first ordering). apps/worker's sync e2e suite
+      # (issue #6) additionally depends on @epgs/matching-engine, hence
+      # build:libs (not just build:shared-types) here.
+      - name: Build shared-types + matching-engine
+        run: pnpm run build:libs
 
       - name: Prisma validate + format check
         working-directory: apps/api
@@ -134,6 +136,20 @@ jobs:
       - name: Rules API e2e suite (real Postgres)
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/rules.e2e-spec.ts
+
+      # Issue #6: incremental sync job e2e suite against this same real
+      # Postgres instance - covers first-run full window, normal
+      # incremental sync, same-timestamp collisions, duplicate-batch
+      # idempotency, process-interruption cursor safety, late-arriving
+      # updates via the look-back window, source-unavailable retry/
+      # backoff, a single bad record not blocking the batch, and two
+      # concurrent workers not creating duplicate records. Runs before
+      # the rules e2e suite's data lingers are cleaned by its own
+      # beforeEach, and before the migration rollback below (which drops
+      # all tables and would break this suite too).
+      - name: Sync job e2e suite (real Postgres)
+        working-directory: apps/worker
+        run: pnpm exec jest --config ./test/jest-e2e.json test/sync.e2e-spec.ts
 
       # Issue #4: seed script idempotency - creates the 6 initial RED
       # keywords, then re-runs and asserts no duplicates are created.

@@ -6,6 +6,7 @@ import { HealthModule } from './health/health.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { PrismaModule } from './prisma/prisma.module';
 import { RulesModule } from './rules/rules.module';
+import { SystemModule } from './system/system.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { RulesModule } from './rules/rules.module';
     PrismaModule,
     HealthModule,
     RulesModule,
+    SystemModule,
   ],
 })
 export class AppModule implements NestModule {

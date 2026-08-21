@@ -866,7 +866,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
   itWithDb(
     'detail locates each hit to the report field it matched (report vs diagnosis)',
     async () => {
-      const r1 = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R1}`).expect(200);
+      const r1 = await agent.get(`/api/monitor/exams/${ids.R1}`).expect(200);
       const adenoca = r1.body.hits.find((h: { keyword: string }) => h.keyword === '腺癌');
       expect(adenoca).toEqual(
         expect.objectContaining({
@@ -877,7 +877,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
       );
       expect(adenoca.matchedField).toBe('REPORT_TEXT'); // → 命中在 报告内容
 
-      const r8 = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R8}`).expect(200);
+      const r8 = await agent.get(`/api/monitor/exams/${ids.R8}`).expect(200);
       const infiltrating = r8.body.hits.find((h: { keyword: string }) => h.keyword === '浸润癌');
       expect(infiltrating).toEqual(
         expect.objectContaining({
@@ -891,7 +891,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
 
   // Issue #8 test requirement: 空诊断 - report body present, diagnosis null.
   itWithDb('detail of a record with an empty diagnosis keeps the report body', async () => {
-    const res = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R2}`).expect(200);
+    const res = await agent.get(`/api/monitor/exams/${ids.R2}`).expect(200);
     expect(res.body.diagnosis).toBeNull();
     expect(res.body.reportContent).toBe('胃体见多发息肉样隆起。');
     expect(res.body.hits).toHaveLength(1);
@@ -904,8 +904,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     );
   });
 
-  // 权限/脱敏/审计 is owned by issue #13 (no auth exists yet) - documented,
-  // not tested here.
+  // 角色、科室范围、脱敏与审计由 issue #13 负责；本套件仅使用基础登录会话。
   itWithDb('detail returns 404 MONITOR_RECORD_NOT_FOUND for an unknown id', async () => {
     const res = await agent
       .get('/api/monitor/exams/00000000-0000-0000-0000-000000000000')

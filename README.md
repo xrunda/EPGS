@@ -80,13 +80,17 @@ docker-compose.yml          # Local Postgres for later issues
   `/api/monitor/summary`): filter semantics, Shanghai-day boundaries, sort contract,
   pagination, error codes, and the detail endpoint's hit evidence (rule provenance +
   matched-field location).
-- **Web workbench (issue #9)** — the frontend single-page workbench consuming the
-  monitor API: header + user-info placeholder (real identity lands in #13), toolbar
-  (last sync time from `/api/system/sync-status`, 立即刷新, 监测规则), filters,
-  five attention-level summary cards (clicking one sets the level filter),
+- **Web workbench (issues #9/#10)** — the frontend single-page workbench consuming
+  the monitor API: header + user-info placeholder (real identity lands in #13),
+  toolbar (last sync time from `/api/system/sync-status`, 立即刷新, 监测规则),
+  filters, five attention-level summary cards (clicking one sets the level filter),
   paginated exam list, and a read-only detail drawer that keeps the workbench
-  context. Department/exam-item filters are text inputs for now (no distinct-values
-  endpoint yet); level is always shown as a text label, never color-only.
+  context. The drawer highlights the hit keywords in place inside 报告内容/诊断
+  (React `<mark>` nodes — the original text is never rewritten), shows the hits'
+  field location + context snippet, and returns keyboard focus to the triggering
+  查看详情 button when it closes. Department/exam-item filters are text inputs for
+  now (no distinct-values endpoint yet); level is always shown as a text label,
+  never color-only.
 
 ## Prerequisites
 

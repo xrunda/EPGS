@@ -104,6 +104,12 @@
   color: #8aa0a3;
   font-size: 13px;
 }
+.hit-highlight {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: #ffe9a8;
+  color: inherit;
+}
 .drawer__hits {
   display: grid;
   gap: 10px;

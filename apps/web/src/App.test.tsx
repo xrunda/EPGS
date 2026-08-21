@@ -145,8 +145,12 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看详情' }));
 
     const dialog = await screen.findByRole('dialog', { name: '检查详情' });
-    expect(within(dialog).getByText('胃体见多发隆起型病变，考虑腺癌。')).toBeInTheDocument();
-    expect(within(dialog).getByText('胃体腺癌。')).toBeInTheDocument();
+    // Highlighted keywords split the report into <mark> nodes, so compare the
+    // full paragraph text instead of a single text node.
+    const paragraphs = dialog.querySelectorAll('p.drawer__text');
+    expect(paragraphs[0].textContent).toBe('胃体见多发隆起型病变，考虑腺癌。');
+    expect(paragraphs[1].textContent).toBe('胃体腺癌。');
+    expect(within(dialog).getAllByText('腺癌')).toHaveLength(3);
     // The workbench stays mounted underneath the drawer: the row is still in
     // the list (one match) and the patient also appears in the drawer summary.
     expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();

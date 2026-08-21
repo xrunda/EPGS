@@ -295,4 +295,19 @@ describe('Workbench', () => {
 
     expect(await screen.findByText('暂无同步记录')).toBeInTheDocument();
   });
+
+  it('restores focus to the trigger button after the detail drawer closes', async () => {
+    render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const trigger = screen.getAllByRole('button', { name: '查看详情' })[0];
+    fireEvent.click(trigger);
+
+    const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+    await waitFor(() => expect(dialog).toHaveFocus());
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.queryByRole('dialog', { name: '检查详情' })).not.toBeInTheDocument();
+  });
 });

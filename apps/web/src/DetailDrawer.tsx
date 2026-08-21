@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { MatchFieldDto, MonitorExamDetailDto, MonitorLevelDto } from '@epgs/shared-types';
 import { getExamDetail, MonitorApiError } from './monitorApi';
 import './DetailDrawer.css';
@@ -25,6 +25,56 @@ const FIELD_LABELS: Record<MatchFieldDto, string> = {
   OTHER: '其他',
 };
 
+/** Fields whose hits are highlighted inside 报告内容. */
+const REPORT_TEXT_FIELDS: MatchFieldDto[] = ['FINDINGS', 'REPORT_TEXT', 'OTHER'];
+
+/** Fields whose hits are highlighted inside 诊断. */
+const DIAGNOSIS_TEXT_FIELDS: MatchFieldDto[] = ['IMPRESSION', 'REPORT_TEXT', 'OTHER'];
+
+/**
+ * Splits `text` into React nodes, wrapping every case-insensitive occurrence of
+ * any `keywords` in a <mark>. Overlapping matches are merged. The original text
+ * is only sliced into nodes, never rewritten, so highlighting cannot corrupt it
+ * (issue #10: "命中词高亮不修改报告原文").
+ */
+function highlightSegments(text: string, keywords: string[]): ReactNode[] {
+  const lowered = text.toLowerCase();
+  const ranges: Array<[number, number]> = [];
+  for (const keyword of keywords) {
+    const lowerKeyword = keyword.toLowerCase();
+    let from = 0;
+    let index = lowered.indexOf(lowerKeyword, from);
+    while (index !== -1) {
+      ranges.push([index, index + keyword.length]);
+      from = index + keyword.length;
+      index = lowered.indexOf(lowerKeyword, from);
+    }
+  }
+  if (ranges.length === 0) return [text];
+
+  ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  const merged: Array<[number, number]> = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && range[0] <= last[1]) last[1] = Math.max(last[1], range[1]);
+    else merged.push(range);
+  }
+
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  merged.forEach(([start, end], index) => {
+    if (start > cursor) nodes.push(text.slice(cursor, start));
+    nodes.push(
+      <mark key={index} className="hit-highlight">
+        {text.slice(start, end)}
+      </mark>,
+    );
+    cursor = end;
+  });
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
 function friendlyError(error: unknown): string {
   if (error instanceof MonitorApiError && error.status === 404) {
     return '未找到该检查记录，可能已被移除。';
@@ -38,6 +88,31 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const dialogRef = useRef<HTMLElement>(null);
+
+  /** Distinct keywords to highlight inside 报告内容, from the hits that matched there. */
+  const reportKeywords = useMemo(() => {
+    if (!detail) return [];
+    return Array.from(
+      new Set(
+        detail.hits
+          .filter((hit) => REPORT_TEXT_FIELDS.includes(hit.matchedField))
+          .map((hit) => hit.keyword),
+      ),
+    );
+  }, [detail]);
+
+  /** Distinct keywords to highlight inside 诊断, from the hits that matched there. */
+  const diagnosisKeywords = useMemo(() => {
+    if (!detail) return [];
+    return Array.from(
+      new Set(
+        detail.hits
+          .filter((hit) => DIAGNOSIS_TEXT_FIELDS.includes(hit.matchedField))
+          .map((hit) => hit.keyword),
+      ),
+    );
+  }, [detail]);
 
   useEffect(() => {
     if (!recordId) {
@@ -76,11 +151,24 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [recordId, requestClose]);
 
+  // Move keyboard focus into the drawer when it opens so Escape is reachable;
+  // the workbench restores focus to the triggering button on close.
+  useEffect(() => {
+    if (recordId) dialogRef.current?.focus();
+  }, [recordId]);
+
   if (!recordId) return null;
 
   return (
     <aside className="drawer-backdrop" role="presentation" aria-label="检查详情抽屉">
-      <section className="drawer" role="dialog" aria-modal="true" aria-label="检查详情">
+      <section
+        ref={dialogRef}
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="检查详情"
+        tabIndex={-1}
+      >
         <header className="drawer__header">
           <div>
             <p className="drawer__eyebrow">内镜中心 · 只读详情</p>
@@ -155,9 +243,13 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
             <section className="drawer__section">
               <h3>报告内容</h3>
               <p className="drawer__text">
-                {detail.reportContent ?? '暂无报告内容'}
-                {detail.reportContent === null && (
-                  <span className="drawer__placeholder">（未同步到报告正文）</span>
+                {detail.reportContent ? (
+                  highlightSegments(detail.reportContent, reportKeywords)
+                ) : (
+                  <>
+                    暂无报告内容
+                    <span className="drawer__placeholder">（未同步到报告正文）</span>
+                  </>
                 )}
               </p>
             </section>
@@ -165,9 +257,13 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
             <section className="drawer__section">
               <h3>诊断</h3>
               <p className="drawer__text">
-                {detail.diagnosis ?? '暂无诊断'}
-                {detail.diagnosis === null && (
-                  <span className="drawer__placeholder">（未同步到诊断意见）</span>
+                {detail.diagnosis ? (
+                  highlightSegments(detail.diagnosis, diagnosisKeywords)
+                ) : (
+                  <>
+                    暂无诊断
+                    <span className="drawer__placeholder">（未同步到诊断意见）</span>
+                  </>
                 )}
               </p>
             </section>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   MonitorExamDto,
   MonitorLevelDto,
@@ -127,6 +127,15 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
   const [page, setPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
   const [detailId, setDetailId] = useState<string | null>(null);
+  /** The 查看详情 button that opened the drawer; receives focus back on close. */
+  const detailTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!detailId && detailTriggerRef.current) {
+      detailTriggerRef.current.focus();
+      detailTriggerRef.current = null;
+    }
+  }, [detailId]);
 
   const query = useMemo(
     () => ({ ...toQueryFilters(appliedFilters), page, pageSize: PAGE_SIZE }),
@@ -378,7 +387,10 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
                     <button
                       className="table-actions"
                       type="button"
-                      onClick={() => setDetailId(exam.recordId)}
+                      onClick={(event) => {
+                        detailTriggerRef.current = event.currentTarget;
+                        setDetailId(exam.recordId);
+                      }}
                     >
                       查看详情
                     </button>

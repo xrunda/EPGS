@@ -41,9 +41,27 @@ interface SeedRule {
 }
 
 const INITIAL_RED_KEYWORDS: SeedRule[] = [
-  { keyword: '癌', level: MonitorLevel.RED, matchField: MatchField.REPORT_TEXT, matchMode: MatchMode.CONTAINS, notes: '初始红色关键词种子（issue #4）' },
-  { keyword: '肿瘤', level: MonitorLevel.RED, matchField: MatchField.REPORT_TEXT, matchMode: MatchMode.CONTAINS, notes: '初始红色关键词种子（issue #4）' },
-  { keyword: '肿物', level: MonitorLevel.RED, matchField: MatchField.REPORT_TEXT, matchMode: MatchMode.CONTAINS, notes: '初始红色关键词种子（issue #4）' },
+  {
+    keyword: '癌',
+    level: MonitorLevel.RED,
+    matchField: MatchField.REPORT_TEXT,
+    matchMode: MatchMode.CONTAINS,
+    notes: '初始红色关键词种子（issue #4）',
+  },
+  {
+    keyword: '肿瘤',
+    level: MonitorLevel.RED,
+    matchField: MatchField.REPORT_TEXT,
+    matchMode: MatchMode.CONTAINS,
+    notes: '初始红色关键词种子（issue #4）',
+  },
+  {
+    keyword: '肿物',
+    level: MonitorLevel.RED,
+    matchField: MatchField.REPORT_TEXT,
+    matchMode: MatchMode.CONTAINS,
+    notes: '初始红色关键词种子（issue #4）',
+  },
   {
     keyword: 'Ca',
     level: MonitorLevel.RED,
@@ -51,8 +69,20 @@ const INITIAL_RED_KEYWORDS: SeedRule[] = [
     matchMode: MatchMode.CONTAINS,
     notes: '初始红色关键词种子（issue #4）；默认不区分大小写，匹配逻辑由 issue #5 实现',
   },
-  { keyword: '食管裂孔疝', level: MonitorLevel.RED, matchField: MatchField.REPORT_TEXT, matchMode: MatchMode.CONTAINS, notes: '初始红色关键词种子（issue #4）' },
-  { keyword: '贲门失弛缓症', level: MonitorLevel.RED, matchField: MatchField.REPORT_TEXT, matchMode: MatchMode.CONTAINS, notes: '初始红色关键词种子（issue #4）' },
+  {
+    keyword: '食管裂孔疝',
+    level: MonitorLevel.RED,
+    matchField: MatchField.REPORT_TEXT,
+    matchMode: MatchMode.CONTAINS,
+    notes: '初始红色关键词种子（issue #4）',
+  },
+  {
+    keyword: '贲门失弛缓症',
+    level: MonitorLevel.RED,
+    matchField: MatchField.REPORT_TEXT,
+    matchMode: MatchMode.CONTAINS,
+    notes: '初始红色关键词种子（issue #4）',
+  },
 ];
 
 async function main(): Promise<void> {
@@ -70,7 +100,9 @@ async function main(): Promise<void> {
     });
 
     if (existing) {
-      console.log(`  SKIP  "${rule.keyword}" already exists as rule ${existing.id} (idempotent re-run)`);
+      console.log(
+        `  SKIP  "${rule.keyword}" already exists as rule ${existing.id} (idempotent re-run)`,
+      );
       continue;
     }
 
@@ -88,12 +120,17 @@ async function main(): Promise<void> {
         updatedBy: SEED_ACTOR,
       },
     });
-    await prisma.monitorRule.update({ where: { id: created.id }, data: { ruleGroupId: created.id } });
+    await prisma.monitorRule.update({
+      where: { id: created.id },
+      data: { ruleGroupId: created.id },
+    });
 
     console.log(`  CREATE  "${rule.keyword}" -> rule ${created.id}`);
   }
 
-  console.log('Done. YELLOW/GREEN keyword lists are intentionally not seeded - pending 内镜中心 sign-off (see issue #4 / docs/rules-api.md).');
+  console.log(
+    'Done. YELLOW/GREEN keyword lists are intentionally not seeded - pending 内镜中心 sign-off (see issue #4 / docs/rules-api.md).',
+  );
 }
 
 main()

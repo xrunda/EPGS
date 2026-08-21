@@ -71,6 +71,24 @@ describe('Rules API (e2e, real Postgres)', () => {
         passwordHash: await hash(authPassword, { type: argon2id }),
       },
     });
+    // Issue #13: RolesGuard requires an app_user_access grant. Rules writes
+    // (create/update/import) are RULE_ADMIN-only, so this suite's test user
+    // is granted RULE_ADMIN (departmentScope/patientDetail are irrelevant
+    // for rule management).
+    await prisma.appUserAccess.upsert({
+      where: { username: authUsername },
+      create: {
+        username: authUsername,
+        roles: ['RULE_ADMIN'] as never,
+        departmentScope: [],
+        patientDetail: false,
+      },
+      update: {
+        roles: ['RULE_ADMIN'] as never,
+        departmentScope: [],
+        patientDetail: false,
+      },
+    });
     agent = request.agent(app.getHttpServer());
     await agent
       .post('/api/auth/login')
@@ -79,7 +97,13 @@ describe('Rules API (e2e, real Postgres)', () => {
   });
 
   afterAll(async () => {
-    if (dbAvailable) await prisma.appUser.deleteMany({ where: { username: authUsername } });
+    if (dbAvailable) {
+      // Issue #13: clean the audit rows written by this suite's writes and
+      // the app_user_access grant (no FKs, cleaned for the next suite).
+      await prisma.auditLog.deleteMany({});
+      await prisma.appUserAccess.deleteMany({ where: { username: authUsername } });
+      await prisma.appUser.deleteMany({ where: { username: authUsername } });
+    }
     if (app) await app.close();
     await prisma.$disconnect();
   });

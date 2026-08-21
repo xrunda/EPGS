@@ -31,10 +31,10 @@ Environment: local dev machine, Node v24.13.0, single run via
 shown for stability).
 
 | Run | Total time (1,000 reports x 20 rules) | Avg per report |
-|---|---|---|
-| 1 | 12.81 ms | 0.0128 ms |
-| 2 | 13.74 ms | 0.0137 ms |
-| 3 | 13.38 ms | 0.0134 ms |
+| --- | ------------------------------------- | -------------- |
+| 1   | 12.81 ms                              | 0.0128 ms      |
+| 2   | 13.74 ms                              | 0.0137 ms      |
+| 3   | 13.38 ms                              | 0.0134 ms      |
 
 Total `matchedRule` entries produced was identical (2,874) across all runs,
 confirming deterministic output for the same synthetic input.

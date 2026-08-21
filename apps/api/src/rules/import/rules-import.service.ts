@@ -3,7 +3,12 @@ import { MatchField, MatchMode, MonitorLevel } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ImportStagingStore } from './import-staging.store';
 import { parseRulesCsv, RawImportRow } from './csv-parser';
-import { ImportConfirmResult, ImportRowError, ImportRuleRow, ImportValidateResult } from '@epgs/shared-types';
+import {
+  ImportConfirmResult,
+  ImportRowError,
+  ImportRuleRow,
+  ImportValidateResult,
+} from '@epgs/shared-types';
 
 const VALID_LEVELS = new Set<string>(Object.values(MonitorLevel));
 const VALID_MATCH_FIELDS = new Set<string>(Object.values(MatchField));
@@ -62,7 +67,12 @@ export class RulesImportService {
         continue;
       }
 
-      const dedupeKey = this.dedupeKey(row.keyword.trim(), row.level, row.matchField, row.matchMode ?? 'CONTAINS');
+      const dedupeKey = this.dedupeKey(
+        row.keyword.trim(),
+        row.level,
+        row.matchField,
+        row.matchMode ?? 'CONTAINS',
+      );
       seenInFile.add(dedupeKey);
 
       normalized.push({
@@ -150,7 +160,10 @@ export class RulesImportService {
             updatedBy: actorId,
           },
         });
-        await tx.monitorRule.update({ where: { id: created.id }, data: { ruleGroupId: created.id } });
+        await tx.monitorRule.update({
+          where: { id: created.id },
+          data: { ruleGroupId: created.id },
+        });
         createdRuleIds.push(created.id);
       }
 
@@ -159,7 +172,8 @@ export class RulesImportService {
         // partially-applied import never happens silently - see class doc.
         throw new BadRequestException({
           code: 'IMPORT_CONFIRM_CONFLICT',
-          message: 'One or more rows conflict with existing rules as of confirm time. No rows were written.',
+          message:
+            'One or more rows conflict with existing rules as of confirm time. No rows were written.',
           details: { errors: conflictErrors },
         });
       }
@@ -180,12 +194,16 @@ export class RulesImportService {
 
     const level = row.level?.trim() ?? '';
     if (!VALID_LEVELS.has(level)) {
-      errors.push(`level "${row.level}" is not a valid MonitorLevel (RED, YELLOW, GREEN, UNCLASSIFIED)`);
+      errors.push(
+        `level "${row.level}" is not a valid MonitorLevel (RED, YELLOW, GREEN, UNCLASSIFIED)`,
+      );
     }
 
     const matchField = row.matchField?.trim() ?? '';
     if (!VALID_MATCH_FIELDS.has(matchField)) {
-      errors.push(`matchField "${row.matchField}" is not a valid MatchField (FINDINGS, IMPRESSION, REPORT_TEXT, STUDY_DESCRIPTION, OTHER)`);
+      errors.push(
+        `matchField "${row.matchField}" is not a valid MatchField (FINDINGS, IMPRESSION, REPORT_TEXT, STUDY_DESCRIPTION, OTHER)`,
+      );
     }
 
     const matchMode = row.matchMode?.trim();

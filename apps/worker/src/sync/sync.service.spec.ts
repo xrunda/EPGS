@@ -49,7 +49,11 @@ describe('SyncService', () => {
     };
   }
 
-  async function buildModule(prisma: any, adapter: any, config: ConfigService): Promise<TestingModule> {
+  async function buildModule(
+    prisma: any,
+    adapter: any,
+    config: ConfigService,
+  ): Promise<TestingModule> {
     return Test.createTestingModule({
       providers: [
         SyncService,

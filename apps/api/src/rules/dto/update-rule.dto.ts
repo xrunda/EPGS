@@ -1,6 +1,15 @@
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Min, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Min,
+  MaxLength,
+} from 'class-validator';
 import { MonitorLevel, MatchField, MatchMode } from '@prisma/client';
 import { UpdateMonitorRuleBody } from '@epgs/shared-types';
 
@@ -20,7 +29,10 @@ export class UpdateRuleDto implements UpdateMonitorRuleBody {
 
   @ApiPropertyOptional({ enum: MatchField })
   @IsOptional()
-  @IsEnum(MatchField, { message: 'matchField must be one of FINDINGS, IMPRESSION, REPORT_TEXT, STUDY_DESCRIPTION, OTHER' })
+  @IsEnum(MatchField, {
+    message:
+      'matchField must be one of FINDINGS, IMPRESSION, REPORT_TEXT, STUDY_DESCRIPTION, OTHER',
+  })
   matchField?: MatchField;
 
   @ApiPropertyOptional({ enum: MatchMode })
@@ -46,13 +58,18 @@ export class UpdateRuleDto implements UpdateMonitorRuleBody {
 
   @ApiProperty({
     example: 3,
-    description: 'Optimistic-lock token: must equal the row current version, otherwise a 409 RULE_VERSION_CONFLICT is returned.',
+    description:
+      'Optimistic-lock token: must equal the row current version, otherwise a 409 RULE_VERSION_CONFLICT is returned.',
   })
   @IsInt()
   @Min(1)
   version!: number;
 
-  @ApiProperty({ example: 'zhang.san', description: 'Opaque operator identity. Placeholder until issue #13 ships real auth.' })
+  @ApiProperty({
+    example: 'zhang.san',
+    description:
+      'Deprecated since issue #13: the authenticated username is authoritative; kept for DTO compatibility.',
+  })
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)

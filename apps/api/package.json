@@ -19,7 +19,9 @@
     "prisma:generate": "prisma generate",
     "prisma:seed": "prisma db seed",
     "auth:create-user": "ts-node --transpile-only src/auth/auth-cli.ts create-user",
-    "auth:reset-password": "ts-node --transpile-only src/auth/auth-cli.ts reset-password"
+    "auth:reset-password": "ts-node --transpile-only src/auth/auth-cli.ts reset-password",
+    "auth:assign-access": "ts-node --transpile-only src/access/access-cli.ts assign-access",
+    "auth:show-access": "ts-node --transpile-only src/access/access-cli.ts show-access"
   },
   "prisma": {
     "seed": "ts-node --transpile-only prisma/seed.ts"

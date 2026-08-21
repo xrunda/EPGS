@@ -11,7 +11,10 @@ import { CreateMonitorRuleBody } from '@epgs/shared-types';
  * establishes the pattern per issue #4's implementation notes).
  */
 export class CreateRuleDto implements CreateMonitorRuleBody {
-  @ApiProperty({ example: '肿瘤', description: 'Keyword or phrase to match. Whitespace-only values are rejected.' })
+  @ApiProperty({
+    example: '肿瘤',
+    description: 'Keyword or phrase to match. Whitespace-only values are rejected.',
+  })
   @IsString()
   @IsNotEmpty({ message: 'keyword must not be blank' })
   @MaxLength(255)
@@ -22,8 +25,15 @@ export class CreateRuleDto implements CreateMonitorRuleBody {
   @IsEnum(MonitorLevel, { message: 'level must be one of RED, YELLOW, GREEN, UNCLASSIFIED' })
   level!: MonitorLevel;
 
-  @ApiProperty({ enum: MatchField, example: 'REPORT_TEXT', description: 'Which report field this rule is evaluated against.' })
-  @IsEnum(MatchField, { message: 'matchField must be one of FINDINGS, IMPRESSION, REPORT_TEXT, STUDY_DESCRIPTION, OTHER' })
+  @ApiProperty({
+    enum: MatchField,
+    example: 'REPORT_TEXT',
+    description: 'Which report field this rule is evaluated against.',
+  })
+  @IsEnum(MatchField, {
+    message:
+      'matchField must be one of FINDINGS, IMPRESSION, REPORT_TEXT, STUDY_DESCRIPTION, OTHER',
+  })
   matchField!: MatchField;
 
   @ApiPropertyOptional({ enum: MatchMode, example: 'CONTAINS', default: 'CONTAINS' })
@@ -31,7 +41,11 @@ export class CreateRuleDto implements CreateMonitorRuleBody {
   @IsEnum(MatchMode, { message: 'matchMode must be one of EXACT, CONTAINS, REGEX' })
   matchMode?: MatchMode;
 
-  @ApiPropertyOptional({ example: null, nullable: true, description: 'Free-text grouping label (e.g. department/tumor-site), not an FK.' })
+  @ApiPropertyOptional({
+    example: null,
+    nullable: true,
+    description: 'Free-text grouping label (e.g. department/tumor-site), not an FK.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
@@ -50,7 +64,7 @@ export class CreateRuleDto implements CreateMonitorRuleBody {
   @ApiProperty({
     example: 'zhang.san',
     description:
-      'Opaque operator identity. Placeholder until issue #13 ships real auth - callers must supply the acting operator explicitly for now.',
+      'Opaque actor identity. Deprecated since issue #13: the server uses the authenticated username and ignores this value (kept for DTO compatibility).',
   })
   @IsString()
   @IsNotEmpty()

@@ -34,7 +34,26 @@
 
 ## 鉴权
 
-所有接口均要求 Issue #31 的有效登录 Cookie，未登录或会话过期返回 `401 AUTH_REQUIRED`。本接口保持只读；角色、科室范围、脱敏和读取审计由 Issue #13 补充。
+所有接口均要求 Issue #31 的有效登录 Cookie，未登录或会话过期返回
+`401 AUTH_REQUIRED`。本接口保持只读。
+
+### 角色（Issue #13）
+
+类级要求 `VIEWER | RULE_ADMIN | SYSTEM_ADMIN` 之一，否则 `403 FORBIDDEN`
+（`AUDITOR` 被刻意排除——审计界面是其唯一入口）。权限与数据范围来自
+`app_user_access` 授权（见 docs/auth.md）：
+
+- **科室范围**：非空 `departmentScope` 时，列表/汇总/详情只返回授权科室的记录。
+- **患者脱敏**：`patientDetail=false` 时，姓名保留姓氏、床号 → `***`、
+  `reportContent`/`diagnosis`/命中 `contextSnippet` → `null`，响应附加
+  `dataAccess: { masked: true }`；未脱敏响应不带 `dataAccess`。
+- **越权即 404**：请求范围外详情返回 `404 MONITOR_RECORD_NOT_FOUND`。
+
+### 审计（Issue #13）
+
+每次 `GET /api/monitor/exams` 与 `GET /api/monitor/exams/:id` 都会在 `audit_log`
+落一条 `EXAM_LIST`/`EXAM_DETAIL` 记录（含 `masked` 标记；`q` 只记 `hadQ` 布尔，
+不落原文）。`GET /api/monitor/summary` 只做科室范围限制，不审计。
 
 ## 统一错误格式
 

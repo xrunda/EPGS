@@ -18,7 +18,11 @@ describe('RulesImportService', () => {
           if (where.level && rule.level !== where.level) continue;
           if (where.matchField && rule.matchField !== where.matchField) continue;
           if (where.matchMode && rule.matchMode !== where.matchMode) continue;
-          if (where.keyword?.equals !== undefined && rule.keyword.toLowerCase() !== where.keyword.equals.toLowerCase()) continue;
+          if (
+            where.keyword?.equals !== undefined &&
+            rule.keyword.toLowerCase() !== where.keyword.equals.toLowerCase()
+          )
+            continue;
           return rule;
         }
         return null;
@@ -51,7 +55,9 @@ describe('RulesImportService', () => {
 
   describe('validate', () => {
     it('reports full success for a well-formed file', () => {
-      const result = service.validate(csv('癌,RED,REPORT_TEXT,CONTAINS,,\n肿瘤,RED,REPORT_TEXT,CONTAINS,,\n'));
+      const result = service.validate(
+        csv('癌,RED,REPORT_TEXT,CONTAINS,,\n肿瘤,RED,REPORT_TEXT,CONTAINS,,\n'),
+      );
 
       expect(result.totalRows).toBe(2);
       expect(result.validRows).toBe(2);
@@ -60,7 +66,9 @@ describe('RulesImportService', () => {
     });
 
     it('reports per-row errors for partial failure (invalid enum, blank keyword)', () => {
-      const result = service.validate(csv(',RED,REPORT_TEXT,,,\n肿瘤,NOT_A_LEVEL,REPORT_TEXT,,,\n癌,RED,REPORT_TEXT,,,\n'));
+      const result = service.validate(
+        csv(',RED,REPORT_TEXT,,,\n肿瘤,NOT_A_LEVEL,REPORT_TEXT,,,\n癌,RED,REPORT_TEXT,,,\n'),
+      );
 
       expect(result.totalRows).toBe(3);
       expect(result.validRows).toBe(1);
@@ -72,7 +80,9 @@ describe('RulesImportService', () => {
     });
 
     it('flags duplicate rows within the same file', () => {
-      const result = service.validate(csv('癌,RED,REPORT_TEXT,CONTAINS,,\n癌,RED,REPORT_TEXT,CONTAINS,,\n'));
+      const result = service.validate(
+        csv('癌,RED,REPORT_TEXT,CONTAINS,,\n癌,RED,REPORT_TEXT,CONTAINS,,\n'),
+      );
 
       expect(result.validRows).toBe(1);
       expect(result.errors).toHaveLength(1);
@@ -80,7 +90,9 @@ describe('RulesImportService', () => {
     });
 
     it('treats keyword case-insensitively for in-file duplicate detection', () => {
-      const result = service.validate(csv('Ca,RED,REPORT_TEXT,CONTAINS,,\nca,RED,REPORT_TEXT,CONTAINS,,\n'));
+      const result = service.validate(
+        csv('Ca,RED,REPORT_TEXT,CONTAINS,,\nca,RED,REPORT_TEXT,CONTAINS,,\n'),
+      );
       expect(result.validRows).toBe(1);
       expect(result.errors).toHaveLength(1);
     });
@@ -97,7 +109,9 @@ describe('RulesImportService', () => {
 
   describe('confirm', () => {
     it('writes all valid rows from a validated batch and returns created ids', async () => {
-      const { importToken } = service.validate(csv('癌,RED,REPORT_TEXT,CONTAINS,,\n肿瘤,RED,REPORT_TEXT,CONTAINS,,\n'));
+      const { importToken } = service.validate(
+        csv('癌,RED,REPORT_TEXT,CONTAINS,,\n肿瘤,RED,REPORT_TEXT,CONTAINS,,\n'),
+      );
 
       const result = await service.confirm(importToken, 'tester');
 
@@ -107,18 +121,24 @@ describe('RulesImportService', () => {
     });
 
     it('throws for an unknown/expired import token', async () => {
-      await expect(service.confirm('does-not-exist', 'tester')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.confirm('does-not-exist', 'tester')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
     it('cannot be confirmed twice with the same token (token is consumed)', async () => {
       const { importToken } = service.validate(csv('癌,RED,REPORT_TEXT,CONTAINS,,\n'));
       await service.confirm(importToken, 'tester');
 
-      await expect(service.confirm(importToken, 'tester')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.confirm(importToken, 'tester')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
     it('rejects the whole confirm if a row now conflicts with an existing enabled rule (real Postgres rolls the transaction back; see rules.e2e-spec.ts)', async () => {
-      const { importToken } = service.validate(csv('癌,RED,REPORT_TEXT,CONTAINS,,\n肿瘤,RED,REPORT_TEXT,CONTAINS,,\n'));
+      const { importToken } = service.validate(
+        csv('癌,RED,REPORT_TEXT,CONTAINS,,\n肿瘤,RED,REPORT_TEXT,CONTAINS,,\n'),
+      );
 
       // Simulate a rule created concurrently between validate and confirm.
       ruleStore.set('existing-1', {
@@ -136,7 +156,9 @@ describe('RulesImportService', () => {
       // that atomicity guarantee is verified against a real database in
       // apps/api/test/rules.e2e-spec.ts. This test only asserts the
       // service surfaces the conflict as a rejection.
-      await expect(service.confirm(importToken, 'tester')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.confirm(importToken, 'tester')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
   });
 });

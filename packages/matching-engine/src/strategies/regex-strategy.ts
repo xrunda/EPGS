@@ -12,7 +12,11 @@ import type { MatchStrategy, StrategyHit } from './types';
 export class RegexStrategy implements MatchStrategy {
   readonly mode: RuleSnapshot['matchMode'] = 'REGEX';
 
-  findOccurrences(_originalText: string, normalizedText: string, rule: RuleSnapshot): StrategyHit[] {
+  findOccurrences(
+    _originalText: string,
+    normalizedText: string,
+    rule: RuleSnapshot,
+  ): StrategyHit[] {
     const caseSensitive = rule.caseSensitive ?? false;
     let re: RegExp;
     try {

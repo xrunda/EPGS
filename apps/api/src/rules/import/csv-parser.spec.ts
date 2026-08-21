@@ -2,7 +2,8 @@ import { parseRulesCsv } from './csv-parser';
 
 describe('parseRulesCsv', () => {
   it('parses a well-formed CSV with all columns', () => {
-    const csv = 'keyword,level,matchField,matchMode,category,notes\n肿瘤,RED,REPORT_TEXT,CONTAINS,tumor,test note\n';
+    const csv =
+      'keyword,level,matchField,matchMode,category,notes\n肿瘤,RED,REPORT_TEXT,CONTAINS,tumor,test note\n';
     const result = parseRulesCsv(Buffer.from(csv, 'utf8'));
 
     expect(result.fatalError).toBeUndefined();
@@ -61,7 +62,10 @@ describe('parseRulesCsv', () => {
 
   it('strips a UTF-8 BOM if present', () => {
     const bom = Buffer.from([0xef, 0xbb, 0xbf]);
-    const csv = Buffer.concat([bom, Buffer.from('keyword,level,matchField\n肿瘤,RED,REPORT_TEXT\n', 'utf8')]);
+    const csv = Buffer.concat([
+      bom,
+      Buffer.from('keyword,level,matchField\n肿瘤,RED,REPORT_TEXT\n', 'utf8'),
+    ]);
     const result = parseRulesCsv(csv);
 
     expect(result.fatalError).toBeUndefined();

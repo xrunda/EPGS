@@ -33,3 +33,6 @@ apps/**/generated/
 # Misc
 *.pid
 *.pid.lock
+
+# Claude Code working dir (AGENTS.md: never stage)
+.claude/

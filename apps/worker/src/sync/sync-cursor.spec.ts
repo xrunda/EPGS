@@ -2,12 +2,17 @@ import { SyncJobStatus } from '@prisma/client';
 import { resolveCursor, encodeCursor, decodeCursor, SYNC_JOB_NAME } from './sync-cursor';
 
 /** Minimal fake of the one Prisma call resolveCursor makes - avoids needing a real DB for this pure cursor-selection logic. */
-function fakePrisma(rows: Array<{ status: SyncJobStatus; cursorEnd: string | null; startedAt: Date }>) {
+function fakePrisma(
+  rows: Array<{ status: SyncJobStatus; cursorEnd: string | null; startedAt: Date }>,
+) {
   return {
     syncJobLog: {
       findFirst: jest.fn(async ({ where, orderBy }: any) => {
         const filtered = rows.filter(
-          (r) => where.status.in.includes(r.status) && (where.cursorEnd?.not !== null || true) && r.cursorEnd !== null,
+          (r) =>
+            where.status.in.includes(r.status) &&
+            (where.cursorEnd?.not !== null || true) &&
+            r.cursorEnd !== null,
         );
         if (filtered.length === 0) return null;
         const sorted = [...filtered].sort((a, b) =>
@@ -79,10 +84,14 @@ describe('resolveCursor', () => {
 
   it('throws on a corrupt stored cursor rather than silently resuming from an arbitrary date', async () => {
     const prisma = fakePrisma([
-      { status: SyncJobStatus.SUCCEEDED, cursorEnd: 'not-a-date', startedAt: new Date('2026-08-21T08:00:00.000Z') },
+      {
+        status: SyncJobStatus.SUCCEEDED,
+        cursorEnd: 'not-a-date',
+        startedAt: new Date('2026-08-21T08:00:00.000Z'),
+      },
     ]);
-    await expect(resolveCursor(prisma, new Date('2026-08-21T10:00:00.000Z'), 0, 60_000)).rejects.toThrow(
-      /invalid stored cursor/,
-    );
+    await expect(
+      resolveCursor(prisma, new Date('2026-08-21T10:00:00.000Z'), 0, 60_000),
+    ).rejects.toThrow(/invalid stored cursor/);
   });
 });

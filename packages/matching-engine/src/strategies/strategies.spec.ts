@@ -4,7 +4,17 @@ import { ContainsStrategy } from './contains-strategy';
 import { ExactStrategy } from './exact-strategy';
 import { RegexStrategy } from './regex-strategy';
 
-function run(strategy: { findOccurrences: (o: string, n: string, r: ReturnType<typeof buildRule>) => { start: number; end: number }[] }, text: string, rule: ReturnType<typeof buildRule>) {
+function run(
+  strategy: {
+    findOccurrences: (
+      o: string,
+      n: string,
+      r: ReturnType<typeof buildRule>,
+    ) => { start: number; end: number }[];
+  },
+  text: string,
+  rule: ReturnType<typeof buildRule>,
+) {
   return strategy.findOccurrences(text, normalizeForMatch(text), rule);
 }
 
@@ -31,7 +41,12 @@ describe('ExactStrategy', () => {
   const strategy = new ExactStrategy();
 
   it('matches a keyword bounded by punctuation/whitespace', () => {
-    const rule = buildRule({ ruleId: 'r1', keyword: '胃溃疡', level: 'YELLOW', matchMode: 'EXACT' });
+    const rule = buildRule({
+      ruleId: 'r1',
+      keyword: '胃溃疡',
+      level: 'YELLOW',
+      matchMode: 'EXACT',
+    });
     const hits = run(strategy, '诊断：胃溃疡。', rule);
     expect(hits).toEqual([{ start: 3, end: 6 }]);
   });
@@ -60,7 +75,12 @@ describe('RegexStrategy', () => {
   });
 
   it('returns no hits and does not throw for an invalid pattern', () => {
-    const rule = buildRule({ ruleId: 'r1', keyword: '(unterminated', level: 'RED', matchMode: 'REGEX' });
+    const rule = buildRule({
+      ruleId: 'r1',
+      keyword: '(unterminated',
+      level: 'RED',
+      matchMode: 'REGEX',
+    });
     expect(() => run(strategy, '任意文本', rule)).not.toThrow();
     expect(run(strategy, '任意文本', rule)).toEqual([]);
   });

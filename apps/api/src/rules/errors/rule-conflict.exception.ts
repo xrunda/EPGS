@@ -13,7 +13,10 @@ import { RuleConflictDetails } from '@epgs/shared-types';
  * HttpException response object.
  */
 export class RuleConflictException extends ConflictException {
-  constructor(conflictingRuleId: string, message = 'An enabled rule with the same keyword, level, match scope and match mode already exists.') {
+  constructor(
+    conflictingRuleId: string,
+    message = 'An enabled rule with the same keyword, level, match scope and match mode already exists.',
+  ) {
     const details: RuleConflictDetails = { conflictingRuleId };
     super({
       code: 'RULE_CONFLICT',

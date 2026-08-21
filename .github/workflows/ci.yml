@@ -154,6 +154,18 @@ jobs:
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/auth.e2e-spec.ts
 
+      # Issue #13: security e2e suite against this same real Postgres -
+      # the full role permission matrix (VIEWER/RULE_ADMIN/SYSTEM_ADMIN/
+      # AUDITOR + unauthenticated 401s), department data-scope with
+      # horizontal-escalation-as-404, patient-data masking, server-side
+      # actor authority on rule writes, and audit-trail hygiene. It wipes
+      # the tables it asserts totals on in beforeAll and cleans up in
+      # afterAll, so the seed-count step below still sees exactly the 6
+      # seeded RED rules.
+      - name: Security e2e suite (real Postgres)
+        working-directory: apps/api
+        run: pnpm exec jest --config ./test/jest-e2e.json test/security.e2e-spec.ts
+
       # Issue #6: incremental sync job e2e suite against this same real
       # Postgres instance - covers first-run full window, normal
       # incremental sync, same-timestamp collisions, duplicate-batch
@@ -185,6 +197,7 @@ jobs:
 
       - name: Roll back migration
         run: |
+          psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821103732_add_auth_access_and_audit_log/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821093500_add_local_auth/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821040339_init_monitoring_schema/rollback.sql
         env:

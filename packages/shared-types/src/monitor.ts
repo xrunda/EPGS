@@ -75,21 +75,39 @@ export interface MonitorExamHitDto {
   keyword: string;
   level: MonitorLevelDto;
   matchedField: MatchFieldDto;
-  contextSnippet: string;
+  /** Nulled when the server masks HIGH-sensitivity fields (issue #13). */
+  contextSnippet: string | null;
   /** ISO 8601 UTC instant. */
   matchedAt: string;
+}
+
+/**
+ * Present ONLY when the server masked HIGH-sensitivity fields for the
+ * requesting user (issue #13 - a user without patientDetail rights gets
+ * reportContent/diagnosis/contextSnippet nulled, patientName partially
+ * masked, bedNo as "***"). Absent when the data is returned unmasked, so a
+ * null reportContent with no dataAccess flag means the report truly has no
+ * body, not that it was redacted.
+ */
+export interface MonitorDataAccess {
+  masked: boolean;
 }
 
 /**
  * Full snapshot for `GET /api/monitor/exams/:id` (the read-only detail
  * drawer). Extends the list row with the report body (HIGH sensitivity -
  * this is why it is only served on demand, never in the list) and all hits.
+ * When the requesting user lacks patientDetail rights, reportContent /
+ * diagnosis / each hit's contextSnippet are nulled and dataAccess.masked is
+ * set (issue #13).
  */
 export interface MonitorExamDetailDto extends MonitorExamDto {
   reportContent: string | null;
   diagnosis: string | null;
   /** Ordered matchedAt asc, id asc. */
   hits: MonitorExamHitDto[];
+  /** Present only when the server masked sensitive fields for this user. */
+  dataAccess?: MonitorDataAccess;
 }
 
 /** Paginated response envelope for `GET /api/monitor/exams`. */
@@ -98,6 +116,8 @@ export interface PaginatedMonitorExams {
   total: number;
   page: number;
   pageSize: number;
+  /** Present only when the server masked sensitive fields for this user. */
+  dataAccess?: MonitorDataAccess;
 }
 
 /**

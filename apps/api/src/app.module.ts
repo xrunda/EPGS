@@ -9,6 +9,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RulesModule } from './rules/rules.module';
 import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
+import { AccessModule } from './access/access.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -21,7 +23,11 @@ import { AuthModule } from './auth/auth.module';
       },
     }),
     PrismaModule,
+    // AuthGuard (#31) must register before AccessModule's RolesGuard, so
+    // AccessModule is imported after AuthModule - see access/roles.guard.ts.
     AuthModule,
+    AccessModule,
+    AuditModule,
     HealthModule,
     MonitorModule,
     RulesModule,

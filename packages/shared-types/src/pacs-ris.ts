@@ -1,113 +1,70 @@
 /**
- * Stable internal DTOs for the PACS/RIS read-only adapter (issue #2).
+ * Stable internal DTOs for the PACS/RIS read-only adapter (issue #2),
+ * converged to the confirmed IRIS/Caché gateway contract (issue #24, #26).
  *
  * These types decouple downstream consumers (the sync job in issue #6,
  * and potentially apps/api for read models in later issues) from the
- * PACS/RIS vendor schema (PATIENTINFO / STUDYINFO / REPORTINFO /
- * REPORTCONTENT / LOC / STUDYSTATUS). See docs/pacs-ris-adapter.md for
- * the assumed source schema, join keys, and what still needs production
- * verification.
+ * PACS/RIS vendor schema. Per the read-only display spec (#27) and the
+ * IRIS contract (#28) the DTO carries ONLY the confirmed source snapshot
+ * fields: source stable ID, patient/study display fields, and the report
+ * body. No workflow/review status, no sex/age/inpatient number, no
+ * disposition fields - see docs/api/pacs-ris-data-api.md §9 for the
+ * removed legacy contract fields.
  *
  * IMPORTANT: nothing in this file may contain real patient data. These
  * are type/shape definitions only.
  */
 
 /**
- * Internal, normalized report workflow status.
- *
- * Source systems typically encode this in STUDYSTATUS / REPORTINFO with
- * vendor-specific codes (e.g. numeric or short string codes that differ
- * per PACS/RIS vendor and even per hospital deployment). Any source code
- * that cannot be confidently mapped to one of the known values below
- * MUST map to `UNKNOWN` - it must never silently default to
- * `FINAL_REVIEWED` or any other "looks done" status. See
- * docs/pacs-ris-adapter.md for the assumed source status vocabulary.
- */
-export enum PacsReportStatus {
-  /** Study/exam has started but no report content exists yet. */
-  EXAM_IN_PROGRESS = 'EXAM_IN_PROGRESS',
-  /** Exam finished, report not yet started/saved. */
-  AWAITING_REPORT = 'AWAITING_REPORT',
-  /** A draft report has been saved but not submitted for review. */
-  DRAFT = 'DRAFT',
-  /** Report submitted, awaiting first-level review/audit. */
-  PENDING_REVIEW = 'PENDING_REVIEW',
-  /** Report has passed one level of review (may not be final). */
-  REVIEWED = 'REVIEWED',
-  /** Report has passed final review/sign-off (most authoritative state). */
-  FINAL_REVIEWED = 'FINAL_REVIEWED',
-  /**
-   * Source provided a status code/value the adapter does not recognize.
-   * Consumers must treat this as "needs human/observability attention",
-   * never as equivalent to FINAL_REVIEWED or REVIEWED.
-   */
-  UNKNOWN = 'UNKNOWN',
-}
-
-/**
- * Administrative sex as recorded in PATIENTINFO. Kept intentionally
- * narrow (no clinical inference) and includes UNKNOWN for unmapped or
- * missing source values.
- */
-export type PacsPatientSex = 'M' | 'F' | 'UNKNOWN';
-
-/**
- * One normalized PACS/RIS report record, joined across
- * STUDYINFO / PATIENTINFO / REPORTINFO / REPORTCONTENT.
+ * One normalized PACS/RIS report record, joined across the source system's
+ * study/patient/report data.
  *
  * Field-level notes:
- * - `describeText` / `diagnoseText` are returned verbatim from
- *   REPORTCONTENT.RPT_DESCRIBE / RPT_DIAGNOSE - the adapter performs no
- *   cleansing, trimming-for-meaning, or rewriting. Leading/trailing
- *   whitespace-only normalization (if any) is documented on the field.
- * - `inpatientNo` is optional: outpatient/emergency endoscopy studies
- *   commonly have no inpatient number in PACS/RIS.
+ * - `reportContent` / `diagnosis` are returned verbatim from the source -
+ *   the adapter performs no cleansing or rewriting.
  * - All timestamps are `Date` objects in UTC; the source database's
  *   session/column timezone is assumed to be Asia/Shanghai unless the
  *   production verification doc says otherwise (see
  *   docs/pacs-ris-adapter.md).
+ * - `reportId` and `sourceUpdatedAt` are internal sync bookkeeping: the
+ *   gateway contract (#28) no longer provides them, so adapters derive
+ *   them (e.g. `reportId = sourceRecordId`, `sourceUpdatedAt = examTime`).
  */
 export interface PacsReportDto {
-  /** PATIENTINFO.PAT_ID (assumed stable internal patient identifier). */
-  patientId: string;
-  /** PATIENTINFO inpatient/admission number, if the study is inpatient. */
-  inpatientNo: string | null;
-  /** PATIENTINFO patient name, verbatim from source. */
+  /**
+   * Stable source record ID (来源稳定 ID) - the confirmed stable primary
+   * key from the source system. Primary half of the idempotent sync key
+   * (with reportId/reportVersion on MonitorRecord).
+   */
+  sourceRecordId: string;
+  /** PATIENTINFO patient name, verbatim from source. HIGH sensitivity. */
   patientName: string;
-  sex: PacsPatientSex;
-  /** Age at time of study, as recorded by source (not recomputed). */
-  age: number | null;
-  /** Ordering/performing department (assumed from LOC or STUDYINFO). */
+  /** Ordering/performing department at time of sync. */
   department: string | null;
-  /** Bed number, inpatient studies only. */
+  /** Current bed number; empty for outpatient/unknown -> display as "—". */
   bedNo: string | null;
-  /** STUDYINFO.ST_ACCNUM - the accession number joining Study/Report/Content. */
-  studyAccessionNo: string;
-  /** Exam/procedure item name (e.g. "胃镜", "肠镜"). */
+  /** Patient type code from the source (PAADM_Type raw value, e.g. I/O). */
+  patientTypeCode: string | null;
+  /**
+   * Confirmed Chinese meaning of patientTypeCode (住院/门诊/…). NULL until
+   * the hospital dictionary confirms the mapping - unknown values must not
+   * be guessed.
+   */
+  patientTypeName: string | null;
+  /** Exam/procedure item name (e.g. "电子胃镜检查"). */
   examItem: string;
   /** Exam start/performed time. */
   examTime: Date;
-  /** REPORTINFO primary key for this specific report record/version. */
+  /** REPORTINFO primary key for this specific report record/version. Internal sync bookkeeping. */
   reportId: string;
-  /** Normalized workflow status - see PacsReportStatus. */
-  reportStatus: PacsReportStatus;
-  /** Raw source status code/value, kept for audit/debugging when status maps to UNKNOWN. */
-  rawStatusCode: string | null;
-  /** When the report content was first saved (draft), if known. */
-  reportSavedAt: Date | null;
-  /** When the report was submitted for review, if known. */
-  reportSubmittedAt: Date | null;
-  /** When the report was reviewed/signed off, if known. */
-  reportReviewedAt: Date | null;
-  /** REPORTCONTENT.RPT_DESCRIBE verbatim - exam findings ("检查所见"). */
-  describeText: string | null;
-  /** REPORTCONTENT.RPT_DIAGNOSE verbatim - diagnostic impression ("诊断意见"). */
-  diagnoseText: string | null;
+  /** Report findings/body text verbatim (检查所见), for read-only display. */
+  reportContent: string | null;
+  /** Diagnostic impression text verbatim (诊断意见), for read-only display. */
+  diagnosis: string | null;
   /**
    * Best-known "last modified" timestamp for this record from the
-   * source (used to drive incremental sync cursors). Adapter
-   * implementations should pick the max of available source update
-   * columns - see docs/pacs-ris-adapter.md for the assumed columns.
+   * source (used to drive incremental sync cursors). Internal sync
+   * bookkeeping - not displayed.
    */
   sourceUpdatedAt: Date;
 }

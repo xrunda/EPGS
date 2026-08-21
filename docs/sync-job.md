@@ -30,28 +30,23 @@ GET /api/system/sync-status（apps/api/src/system/）
 
 - HTTP 客户端使用 Node 24 内置 `fetch`（未引入 axios/undici 作为生产依赖；
   `undici` 仅作为测试期 devDependency，用于 mock，见下文）。
-- 字段映射：契约 `PacsReport` 的字段名与 issue #2 的内部 `PacsReportDto`
-  （`packages/shared-types/src/pacs-ris.ts`）**逐字段同名**（`patientId`/
-  `inpatientNo`/`patientName`/`sex`/`age`/`department`/`bedNo`/
-  `studyAccessionNo`/`examItem`/`examTime`/`reportId`/`reportStatus`/
-  `rawStatusCode`/`reportSavedAt`/`reportSubmittedAt`/`reportReviewedAt`/
-  `describeText`/`diagnoseText`/`sourceUpdatedAt`），因此不需要重命名层，
-  但仍对每个字段做防御式类型校验（`mapWireReportToDto`），不信任跨组织边界
-  传来的数据。
-- 状态映射：契约的标准状态枚举（`EXAM_IN_PROGRESS`/`AWAITING_REPORT`/
-  `DRAFT`/`PENDING_REVIEW`/`REVIEWED`/`FINAL_REVIEWED`/`UNKNOWN`）与
-  `PacsReportStatus` 的值也逐一相同，映射是直通而非转换；任何不在这七个
-  已知值中的字符串一律映射为 `UNKNOWN`，不猜测。
+- 字段映射（issue #26 收敛为只读展示数据）：契约 `PacsReport` 的展示字段与
+  issue #2 的内部 `PacsReportDto`（`packages/shared-types/src/pacs-ris.ts`）
+  **逐字段同名**（`sourceRecordId`/`patientName`/`department`/`bedNo`/
+  `patientTypeCode`/`patientTypeName`/`examItem`/`reportContent`/`diagnosis`），
+  因此不需要重命名层，但仍对每个字段做防御式类型校验（`mapWireReportToDto`），
+  不信任跨组织边界传来的数据。契约把检查时间拆成 `examDate`（必填日期）+
+  `examTime`（可选时刻），`mapWireReportToDto` 按 Asia/Shanghai（UTC+8，
+  无夏令时）合并为一个 UTC `Date`。
+- 派生字段（issue #26）：契约不再提供 `reportId`/`sourceUpdatedAt` 这两个
+  内部同步记账字段，`mapWireReportToDto` 派生 `reportId = sourceRecordId`、
+  `sourceUpdatedAt = examTime`——足以支撑幂等与增量变更检测。
 - 错误映射：401/403/400/404 → `PacsHttpAuthError`（不重试，由同步任务记录
   清晰错误摘要）；429/503/5xx/网络错误/超时 → `PacsHttpTransientError`（可
   被同步任务的指数退避重试）；200 但响应体不符契约 → `PacsHttpContractError`。
   以上错误类型均不在异常信息中回显响应体细节或 Token。
 - 环境变量：`PACS_HTTP_BASE_URL`、`PACS_HTTP_SERVICE_TOKEN`（Bearer Token，
   绝不写入日志或异常信息）、`PACS_HTTP_TIMEOUT_MS`（默认 10000）。
-- **未发现字段级不一致**：契约字段与内部 DTO 完全同名同义，唯一需要说明的
-  是这不是巧合——两者都源自同一份 PACS/RIS 工作流术语表（issue #2 的
-  `docs/pacs-ris-adapter.md` 假设的源库字段推演出的内部 DTO，恰好与 issue
-  #20 后续交付的网关契约在命名上对齐）。
 
 ### Mock HTTP server 测试
 
@@ -63,9 +58,11 @@ GET /api/system/sync-status（apps/api/src/system/）
 - 错误码：401/403 → `PacsHttpAuthError`；429/503/500 → `PacsHttpTransientError`
   （500 场景额外断言异常信息不包含模拟的敏感 SQL 片段）
 - 超时（10ms 超时 + 200ms 延迟响应）
-- 契约违反：`data.items` 缺失、单条报告缺少必填字段
+- 契约违反：`data.items` 缺失、单条报告缺少必填字段、`examDate`/`examTime`
+  格式非法
 - `pageSize` 上限裁剪（>500 → 500）
-- 状态映射：未知值 → `UNKNOWN`；七个已知值逐一直通验证
+- `examDate`+`examTime` 按 Asia/Shanghai 合并为 UTC 时刻、`reportId`/
+  `sourceUpdatedAt` 派生规则
 
 **为什么不用 `nock`**：`nock` 13.x 只 patch 传统 `http`/`https` 模块，不拦截
 Node 原生 `fetch` 所依赖的 undici dispatcher；在本仓库的 Jest + ts-jest 环境
@@ -88,7 +85,7 @@ require('undici').fetch`，已实测验证）。改为通过 adapter 已有的
   时钟漂移，量级是分钟；首次上线的窗口需要追平部署前已经存在的历史积压，
   量级是小时到天，两者语义不同不应共用同一个默认值（见
   `sync.service.ts`/`env.validation.ts`）。
-- `MonitorRecord` 按唯一键 `(studyAccessionNo, reportId, reportVersion)`
+- `MonitorRecord` 按唯一键 `(sourceRecordId, reportId, reportVersion)`
   upsert；仅当写入前查得的既有行 `sourceUpdatedAt` 严格早于本次数据时才
   重新调用 `matchReport()` 并写入 `MonitorMatch`——同一报告版本的重复批次
   不会重复生成命中。`MonitorMatch` 额外受 schema 唯一键
@@ -104,11 +101,11 @@ require('undici').fetch`，已实测验证）。改为通过 adapter 已有的
 
 - 单条报告处理失败（Prisma 写入异常、matchReport 罕见异常等）只计入该次
   `SyncJobLog.failureCount`，记录脱敏错误摘要（仅 `reportId`/
-  `studyAccessionNo` 等来源标识，不含姓名/住院号/报告正文），继续处理下一
+  `sourceRecordId` 等来源标识，不含姓名/报告正文），继续处理下一
   条 —— 状态标记为 `PARTIAL`（而非 `FAILED`）。
 - 整批失败（adapter 抛 `PacsHttpTransientError` 或等价瞬时错误）由
   `retry.ts#withRetry` 做指数退避（`SYNC_RETRY_BASE_DELAY_MS *
-  2^attempt`），达到 `SYNC_MAX_RETRIES` 后仍失败则整次运行标记 `FAILED`，
+2^attempt`），达到 `SYNC_MAX_RETRIES` 后仍失败则整次运行标记 `FAILED`，
   `cursorEnd` 只提交到本次运行中**已成功处理**的最后一条记录的
   `sourceUpdatedAt`（而非窗口结束时间），下次运行据此续跑，不丢数据。
 - 非重试错误（如 `PacsHttpAuthError`）立即失败，不消耗重试次数。
@@ -142,12 +139,12 @@ require('undici').fetch`，已实测验证）。改为通过 adapter 已有的
 健康分级（`sync-status.service.ts#classifyHealth`，均以配置的
 `SYNC_INTERVAL_MINUTES` 为基准倍数）：
 
-| 分级 | 判定条件 |
-|---|---|
-| `UNKNOWN` | 从未运行过（无 `sync_job_log` 记录） |
-| `HEALTHY` | 最近一次成功运行在 3 倍同步周期内 |
-| `DELAYED` | 最近一次成功运行超过 3 倍但未超过 8 倍周期；或从未成功过但最近一次尝试未失败/未卡死 |
-| `FAILED` | 最近一次运行状态为 `FAILED`；或最近成功运行已超过 8 倍周期；或存在一个运行状态为 `RUNNING` 但已超过 4 倍周期仍未结束（判定为卡死/进程崩溃未更新状态） |
+| 分级      | 判定条件                                                                                                                                              |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UNKNOWN` | 从未运行过（无 `sync_job_log` 记录）                                                                                                                  |
+| `HEALTHY` | 最近一次成功运行在 3 倍同步周期内                                                                                                                     |
+| `DELAYED` | 最近一次成功运行超过 3 倍但未超过 8 倍周期；或从未成功过但最近一次尝试未失败/未卡死                                                                   |
+| `FAILED`  | 最近一次运行状态为 `FAILED`；或最近成功运行已超过 8 倍周期；或存在一个运行状态为 `RUNNING` 但已超过 4 倍周期仍未结束（判定为卡死/进程崩溃未更新状态） |
 
 阈值倍数（`DELAYED_THRESHOLD_MULTIPLIER=3`、`FAILED_THRESHOLD_MULTIPLIER=8`、
 `STUCK_RUNNING_THRESHOLD_MULTIPLIER=4`）是本 issue 的工程默认值，未经运维
@@ -215,7 +212,8 @@ job，紧跟 issue #4 的 rules e2e 套件之后、迁移回滚步骤之前。
 3. `MonitorRecord.reportVersion` 目前恒为 1（issue #2 的 `PacsReportDto`
    未提供显式版本字段，只提供 `reportId`+`sourceUpdatedAt`）；若 issue #20
    后续为契约新增版本字段，应更新 `sync-runner.ts#resolveReportVersion`。
-4. `patientIdMasked` 的脱敏规则沿用 issue #3 文档中"待确认"的占位实现
-   （仅保留末 4 位），最终规则需信息科审核（见 `docs/data-dictionary.md`）。
+4. `MonitorRecord`（含 `reportContent`/`diagnosis` 报告正文快照）的保留周期
+   及报告正文快照策略待产品/信息科确认（见 `docs/data-dictionary.md` 待确认
+   事项；issue #26 已移除旧的 `patientIdMasked`/`reportTextCache` 占位字段）。
 5. `SqlPacsRisAdapter`（issue #2 遗留骨架）仍未连接真实驱动，本 issue 未
    触碰，`PACS_ADAPTER_MODE=sql` 依旧不可用于真实环境。

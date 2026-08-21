@@ -49,7 +49,6 @@ export interface SyntheticReport {
   reportVersion: number;
   describeText: string;
   diagnoseText: string;
-  isReviewed: boolean;
 }
 
 export function generateSyntheticReports(count: number, seed = 42): SyntheticReport[] {
@@ -71,7 +70,6 @@ export function generateSyntheticReports(count: number, seed = 42): SyntheticRep
       reportVersion: 1,
       describeText,
       diagnoseText,
-      isReviewed: i % 3 !== 0,
     });
   }
   return reports;

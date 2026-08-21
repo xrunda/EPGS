@@ -1,7 +1,9 @@
 import type { MatchInput, RuleSnapshot } from './types';
 
 /** Test-only helper: builds a RuleSnapshot with sane defaults, overridable per test. */
-export function buildRule(overrides: Partial<RuleSnapshot> & Pick<RuleSnapshot, 'ruleId' | 'keyword' | 'level'>): RuleSnapshot {
+export function buildRule(
+  overrides: Partial<RuleSnapshot> & Pick<RuleSnapshot, 'ruleId' | 'keyword' | 'level'>,
+): RuleSnapshot {
   return {
     ruleVersion: 1,
     matchField: 'REPORT_TEXT',
@@ -19,7 +21,6 @@ export function buildInput(overrides: Partial<MatchInput> & { rules: RuleSnapsho
     reportVersion: 1,
     describeText: null,
     diagnoseText: null,
-    isReviewed: true,
     ...overrides,
   };
 }

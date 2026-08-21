@@ -9,7 +9,7 @@
 ## 1. 组件与数据流
 
 ```text
-PacsRisAdapter (fixture / sql骨架 / http)
+PacsRisAdapter (local CSV / hospital REST HTTP)
         │  fetchReports(since, until, cursor, pageSize)
         ▼
 SyncService (@nestjs/schedule 自调度 setTimeout)
@@ -183,11 +183,17 @@ pg_ctl -D /tmp/epgs-pgdata -o "-p 5544 -k /tmp" -l /tmp/epgs-pg.log start
 createdb -h /tmp -p 5544 -U epgs epgs
 DATABASE_URL=postgresql://epgs@localhost:5544/epgs pnpm --filter api exec prisma migrate deploy
 
-# 端到端同步（FixturePacsRisAdapter，8 条合成数据）
-DATABASE_URL=postgresql://epgs@localhost:5544/epgs pnpm --filter worker run sync:once
+# 端到端同步（CsvPacsRisAdapter，8 条合成数据）
+DATABASE_URL=postgresql://epgs@localhost:5544/epgs \
+PACS_ADAPTER_MODE=csv \
+PACS_MOCK_CSV_PATH=src/pacs-adapter/fixtures/reports.fixture.csv \
+pnpm --filter worker run sync:once
 
 # 幂等重跑（不产生重复 MonitorRecord/MonitorMatch）
-DATABASE_URL=postgresql://epgs@localhost:5544/epgs pnpm --filter worker run sync:once
+DATABASE_URL=postgresql://epgs@localhost:5544/epgs \
+PACS_ADAPTER_MODE=csv \
+PACS_MOCK_CSV_PATH=src/pacs-adapter/fixtures/reports.fixture.csv \
+pnpm --filter worker run sync:once
 
 # 完整场景化 e2e 套件（首次全量窗口/增量/同时间戳/重复批次/进程中断恢复/
 # 迟到更新/源不可用/单条坏数据/并发 worker）
@@ -215,5 +221,5 @@ job，紧跟 issue #4 的 rules e2e 套件之后、迁移回滚步骤之前。
 4. `MonitorRecord`（含 `reportContent`/`diagnosis` 报告正文快照）的保留周期
    及报告正文快照策略待产品/信息科确认（见 `docs/data-dictionary.md` 待确认
    事项；issue #26 已移除旧的 `patientIdMasked`/`reportTextCache` 占位字段）。
-5. `SqlPacsRisAdapter`（issue #2 遗留骨架）仍未连接真实驱动，本 issue 未
-   触碰，`PACS_ADAPTER_MODE=sql` 依旧不可用于真实环境。
+5. 医院 REST 网关的 Base URL、Token、网络白名单和证书信任链由内网部署时确认；
+   EPGS 不提供数据库直连降级路径。

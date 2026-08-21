@@ -3,8 +3,8 @@ import { FetchReportsParams, FetchReportsResult } from '@epgs/shared-types';
 /**
  * Injection token for the active PacsRisAdapter implementation. Use this
  * token (not the class) to inject the adapter, so it can be swapped
- * between SqlPacsRisAdapter and FixturePacsRisAdapter via
- * PACS_ADAPTER_MODE without consumers caring which one is active.
+ * between the local CsvPacsRisAdapter and production HttpPacsRisAdapter
+ * via PACS_ADAPTER_MODE without consumers caring which one is active.
  */
 export const PACS_RIS_ADAPTER = Symbol('PACS_RIS_ADAPTER');
 

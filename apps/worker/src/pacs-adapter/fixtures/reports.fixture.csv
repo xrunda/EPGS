@@ -1,0 +1,9 @@
+sourceRecordId,patientRegistrationNo,patientName,department,bedNo,patientTypeCode,patientTypeName,examItem,examDate,examTime,reportContent,diagnosis
+TEST-ES-0001,TEST-REG-0001,测试患者甲,消化内科,12,I,住院,胃镜检查,2026-08-01,09:30:00,合成检查所见一,慢性非萎缩性胃炎
+TEST-ES-0002,TEST-REG-0001,测试患者甲,消化内科,12,I,住院,胃镜检查,2026-08-01,10:30:00,合成检查所见二,慢性非萎缩性胃炎伴糜烂
+TEST-ES-0003,TEST-REG-0002,测试患者乙,内镜中心,,O,门诊,肠镜检查,2026-08-01,11:00:00,合成检查所见三,结肠未见明显异常
+TEST-ES-0004,TEST-REG-0003,测试患者丙,消化内科,5,I,住院,胃镜检查,2026-08-01,12:00:00,,
+TEST-ES-0005,TEST-REG-0004,测试患者丁,内镜中心,,O,门诊,胃镜检查,2026-08-01,13:00:00,见镜下所见待补充,
+TEST-ES-0006,TEST-REG-0005,测试患者戊,消化内科,8,I,住院,肠镜检查,2026-08-01,14:00:00,,
+TEST-ES-0007,TEST-REG-0006,测试患者己,内镜中心,,I,,胃镜检查,2026-08-02,09:00:00,合成检查所见七,糜烂性胃炎
+TEST-ES-0008,TEST-REG-0007,测试患者庚,消化内科,3,I,住院,胃镜检查,2026-08-02,10:00:00,所见大致正常,未见明显异常

@@ -36,3 +36,7 @@ apps/**/generated/
 
 # Claude Code working dir (AGENTS.md: never stage)
 .claude/
+
+# Hospital-provided mock export. Keep outside Git until its synthetic/
+# desensitized status has been reviewed; tests use the committed fixture CSV.
+Doc/moke-data.csv

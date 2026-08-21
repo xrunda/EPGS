@@ -10,8 +10,10 @@ export interface WorkerConfig {
   syncMaxRetries: number;
   syncRetryBaseDelayMs: number;
   databaseUrl: string;
-  /** 'fixture' (default, no real DB) | 'sql' (unfinished skeleton) | 'http' (real #20 gateway). */
-  pacsAdapterMode: 'fixture' | 'sql' | 'http';
+  /** 'csv' for local synthetic data | 'http' for the hospital REST gateway. */
+  pacsAdapterMode: 'csv' | 'http';
+  /** Only used when pacsAdapterMode='csv'. */
+  pacsMockCsvPath?: string;
   /** Only used when pacsAdapterMode='http'. Never logged. */
   pacsHttpBaseUrl?: string;
   /** Only used when pacsAdapterMode='http'. Never logged. */
@@ -31,7 +33,8 @@ export default (): WorkerConfig => ({
   syncMaxRetries: parseInt(process.env.SYNC_MAX_RETRIES ?? '5', 10),
   syncRetryBaseDelayMs: parseInt(process.env.SYNC_RETRY_BASE_DELAY_MS ?? '1000', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',
-  pacsAdapterMode: (process.env.PACS_ADAPTER_MODE as 'fixture' | 'sql' | 'http') ?? 'fixture',
+  pacsAdapterMode: (process.env.PACS_ADAPTER_MODE as 'csv' | 'http') ?? 'csv',
+  pacsMockCsvPath: process.env.PACS_MOCK_CSV_PATH,
   pacsHttpBaseUrl: process.env.PACS_HTTP_BASE_URL,
   pacsHttpServiceToken: process.env.PACS_HTTP_SERVICE_TOKEN,
   pacsHttpTimeoutMs: parseInt(process.env.PACS_HTTP_TIMEOUT_MS ?? '10000', 10),

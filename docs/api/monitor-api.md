@@ -14,6 +14,10 @@
 （`@nestjs/swagger`，见 `apps/api/src/main.ts`）。本文档是对其的手写补充，
 着重说明查询语义与数据规则。
 
+> 端到端验收与上线检查：本 API 的 10 个验收场景、筛选性能基准（≤3s，100k 行）
+> 与数据库字段/稳定主键/患者类型字典记录见 [docs/acceptance.md](../acceptance.md)；
+> 上线清单与回滚 runbook 见 [docs/go-live.md](../go-live.md)。
+
 ## 只读约定（产品决策，必须遵守）
 
 产品已收敛为**只读展示**（issue #26 移除了闭环处置模型），以下约束贯穿全部三个接口：

@@ -194,6 +194,7 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
 | 时间（检查时间/最近命中）    | `monitor_record(exam_time)`、`monitor_record(last_matched_at)`                                           |
 | 等级                         | `monitor_record(current_level)`、`monitor_match(level)`                                                  |
 | 科室                         | `monitor_record(department)`                                                                             |
+| 患者类型（issue #14）        | `monitor_record(patient_type_code)`（精确匹配常用筛选，issue #14 补建）                                  |
 | 来源唯一键                   | `monitor_record(source_record_id, report_id)` + 唯一索引 `(source_record_id, report_id, report_version)` |
 | 规则维度                     | `monitor_rule(level, is_enabled)`、`monitor_rule(rule_group_id)`、`monitor_rule(category)`               |
 | 命中明细按记录/规则/时间查询 | `monitor_match(monitor_record_id)`、`monitor_match(rule_id)`、`monitor_match(matched_at)`                |
@@ -206,12 +207,14 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
   - `apps/api/prisma/migrations/20260821073851_remove_closed_loop_readonly/migration.sql`（issue #26 移除闭环模型）
   - `apps/api/prisma/migrations/20260821093500_add_local_auth/migration.sql`（issue #31 增加本地账号）
   - `apps/api/prisma/migrations/20260821103732_add_auth_access_and_audit_log/migration.sql`（issue #13 增加 `app_user_access`/`audit_log` 与 `AppRole`/`AuditAction` 枚举）
+  - `apps/api/prisma/migrations/20260821110858_add_monitor_record_patient_type_index/migration.sql`（issue #14 为 `patient_type_code` 常用筛选补建 btree 索引）
 - 回滚脚本（Prisma Migrate 本身没有内建 down-migration 机制，回滚脚本需手动执行，
   详见脚本头部注释）：
   - `20260821040339_init_monitoring_schema/rollback.sql`
   - `20260821073851_remove_closed_loop_readonly/rollback.sql`
   - `20260821093500_add_local_auth/rollback.sql`
   - `20260821103732_add_auth_access_and_audit_log/rollback.sql`（删除全部角色授权与审计日志）
+  - `20260821110858_add_monitor_record_patient_type_index/rollback.sql`（删除 `patient_type_code` 索引，issue #14）
 - **生产数据确认门（issue #26）**：`remove_closed_loop_readonly` 迁移开头包含
   PL/pgSQL 数据门禁——若 `monitor_action` 仍存在任何数据，或任意
   `monitor_record.handling_status <> 'PENDING'`，迁移会抛出异常并中止。

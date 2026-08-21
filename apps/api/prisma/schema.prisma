@@ -1,0 +1,16 @@
+// EPGS Prisma schema.
+//
+// Intentionally contains ONLY the datasource + generator blocks for
+// issue #1 (engineering skeleton). No models are defined here yet -
+// issue #3 (data model) will add monitor_rule / monitor_record / etc.
+// This keeps CI for issue #1 from requiring a live Postgres instance
+// while still proving the ORM tooling is wired up correctly.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Allow these packages' postinstall/build scripts to run (needed for
+# @nestjs/core's optional native deps probe, Prisma's client generation,
+# and esbuild's platform binary). Reviewed - no arbitrary third-party
+# scripts beyond what NestJS/Prisma/esbuild themselves ship.
+onlyBuiltDependencies:
+  - "@nestjs/core"
+  - "@prisma/client"
+  - "@prisma/engines"
+  - esbuild
+  - prisma
+

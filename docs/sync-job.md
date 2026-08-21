@@ -82,8 +82,12 @@ require('undici').fetch`，已实测验证）。改为通过 adapter 已有的
   下次运行从**上一次 SUCCEEDED 或 PARTIAL** 运行的 `cursorEnd` 减去回看窗口
   继续（`sync-cursor.ts#resolveCursor`）。`FAILED` 运行的游标**永不**被采用，
   避免推进到丢数据的位置。
-- 首次运行（无历史成功记录）使用 `firstRunLookbackMinutes`（当前 CLI/服务
-  内部固定取回看窗口本身或 1 小时兜底，见 `sync.service.ts`）。
+- 首次运行（无历史成功记录）使用独立的 `SYNC_FIRST_RUN_LOOKBACK_MINUTES`
+  环境变量（默认 1440 分钟 / 24 小时），与稳态回看窗口
+  `SYNC_LOOKBACK_MINUTES` 刻意分开配置：稳态回看窗口只需覆盖短暂故障/
+  时钟漂移，量级是分钟；首次上线的窗口需要追平部署前已经存在的历史积压，
+  量级是小时到天，两者语义不同不应共用同一个默认值（见
+  `sync.service.ts`/`env.validation.ts`）。
 - `MonitorRecord` 按唯一键 `(studyAccessionNo, reportId, reportVersion)`
   upsert；仅当写入前查得的既有行 `sourceUpdatedAt` 严格早于本次数据时才
   重新调用 `matchReport()` 并写入 `MonitorMatch`——同一报告版本的重复批次
@@ -205,6 +209,9 @@ job，紧跟 issue #4 的 rules e2e 套件之后、迁移回滚步骤之前。
    是工程默认值，未与运维口径核对，实际告警阈值应由运维/信息科确认。
 2. 回看窗口默认值 `SYNC_LOOKBACK_MINUTES=10` 同样是工程默认，具体应覆盖
    的"数据源可能停机时长"需业务/运维确认；已做成环境变量方便后续调整。
+   `SYNC_FIRST_RUN_LOOKBACK_MINUTES=1440`（24 小时）同理，实际上线时的
+   历史积压窗口应由运维/信息科根据部署当天的真实待追平数据量确认，必要
+   时临时调大（该变量上限 43200 分钟 / 30 天）。
 3. `MonitorRecord.reportVersion` 目前恒为 1（issue #2 的 `PacsReportDto`
    未提供显式版本字段，只提供 `reportId`+`sourceUpdatedAt`）；若 issue #20
    后续为契约新增版本字段，应更新 `sync-runner.ts#resolveReportVersion`。

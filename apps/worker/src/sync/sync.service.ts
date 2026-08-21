@@ -95,7 +95,7 @@ export class SyncService implements OnModuleInit {
         {
           pageSize: this.config.get<number>('syncPageSize', 200),
           lookbackMinutes: this.config.get<number>('syncLookbackMinutes', 10),
-          firstRunLookbackMinutes: this.config.get<number>('syncLookbackMinutes', 10) || 60,
+          firstRunLookbackMinutes: this.config.get<number>('syncFirstRunLookbackMinutes', 1440),
           maxRetries: this.config.get<number>('syncMaxRetries', 5),
           retryBaseDelayMs: this.config.get<number>('syncRetryBaseDelayMs', 1000),
         },

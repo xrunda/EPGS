@@ -24,6 +24,17 @@ export const envValidationSchema = Joi.object({
   // skew/late-arriving updatedAt writes) cannot silently skip records -
   // upserts are idempotent so re-reading already-synced rows is safe.
   SYNC_LOOKBACK_MINUTES: Joi.number().integer().min(0).max(120).default(10),
+  // First-ever run window (minutes before "now") used only when
+  // sync_job_log has no prior SUCCEEDED/PARTIAL run at all - see
+  // sync-cursor.ts#resolveCursor. Deliberately independent from (and
+  // much larger than) SYNC_LOOKBACK_MINUTES: the look-back window is
+  // sized for "how much drift/outage can a HEALTHY steady-state
+  // deployment tolerate" (minutes), while the first run needs to catch
+  // up on however much backlog exists at go-live (hours-to-days), or a
+  // fresh deployment would silently skip everything older than a few
+  // minutes on its very first sync. Default 1440 (24h) - override for a
+  // larger initial backlog at rollout time.
+  SYNC_FIRST_RUN_LOOKBACK_MINUTES: Joi.number().integer().min(1).max(43200).default(1440),
   // Max retry attempts for a whole-batch transient failure (adapter
   // throws PacsHttpTransientError / network error) before giving up on
   // this run without advancing the cursor.

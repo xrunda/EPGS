@@ -6,6 +6,7 @@ export interface WorkerConfig {
   syncIntervalMinutes: number;
   syncPageSize: number;
   syncLookbackMinutes: number;
+  syncFirstRunLookbackMinutes: number;
   syncMaxRetries: number;
   syncRetryBaseDelayMs: number;
   databaseUrl: string;
@@ -26,6 +27,7 @@ export default (): WorkerConfig => ({
   syncIntervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '3', 10),
   syncPageSize: parseInt(process.env.SYNC_PAGE_SIZE ?? '200', 10),
   syncLookbackMinutes: parseInt(process.env.SYNC_LOOKBACK_MINUTES ?? '10', 10),
+  syncFirstRunLookbackMinutes: parseInt(process.env.SYNC_FIRST_RUN_LOOKBACK_MINUTES ?? '1440', 10),
   syncMaxRetries: parseInt(process.env.SYNC_MAX_RETRIES ?? '5', 10),
   syncRetryBaseDelayMs: parseInt(process.env.SYNC_RETRY_BASE_DELAY_MS ?? '1000', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',

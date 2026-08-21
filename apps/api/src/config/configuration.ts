@@ -8,6 +8,17 @@ export interface AppConfig {
   tz: string;
   logLevel: string;
   databaseUrl: string;
+  /**
+   * Mirrors apps/worker's SYNC_INTERVAL_MINUTES (issue #6). apps/api does
+   * not run the sync job itself - it only reads sync_job_log (shared
+   * Postgres) to serve GET /api/system/sync-status - but needs the same
+   * cadence value to judge "how stale is too stale" (health thresholds
+   * are expressed as a multiple of this interval). Keep both apps'
+   * env values in sync operationally; a mismatch only affects the
+   * accuracy of the health classification, not correctness of the raw
+   * data returned.
+   */
+  syncIntervalMinutes: number;
 }
 
 export default (): AppConfig => ({
@@ -16,4 +27,5 @@ export default (): AppConfig => ({
   tz: process.env.TZ ?? 'Asia/Shanghai',
   logLevel: process.env.LOG_LEVEL ?? 'log',
   databaseUrl: process.env.DATABASE_URL ?? '',
+  syncIntervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '3', 10),
 });

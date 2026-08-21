@@ -20,4 +20,8 @@ export const envValidationSchema = Joi.object({
   DATABASE_URL: Joi.string()
     .uri({ scheme: [/postgres(ql)?/] })
     .required(),
+
+  // Issue #6: used only to compute GET /api/system/sync-status health
+  // staleness thresholds - see configuration.ts's AppConfig.syncIntervalMinutes doc.
+  SYNC_INTERVAL_MINUTES: Joi.number().integer().min(1).max(5).default(3),
 });

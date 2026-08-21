@@ -11,13 +11,15 @@
   "scripts": {
     "postinstall": "pnpm --filter api exec prisma generate",
     "build:shared-types": "pnpm --filter @epgs/shared-types run build",
-    "dev": "pnpm run build:shared-types && concurrently -n api,worker,web -c blue,magenta,green \"pnpm --filter api run start:dev\" \"cross-env PORT=3001 pnpm --filter worker run start:dev\" \"pnpm --filter web run dev\"",
-    "build": "pnpm run build:shared-types && pnpm -r --filter=!@epgs/shared-types run build",
-    "test": "pnpm run build:shared-types && pnpm -r --filter=!@epgs/shared-types run test",
+    "build:matching-engine": "pnpm --filter @epgs/matching-engine run build",
+    "build:libs": "pnpm run build:shared-types && pnpm run build:matching-engine",
+    "dev": "pnpm run build:libs && concurrently -n api,worker,web -c blue,magenta,green \"pnpm --filter api run start:dev\" \"cross-env PORT=3001 pnpm --filter worker run start:dev\" \"pnpm --filter web run dev\"",
+    "build": "pnpm run build:libs && pnpm -r --filter=!@epgs/shared-types --filter=!@epgs/matching-engine run build",
+    "test": "pnpm run build:libs && pnpm -r --filter=!@epgs/shared-types run test",
     "lint": "pnpm -r run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\" --ignore-path .gitignore --ignore-path .prettierignore",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\" --ignore-path .gitignore --ignore-path .prettierignore",
-    "typecheck": "pnpm run build:shared-types && pnpm -r --filter=!@epgs/shared-types run typecheck"
+    "typecheck": "pnpm run build:libs && pnpm -r --filter=!@epgs/shared-types --filter=!@epgs/matching-engine run typecheck"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.15.0",

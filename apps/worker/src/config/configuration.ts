@@ -4,9 +4,19 @@ export interface WorkerConfig {
   tz: string;
   logLevel: string;
   syncIntervalMinutes: number;
+  syncPageSize: number;
+  syncLookbackMinutes: number;
+  syncFirstRunLookbackMinutes: number;
+  syncMaxRetries: number;
+  syncRetryBaseDelayMs: number;
   databaseUrl: string;
-  /** 'fixture' (default, no real DB) | 'sql' (real PACS/RIS, see pacs-adapter). */
-  pacsAdapterMode: 'fixture' | 'sql';
+  /** 'fixture' (default, no real DB) | 'sql' (unfinished skeleton) | 'http' (real #20 gateway). */
+  pacsAdapterMode: 'fixture' | 'sql' | 'http';
+  /** Only used when pacsAdapterMode='http'. Never logged. */
+  pacsHttpBaseUrl?: string;
+  /** Only used when pacsAdapterMode='http'. Never logged. */
+  pacsHttpServiceToken?: string;
+  pacsHttpTimeoutMs: number;
 }
 
 export default (): WorkerConfig => ({
@@ -14,7 +24,15 @@ export default (): WorkerConfig => ({
   port: parseInt(process.env.PORT ?? '3001', 10),
   tz: process.env.TZ ?? 'Asia/Shanghai',
   logLevel: process.env.LOG_LEVEL ?? 'log',
-  syncIntervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '15', 10),
+  syncIntervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '3', 10),
+  syncPageSize: parseInt(process.env.SYNC_PAGE_SIZE ?? '200', 10),
+  syncLookbackMinutes: parseInt(process.env.SYNC_LOOKBACK_MINUTES ?? '10', 10),
+  syncFirstRunLookbackMinutes: parseInt(process.env.SYNC_FIRST_RUN_LOOKBACK_MINUTES ?? '1440', 10),
+  syncMaxRetries: parseInt(process.env.SYNC_MAX_RETRIES ?? '5', 10),
+  syncRetryBaseDelayMs: parseInt(process.env.SYNC_RETRY_BASE_DELAY_MS ?? '1000', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',
-  pacsAdapterMode: (process.env.PACS_ADAPTER_MODE as 'fixture' | 'sql') ?? 'fixture',
+  pacsAdapterMode: (process.env.PACS_ADAPTER_MODE as 'fixture' | 'sql' | 'http') ?? 'fixture',
+  pacsHttpBaseUrl: process.env.PACS_HTTP_BASE_URL,
+  pacsHttpServiceToken: process.env.PACS_HTTP_SERVICE_TOKEN,
+  pacsHttpTimeoutMs: parseInt(process.env.PACS_HTTP_TIMEOUT_MS ?? '10000', 10),
 });

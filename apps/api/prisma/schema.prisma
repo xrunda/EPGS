@@ -371,6 +371,7 @@ model MonitorRecord {
   @@unique([sourceRecordId, reportId, reportVersion], name: "uq_monitor_record_source_version")
   @@index([currentLevel])
   @@index([department])
+  @@index([patientTypeCode])
   @@index([examTime])
   @@index([lastMatchedAt])
   @@index([sourceRecordId, reportId])

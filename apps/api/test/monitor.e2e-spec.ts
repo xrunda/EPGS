@@ -685,18 +685,22 @@ describe('Monitor API (e2e, real Postgres)', () => {
   });
 
   itWithDb('keyword matches the exact matched-rule keyword only - never report text', async () => {
-    // keyword='腺癌' finds R1/R8/R9 via their matched keyword, but NOT R12
-    // whose report body mentions 腺癌 yet has no rule hit - proving keyword
-    // does not scan reportContent/diagnosis, and matches the exact keyword
-    // rather than a substring.
+    // keyword='腺癌' finds only R1/R9 via their exact matched keyword - NOT
+    // R8 (whose matched keyword is '浸润癌', a different rule, even though
+    // its report body also mentions 浸润癌) and NOT R12 (whose report body
+    // mentions 腺癌 yet has no rule hit at all) - proving keyword does not
+    // scan reportContent/diagnosis, and matches the exact keyword rather
+    // than a substring like the old '癌' substring search would.
     const byKeyword = await agent
       .get('/api/monitor/exams')
       .query({ keyword: '腺癌' })
       .expect(200);
-    expect(byKeyword.body.total).toBe(3);
+    expect(byKeyword.body.total).toBe(2);
     expect(
-      byKeyword.body.items.some((item: { recordId: string }) => item.recordId === ids.R12),
-    ).toBe(false);
+      byKeyword.body.items.every(
+        (item: { recordId: string }) => item.recordId === ids.R1 || item.recordId === ids.R9,
+      ),
+    ).toBe(true);
 
     const byKeyword2 = await agent
       .get('/api/monitor/exams')

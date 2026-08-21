@@ -4,6 +4,7 @@ import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { MonitorModule } from './monitor/monitor.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RulesModule } from './rules/rules.module';
 import { SystemModule } from './system/system.module';
@@ -20,6 +21,7 @@ import { SystemModule } from './system/system.module';
     }),
     PrismaModule,
     HealthModule,
+    MonitorModule,
     RulesModule,
     SystemModule,
   ],

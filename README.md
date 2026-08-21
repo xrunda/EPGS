@@ -28,9 +28,11 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
 
 - **apps/api** — the public-facing NestJS HTTP API. Owns `GET /health`, the unified
   error response shape, correlation-ID propagation, structured logging, env-var
-  config validation (fail-fast on missing required vars), and (issue #4) the
-  `monitor_rule` management API under `/api/rules` — see "Rules API" below and
-  [`docs/rules-api.md`](docs/rules-api.md).
+  config validation (fail-fast on missing required vars), (issue #4) the
+  `monitor_rule` management API under `/api/rules`, and (issue #7) the read-only
+  monitor workbench API under `/api/monitor` (list/filter/summary + detail) — see
+  "Rules API" / "Monitor API" below and [`docs/rules-api.md`](docs/rules-api.md) /
+  [`docs/api/monitor-api.md`](docs/api/monitor-api.md).
 - **apps/worker** — a NestJS-based background service for sync/monitoring jobs. Not
   publicly exposed; runs independently with its own port/health check and its own
   `@nestjs/schedule` cron job (currently a placeholder that logs `"sync tick"`).
@@ -70,6 +72,10 @@ docker-compose.yml          # Local Postgres for later issues
 - [`docs/api/pacs-ris-data-api.md`](docs/api/pacs-ris-data-api.md) and
   [`docs/api/pacs-ris-data-api.openapi.yaml`](docs/api/pacs-ris-data-api.openapi.yaml) —
   target read-only database-gateway API contract for issue #24.
+- [`docs/api/monitor-api.md`](docs/api/monitor-api.md) — issue #7's read-only
+  monitor workbench API contract (`/api/monitor/exams`, `/api/monitor/exams/:id`,
+  `/api/monitor/summary`): filter semantics, Shanghai-day boundaries, sort contract,
+  pagination, error codes.
 
 ## Prerequisites
 
@@ -235,6 +241,32 @@ No real authentication/authorization exists yet for these write endpoints — se
 `JWT_SECRET`/`SESSION_SECRET` row above and `apps/api/src/common/guards/
 rules-write.guard.ts` (issue #13 will replace this placeholder guard).
 
+## Monitor API (issue #7)
+
+`GET /api/monitor/exams`, `GET /api/monitor/exams/:id` and
+`GET /api/monitor/summary` implement the **read-only** endoscopy workbench: a
+filterable/paginated list, the attention-level summary cards, and a detail drawer.
+They surface the synced exam snapshot (`monitor_record`) plus its hit evidence
+(`monitor_match`) — the product converged to read-only display (issue #26), so there
+is deliberately no report/disposition status anywhere in these responses, and the
+list **never** returns `reportContent`/`diagnosis` (detail endpoint only).
+
+Key semantics (full contract in [`docs/api/monitor-api.md`](docs/api/monitor-api.md)):
+
+- Combined filters under **AND**: `examDateFrom`/`examDateTo` (Asia/Shanghai natural
+  days; `from` inclusive, `to` exclusive of the next day), `department`,
+  `patientTypeCode`, `level`, `examItem`, and `q` (fuzzy search over `patientName`
+  OR matched keyword only — never report text).
+- Default sort `examTime desc`, ties broken RED > YELLOW > GREEN > UNCLASSIFIED
+  (via the PG enum order), `id` final tie-break for stable pagination; optional
+  `sortBy` whitelist (`examTime`/`currentLevel`/`patientName`/`firstMatchedAt`/
+  `lastMatchedAt`) + `sortDir`.
+- `patientType` keeps the source code verbatim plus the confirmed Chinese `name`
+  (unknown codes → `name: null`, never guessed); no rule hit = `UNCLASSIFIED`
+  (never auto-GREEN).
+- `summary` computes total/red/yellow/green/unclassified under the **same** filters
+  as the list (`total` = sum of the 5 buckets).
+
 ## Commit message convention
 
 This repo follows [Conventional Commits](https://www.conventionalcommits.org/):
@@ -270,7 +302,13 @@ container):
    conflict detection, concurrent-edit (optimistic lock) scenarios, illegal enums, and
    CSV import (full success / partial failure / duplicate rows / encoding error / empty
    file), all against this same real Postgres
-7. (issue #4) `prisma/seed.ts` run twice — confirms the 6 initial RED keyword rules are
+7. (issue #7) `apps/api/test/monitor.e2e-spec.ts` — combined filters, cross-day
+   Asia/Shanghai boundaries, exact day edges, null rows, stable pagination,
+   invalid-param 400s, summary==list consistency, and the read-only detail endpoint.
+   It seeds its own 6-rule/12-record fixture in beforeAll and wipes monitor_match →
+   monitor_record → monitor_rule in afterAll, so the seed-count check in step 8 still
+   sees exactly the 6 seeded RED rules
+8. (issue #4) `prisma/seed.ts` run twice — confirms the 6 initial RED keyword rules are
    created once and re-runs are idempotent (no duplicates)
-8. Roll back the migration (`rollback.sql`) and confirm all monitor_* tables are gone
-9. Re-apply the migration after rollback to confirm the upgrade path still works
+9. Roll back the migration (`rollback.sql`) and confirm all monitor_* tables are gone
+10. Re-apply the migration after rollback to confirm the upgrade path still works

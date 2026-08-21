@@ -116,6 +116,33 @@ jobs:
         working-directory: apps/api
         run: pnpm exec ts-node --transpile-only prisma/scripts/verify-constraints.ts
 
+      # Issue #4: rules API e2e suite against this same real Postgres
+      # instance - covers create/edit/disable/duplicate/concurrent-edit/
+      # illegal-enum plus CSV import (full success/partial failure/
+      # duplicate rows/encoding error/empty file). See
+      # apps/api/test/rules.e2e-spec.ts's doc comment for why this lives
+      # in the db-migrations job rather than the DB-free build-and-test
+      # job. verify-constraints.ts's cleanup (above) already emptied
+      # monitor_rule, so this suite starts from a clean table.
+      - name: Rules API e2e suite (real Postgres)
+        working-directory: apps/api
+        run: pnpm exec jest --config ./test/jest-e2e.json test/rules.e2e-spec.ts
+
+      # Issue #4: seed script idempotency - creates the 6 initial RED
+      # keywords, then re-runs and asserts no duplicates are created.
+      - name: Seed script creates the 6 initial RED keyword rules
+        working-directory: apps/api
+        run: |
+          pnpm exec ts-node --transpile-only prisma/seed.ts
+          pnpm exec ts-node --transpile-only prisma/seed.ts
+          COUNT=$(psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM monitor_rule WHERE level = 'RED' AND is_enabled = true;")
+          if [ "$COUNT" -ne 6 ]; then
+            echo "Expected 6 enabled RED rules after seeding twice (idempotency check), got $COUNT"
+            exit 1
+          fi
+        env:
+          PGPASSWORD: epgs
+
       - name: Roll back migration
         run: psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821040339_init_monitoring_schema/rollback.sql
         env:

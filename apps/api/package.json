@@ -16,7 +16,11 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "prisma:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "dependencies": {
     "@epgs/shared-types": "workspace:*",
@@ -24,7 +28,11 @@
     "@nestjs/config": "^3.3.0",
     "@nestjs/core": "^10.4.6",
     "@nestjs/platform-express": "^10.4.6",
+    "@nestjs/swagger": "^7.4.2",
     "@prisma/client": "^5.22.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "csv-parse": "^5.6.0",
     "joi": "^17.13.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -36,6 +44,7 @@
     "@nestjs/testing": "^10.4.6",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
+    "@types/multer": "^1.4.12",
     "@types/node": "^22.9.0",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^10.0.0",

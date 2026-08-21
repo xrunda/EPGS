@@ -28,7 +28,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const correlationId =
       request.correlationId ?? request.header(CORRELATION_ID_HEADER) ?? 'unknown';
 
-    const { status, code, message } = this.resolve(exception);
+    const { status, code, message, details } = this.resolve(exception);
 
     this.logger.error(
       `${request.method} ${request.url} -> ${status} ${code}: ${message}`,
@@ -41,25 +41,37 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         code,
         message,
         correlationId,
+        ...(details ? { details } : {}),
       },
     };
 
     response.status(status).json(body);
   }
 
-  private resolve(exception: unknown): { status: number; code: string; message: string } {
+  private resolve(exception: unknown): {
+    status: number;
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  } {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const response = exception.getResponse();
-      const message =
-        typeof response === 'string'
-          ? response
-          : ((response as { message?: string | string[] })?.message ?? exception.message);
+      const responseObj =
+        typeof response === 'object' && response !== null
+          ? (response as { message?: string | string[]; code?: string; details?: Record<string, unknown> })
+          : undefined;
+      const message = typeof response === 'string' ? response : (responseObj?.message ?? exception.message);
 
       return {
         status,
-        code: HttpStatus[status] ?? 'HTTP_ERROR',
+        // A thrown HttpException may carry an explicit machine-readable
+        // `code` in its response body (e.g. 'RULE_CONFLICT' for 409s from
+        // the rules module) - prefer that over the generic HTTP status
+        // name so domain-specific errors stay distinguishable.
+        code: responseObj?.code ?? HttpStatus[status] ?? 'HTTP_ERROR',
         message: Array.isArray(message) ? message.join(', ') : message,
+        details: responseObj?.details,
       };
     }
 

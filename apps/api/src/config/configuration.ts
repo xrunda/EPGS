@@ -19,6 +19,9 @@ export interface AppConfig {
    * data returned.
    */
   syncIntervalMinutes: number;
+  jwtSecret: string;
+  jwtExpiresSeconds: number;
+  webOrigin: string;
 }
 
 export default (): AppConfig => ({
@@ -28,4 +31,7 @@ export default (): AppConfig => ({
   logLevel: process.env.LOG_LEVEL ?? 'log',
   databaseUrl: process.env.DATABASE_URL ?? '',
   syncIntervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '3', 10),
+  jwtSecret: process.env.JWT_SECRET ?? '',
+  jwtExpiresSeconds: parseInt(process.env.JWT_EXPIRES_SECONDS ?? '28800', 10),
+  webOrigin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',
 });

@@ -61,4 +61,14 @@ describe('AppModule (e2e)', () => {
     expect(response.body.error).toHaveProperty('message');
     expect(response.body.error).toHaveProperty('correlationId');
   });
+
+  it('protects business APIs while keeping the health endpoint public', async () => {
+    const response = await request(app.getHttpServer()).get('/api/rules').expect(401);
+
+    expect(response.body.error).toMatchObject({
+      code: 'AUTH_REQUIRED',
+      message: '请先登录。',
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(/token|password|jwt/i);
+  });
 });

@@ -28,6 +28,25 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
+// app_user - lightweight local accounts for the hospital intranet
+// ---------------------------------------------------------------------------
+
+model AppUser {
+  id String @id @default(uuid()) @db.Uuid
+
+  username        String  @unique @db.VarChar(50)
+  displayName     String  @map("display_name") @db.VarChar(100)
+  passwordHash    String  @map("password_hash") @db.VarChar(255)
+  passwordVersion Int     @default(1) @map("password_version")
+  isActive        Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_user")
+}
+
+// ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
 

@@ -10,14 +10,12 @@
 （`@nestjs/swagger`，见 `apps/api/src/main.ts`）。本文档是对其的手写补充，
 着重说明业务规则和示例，而非逐字段类型清单。
 
-## 鉴权（占位）
+## 鉴权
 
-本 issue 尚无正式鉴权系统（issue #13 负责）。所有写接口（`POST`/`PUT`/
-`import/*`）已挂载 `RulesWriteGuard`
-(`apps/api/src/common/guards/rules-write.guard.ts`)，当前实现**放行所有请求**，
-仅作为未来接入真实鉴权的挂载点。调用方必须显式传入 `actorId`
-（操作人标识，字符串，非结构化）用于审计字段 `createdBy`/`updatedBy` ——
-这不是身份验证，只是审计记录，真正的越权拦截要等 issue #13。
+全部接口要求 Issue #31 的有效登录 Cookie；未登录或会话过期返回
+`401 AUTH_REQUIRED`。当前所有已登录账号都可维护规则，调用方同时传入当前账号
+作为 `actorId`，用于 `createdBy`/`updatedBy`。角色化写权限和完整变更审计仍由
+Issue #13 实现；`RulesWriteGuard` 暂不承担角色判断。
 
 ## 统一错误格式
 
@@ -36,17 +34,17 @@
 
 `details` 为可选字段，仅部分错误码（见下表）携带机器可读的额外上下文。
 
-| 错误码 | HTTP 状态 | 触发场景 |
-|---|---|---|
-| `RULE_CONFLICT` | 409 | 新增/编辑后与另一条已启用规则的 (keyword, level, matchField, matchMode) 元组重复 |
-| `RULE_VERSION_CONFLICT` | 409 | `PUT` 请求的 `version` 与数据库当前版本不一致（乐观锁），或目标行已被语义化编辑取代 |
-| `RULE_NOT_FOUND` | 404 | 规则 id 不存在 |
-| `IMPORT_FILE_INVALID` | 400 | CSV 文件为空、编码非 UTF-8、缺少必需列或格式错误 |
-| `IMPORT_FILE_MISSING` | 400 | `import/validate` 未上传 `file` 字段 |
-| `IMPORT_TOKEN_INVALID` | 400 | `import/confirm` 的 `importToken` 不存在或已过期（15 分钟 TTL） |
-| `IMPORT_NO_VALID_ROWS` | 400 | 校验批次中没有任何合法行 |
-| `IMPORT_CONFIRM_CONFLICT` | 400 | 确认写入时，某些行与 confirm 时刻的最新数据库状态冲突（整批不写入） |
-| （class-validator 校验失败）| 400 | 非法枚举、空白关键词等，`message` 为 class-validator 的字段级错误信息 |
+| 错误码                       | HTTP 状态 | 触发场景                                                                            |
+| ---------------------------- | --------- | ----------------------------------------------------------------------------------- |
+| `RULE_CONFLICT`              | 409       | 新增/编辑后与另一条已启用规则的 (keyword, level, matchField, matchMode) 元组重复    |
+| `RULE_VERSION_CONFLICT`      | 409       | `PUT` 请求的 `version` 与数据库当前版本不一致（乐观锁），或目标行已被语义化编辑取代 |
+| `RULE_NOT_FOUND`             | 404       | 规则 id 不存在                                                                      |
+| `IMPORT_FILE_INVALID`        | 400       | CSV 文件为空、编码非 UTF-8、缺少必需列或格式错误                                    |
+| `IMPORT_FILE_MISSING`        | 400       | `import/validate` 未上传 `file` 字段                                                |
+| `IMPORT_TOKEN_INVALID`       | 400       | `import/confirm` 的 `importToken` 不存在或已过期（15 分钟 TTL）                     |
+| `IMPORT_NO_VALID_ROWS`       | 400       | 校验批次中没有任何合法行                                                            |
+| `IMPORT_CONFIRM_CONFLICT`    | 400       | 确认写入时，某些行与 confirm 时刻的最新数据库状态冲突（整批不写入）                 |
+| （class-validator 校验失败） | 400       | 非法枚举、空白关键词等，`message` 为 class-validator 的字段级错误信息               |
 
 ## 业务规则
 
@@ -54,7 +52,7 @@
   匹配范围和方式的启用规则不得重复"，但 issue #3 已合并的 `MonitorRule`
   schema 中没有"科室"字段（只有自由文本的 `category`，非外键，且非查重维度）。
   因此本实现按**全局**唯一性判定：同一 `(keyword, level, matchField,
-  matchMode)` 元组，在所有**已启用**规则中只能存在一条，不区分科室。这是
+matchMode)` 元组，在所有**已启用**规则中只能存在一条，不区分科室。这是
   与 issue 文字表述的已知偏离，详见 PR 描述。
 - 关键词比较**大小写不敏感**（含查重与冲突检测），满足 "'Ca' 默认不区分
   大小写" 的要求；`matchMode=EXACT_PHRASE`（即 schema 中的 `EXACT`）时同样
@@ -185,8 +183,20 @@ keyword,level,matchField,matchMode
   "validRows": 2,
   "errors": [],
   "preview": [
-    { "line": 2, "keyword": "癌", "level": "RED", "matchField": "REPORT_TEXT", "matchMode": "CONTAINS" },
-    { "line": 3, "keyword": "肿瘤", "level": "RED", "matchField": "REPORT_TEXT", "matchMode": "CONTAINS" }
+    {
+      "line": 2,
+      "keyword": "癌",
+      "level": "RED",
+      "matchField": "REPORT_TEXT",
+      "matchMode": "CONTAINS"
+    },
+    {
+      "line": 3,
+      "keyword": "肿瘤",
+      "level": "RED",
+      "matchField": "REPORT_TEXT",
+      "matchMode": "CONTAINS"
+    }
   ]
 }
 ```
@@ -201,9 +211,12 @@ keyword,level,matchField,matchMode
   "validRows": 1,
   "errors": [
     { "line": 2, "message": "keyword must not be blank" },
-    { "line": 3, "message": "level \"BAD_LEVEL\" is not a valid MonitorLevel (RED, YELLOW, GREEN, UNCLASSIFIED)" }
+    {
+      "line": 3,
+      "message": "level \"BAD_LEVEL\" is not a valid MonitorLevel (RED, YELLOW, GREEN, UNCLASSIFIED)"
+    }
   ],
-  "preview": [ /* 仅合法行 */ ]
+  "preview": [/* 仅合法行 */]
 }
 ```
 
@@ -252,7 +265,7 @@ CSV 导入接口自行建立。
   竞态）、非法枚举、CSV 导入的全成功/部分失败/文件内重复行/编码错误/空文件
   场景。该文件在检测不到可用 Postgres 时，每个用例会直接判定通过（no-op），
   不会导致 issue #1 的无数据库 CI 任务失败；CI 中真正执行在 `.github/
-  workflows/ci.yml` 的 `db-migrations` job。
+workflows/ci.yml` 的 `db-migrations` job。
 
 本地验证 real Postgres 的临时实例创建方式：
 

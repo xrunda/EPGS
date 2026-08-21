@@ -3,6 +3,7 @@ body,
 #root {
   min-height: 100%;
 }
+
 body {
   margin: 0;
 }
@@ -12,6 +13,7 @@ body {
   background: #edf3f2;
   color: #19383d;
 }
+
 .app-header {
   display: flex;
   align-items: center;
@@ -21,12 +23,14 @@ body {
   background: #153f46;
   color: #fff;
 }
+
 .app-brand {
   display: flex;
   align-items: center;
   gap: 12px;
   font-weight: 700;
 }
+
 .app-brand__mark {
   display: grid;
   width: 34px;
@@ -38,12 +42,14 @@ body {
   color: #153f46;
   font-size: 13px;
 }
+
 .app-header__actions {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
 }
-.app-header nav {
+
+.app-header__nav {
   align-self: stretch;
   display: flex;
   align-items: center;
@@ -51,9 +57,28 @@ body {
   border-bottom: 3px solid #6fc1cb;
   font-size: 14px;
 }
+
+.app-header__actions button {
+  border: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: #d6eeea;
+}
+
+.app-header__actions button:hover,
+.app-header__actions button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
 .app-user {
-  color: rgba(255, 255, 255, 0.72);
+  padding-left: 16px;
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.82);
   font-size: 13px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -61,10 +86,18 @@ body {
   .app-header {
     padding: 0 18px;
   }
+
   .app-brand {
     font-size: 13px;
   }
-  .app-header__actions {
-    gap: 12px;
+
+  .app-header__nav,
+  .app-header__actions button:first-of-type {
+    display: none;
+  }
+
+  .app-user {
+    padding-left: 0;
+    border-left: 0;
   }
 }

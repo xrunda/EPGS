@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module';
 import { GlobalExceptionFilter } from '../src/common/filters/global-exception.filter';
+import { hash, argon2id } from 'argon2';
 
 /**
  * Full-stack e2e test for issue #7's read-only monitor workbench API and
@@ -35,6 +36,9 @@ describe('Monitor API (e2e, real Postgres)', () => {
   let app: INestApplication;
   let prisma: PrismaClient;
   let dbAvailable = true;
+  let agent: ReturnType<typeof request.agent>;
+  const authUsername = 'monitor-e2e-user';
+  const authPassword = 'synthetic-monitor-password';
 
   /** record.id per fixture key, captured at seed time. */
   let ids: Record<string, string> = {};
@@ -419,6 +423,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
       // don't exist yet (migration not applied).
       await prisma.$queryRaw`SELECT 1`;
       await prisma.monitorRecord.findFirst();
+      await prisma.appUser.findFirst();
     } catch (err) {
       dbAvailable = false;
       // eslint-disable-next-line no-console
@@ -445,6 +450,19 @@ describe('Monitor API (e2e, real Postgres)', () => {
       }),
     );
     await app.init();
+    await prisma.appUser.deleteMany({ where: { username: authUsername } });
+    await prisma.appUser.create({
+      data: {
+        username: authUsername,
+        displayName: '监测接口测试用户',
+        passwordHash: await hash(authPassword, { type: argon2id }),
+      },
+    });
+    agent = request.agent(app.getHttpServer());
+    await agent
+      .post('/api/auth/login')
+      .send({ username: authUsername, password: authPassword })
+      .expect(200);
   });
 
   afterAll(async () => {
@@ -453,6 +471,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
       await prisma.monitorMatch.deleteMany({});
       await prisma.monitorRecord.deleteMany({});
       await prisma.monitorRule.deleteMany({});
+      await prisma.appUser.deleteMany({ where: { username: authUsername } });
     }
     if (app) await app.close();
     await prisma.$disconnect();
@@ -478,17 +497,14 @@ describe('Monitor API (e2e, real Postgres)', () => {
   const DEFAULT_ORDER = ['R8', 'R4', 'R5', 'R2', 'R1', 'R9', 'R10', 'R3', 'R6', 'R11', 'R12', 'R7'];
 
   async function listedIds(query: Record<string, string> = {}): Promise<string[]> {
-    const res = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query(query)
-      .expect(200);
+    const res = await agent.get('/api/monitor/exams').query(query).expect(200);
     return res.body.items.map((item: { recordId: string }) => item.recordId);
   }
 
   async function assertSummaryMatchesList(query: Record<string, string>): Promise<void> {
     const [listRes, sumRes] = await Promise.all([
-      request(app.getHttpServer()).get('/api/monitor/exams').query(query).expect(200),
-      request(app.getHttpServer()).get('/api/monitor/summary').query(query).expect(200),
+      agent.get('/api/monitor/exams').query(query).expect(200),
+      agent.get('/api/monitor/summary').query(query).expect(200),
     ]);
     const sum = sumRes.body;
     expect(sum.total).toBe(listRes.body.total);
@@ -500,7 +516,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
   itWithDb(
     'returns all 12 fixture rows with exactly the list fields (no report body, no status)',
     async () => {
-      const res = await request(app.getHttpServer()).get('/api/monitor/exams').expect(200);
+      const res = await agent.get('/api/monitor/exams').expect(200);
       expect(res.body.total).toBe(12);
       expect(res.body.page).toBe(1);
       expect(res.body.pageSize).toBe(20);
@@ -542,7 +558,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
   itWithDb(
     'filters by a single Shanghai day across the UTC date boundary (from=to=2026-08-20)',
     async () => {
-      const res = await request(app.getHttpServer())
+      const res = await agent
         .get('/api/monitor/exams')
         .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20' })
         .expect(200);
@@ -561,7 +577,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // examDateTo includes all of the named Shanghai day. R11 sits exactly
     // at 08-18 00:00 - the boundary of the day AFTER 08-17 - so a
     // through-08-17 query must exclude it, leaving only R12 (08-17 23:59).
-    const res = await request(app.getHttpServer())
+    const res = await agent
       .get('/api/monitor/exams')
       .query({ examDateTo: '2026-08-17' })
       .expect(200);
@@ -571,19 +587,19 @@ describe('Monitor API (e2e, real Postgres)', () => {
 
   itWithDb('supports open-ended date bounds', async () => {
     // Through end of 08-20 = every record with a non-null examTime (11).
-    const to = await request(app.getHttpServer())
+    const to = await agent
       .get('/api/monitor/exams')
       .query({ examDateTo: '2026-08-20' })
       .expect(200);
     expect(to.body.total).toBe(11);
     // Through end of 08-18 = R12 (08-17 23:59) + R11 (08-18 00:00).
-    const to18 = await request(app.getHttpServer())
+    const to18 = await agent
       .get('/api/monitor/exams')
       .query({ examDateTo: '2026-08-18' })
       .expect(200);
     expect(to18.body.total).toBe(2);
     // From start of 08-19 = the 8 records on 08-20 + R6 (08-19 20:00).
-    const from = await request(app.getHttpServer())
+    const from = await agent
       .get('/api/monitor/exams')
       .query({ examDateFrom: '2026-08-19' })
       .expect(200);
@@ -591,12 +607,9 @@ describe('Monitor API (e2e, real Postgres)', () => {
   });
 
   itWithDb('filters by department (case-insensitive exact match)', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ department: '消化内科' })
-      .expect(200);
+    const res = await agent.get('/api/monitor/exams').query({ department: '消化内科' }).expect(200);
     expect(res.body.total).toBe(7);
-    const res2 = await request(app.getHttpServer())
+    const res2 = await agent
       .get('/api/monitor/exams')
       .query({ department: '呼吸内科' })
       .expect(200);
@@ -604,12 +617,9 @@ describe('Monitor API (e2e, real Postgres)', () => {
   });
 
   itWithDb('filters by patientTypeCode exact match', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ patientTypeCode: 'I' })
-      .expect(200);
+    const res = await agent.get('/api/monitor/exams').query({ patientTypeCode: 'I' }).expect(200);
     expect(res.body.total).toBe(5);
-    const unknown = await request(app.getHttpServer())
+    const unknown = await agent
       .get('/api/monitor/exams')
       .query({ patientTypeCode: 'X' })
       .expect(200);
@@ -618,12 +628,9 @@ describe('Monitor API (e2e, real Postgres)', () => {
   });
 
   itWithDb('filters by attention level', async () => {
-    const red = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ level: 'RED' })
-      .expect(200);
+    const red = await agent.get('/api/monitor/exams').query({ level: 'RED' }).expect(200);
     expect(red.body.total).toBe(3);
-    const unclassified = await request(app.getHttpServer())
+    const unclassified = await agent
       .get('/api/monitor/exams')
       .query({ level: 'UNCLASSIFIED' })
       .expect(200);
@@ -631,68 +638,50 @@ describe('Monitor API (e2e, real Postgres)', () => {
   });
 
   itWithDb('filters by examItem substring (case-insensitive)', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ examItem: '电子胃镜' })
-      .expect(200);
+    const res = await agent.get('/api/monitor/exams').query({ examItem: '电子胃镜' }).expect(200);
     expect(res.body.total).toBe(7);
-    const res2 = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ examItem: '支气管镜' })
-      .expect(200);
+    const res2 = await agent.get('/api/monitor/exams').query({ examItem: '支气管镜' }).expect(200);
     expect(res2.body.total).toBe(3);
   });
 
   itWithDb('q searches patientName and matched keyword only - never report text', async () => {
-    const byName = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ q: '测试患者' })
-      .expect(200);
+    const byName = await agent.get('/api/monitor/exams').query({ q: '测试患者' }).expect(200);
     expect(byName.body.total).toBe(11); // all except R7 (null patientName)
     expect(byName.body.items.some((item: { recordId: string }) => item.recordId === ids.R7)).toBe(
       false,
     );
 
-    const byNameExact = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ q: '患者子' })
-      .expect(200);
+    const byNameExact = await agent.get('/api/monitor/exams').query({ q: '患者子' }).expect(200);
     expect(byNameExact.body.total).toBe(1);
     expect(byNameExact.body.items[0].recordId).toBe(ids.R12);
 
     // q=癌 finds R1/R8/R9 via their matched keyword, but NOT R12 whose
     // report body mentions 腺癌 yet has no rule hit - proving q does not
     // scan reportContent/diagnosis.
-    const byKeyword = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ q: '癌' })
-      .expect(200);
+    const byKeyword = await agent.get('/api/monitor/exams').query({ q: '癌' }).expect(200);
     expect(byKeyword.body.total).toBe(3);
     expect(
       byKeyword.body.items.some((item: { recordId: string }) => item.recordId === ids.R12),
     ).toBe(false);
 
-    const byKeyword2 = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ q: '息肉' })
-      .expect(200);
+    const byKeyword2 = await agent.get('/api/monitor/exams').query({ q: '息肉' }).expect(200);
     expect(byKeyword2.body.total).toBe(5);
   });
 
   itWithDb('combines filters (AND semantics)', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await agent
       .get('/api/monitor/exams')
       .query({ department: '消化内科', level: 'YELLOW' })
       .expect(200);
     expect(res.body.total).toBe(3); // R2, R4, R5
 
-    const res2 = await request(app.getHttpServer())
+    const res2 = await agent
       .get('/api/monitor/exams')
       .query({ patientTypeCode: 'I', examItem: '电子胃镜' })
       .expect(200);
     expect(res2.body.total).toBe(5);
 
-    const res3 = await request(app.getHttpServer())
+    const res3 = await agent
       .get('/api/monitor/exams')
       .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', level: 'YELLOW' })
       .expect(200);
@@ -700,7 +689,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
   });
 
   itWithDb('returns an empty result set for a filter combination with no matches', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await agent
       .get('/api/monitor/exams')
       .query({ level: 'GREEN', q: '息肉' })
       .expect(200);
@@ -711,10 +700,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
   // --- Null rows -------------------------------------------------------
 
   itWithDb('surfaces the fully-null row R7 with null display values', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/api/monitor/exams')
-      .query({ level: 'UNCLASSIFIED' })
-      .expect(200);
+    const res = await agent.get('/api/monitor/exams').query({ level: 'UNCLASSIFIED' }).expect(200);
     const r7 = res.body.items.find((item: { recordId: string }) => item.recordId === ids.R7);
     expect(r7).toBeDefined();
     expect(r7.monitorLevel).toBe('UNCLASSIFIED');
@@ -731,10 +717,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
   itWithDb(
     'formats examDate/examTime in Asia/Shanghai (incl. midnight 00:00:00, not 24:00:00)',
     async () => {
-      const res = await request(app.getHttpServer())
-        .get('/api/monitor/exams')
-        .query({ q: '患者癸' })
-        .expect(200);
+      const res = await agent.get('/api/monitor/exams').query({ q: '患者癸' }).expect(200);
       const r11 = res.body.items[0];
       expect(r11.examDate).toBe('2026-08-18');
       expect(r11.examTime).toBe('00:00:00');
@@ -750,17 +733,14 @@ describe('Monitor API (e2e, real Postgres)', () => {
       const pageSize = 4;
       let concatenated: string[] = [];
       for (let page = 1; page <= 3; page++) {
-        const res = await request(app.getHttpServer())
-          .get('/api/monitor/exams')
-          .query({ page, pageSize })
-          .expect(200);
+        const res = await agent.get('/api/monitor/exams').query({ page, pageSize }).expect(200);
         concatenated = concatenated.concat(
           res.body.items.map((item: { recordId: string }) => item.recordId),
         );
       }
       expect(concatenated).toEqual(full);
 
-      const page4 = await request(app.getHttpServer())
+      const page4 = await agent
         .get('/api/monitor/exams')
         .query({ page: 4, pageSize: 4 })
         .expect(200);
@@ -773,7 +753,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
 
   itWithDb('applies sortBy/sortDir (custom columns sort per Postgres null defaults)', async () => {
     // examTime asc: nulls last (explicit), then ascending by time.
-    const asc = await request(app.getHttpServer())
+    const asc = await agent
       .get('/api/monitor/exams')
       .query({ sortBy: 'examTime', sortDir: 'asc' })
       .expect(200);
@@ -783,12 +763,12 @@ describe('Monitor API (e2e, real Postgres)', () => {
 
     // Custom sort columns use Postgres defaults: nulls LAST for asc,
     // nulls FIRST for desc (only examTime gets the explicit nulls:'last').
-    const nameAsc = await request(app.getHttpServer())
+    const nameAsc = await agent
       .get('/api/monitor/exams')
       .query({ sortBy: 'patientName', sortDir: 'asc' })
       .expect(200);
     expect(nameAsc.body.items[11].recordId).toBe(ids.R7);
-    const nameDesc = await request(app.getHttpServer())
+    const nameDesc = await agent
       .get('/api/monitor/exams')
       .query({ sortBy: 'patientName', sortDir: 'desc' })
       .expect(200);
@@ -804,9 +784,9 @@ describe('Monitor API (e2e, real Postgres)', () => {
       { examDateTo: '20-08-2026' },
     ];
     for (const query of cases) {
-      await request(app.getHttpServer()).get('/api/monitor/exams').query(query).expect(400);
+      await agent.get('/api/monitor/exams').query(query).expect(400);
     }
-    const impossible = await request(app.getHttpServer())
+    const impossible = await agent
       .get('/api/monitor/exams')
       .query({ examDateFrom: '2026-02-31' })
       .expect(400);
@@ -817,8 +797,8 @@ describe('Monitor API (e2e, real Postgres)', () => {
 
   itWithDb('summary matches the list under the same filters (empty query)', async () => {
     const [listRes, sumRes] = await Promise.all([
-      request(app.getHttpServer()).get('/api/monitor/exams').expect(200),
-      request(app.getHttpServer()).get('/api/monitor/summary').expect(200),
+      agent.get('/api/monitor/exams').expect(200),
+      agent.get('/api/monitor/summary').expect(200),
     ]);
     expect(listRes.body.total).toBe(12);
     expect(sumRes.body).toEqual({ total: 12, red: 3, yellow: 4, green: 3, unclassified: 2 });
@@ -832,17 +812,14 @@ describe('Monitor API (e2e, real Postgres)', () => {
   });
 
   itWithDb('summary level=RED counts only red records', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/api/monitor/summary')
-      .query({ level: 'RED' })
-      .expect(200);
+    const res = await agent.get('/api/monitor/summary').query({ level: 'RED' }).expect(200);
     expect(res.body).toEqual({ total: 3, red: 3, yellow: 0, green: 0, unclassified: 0 });
   });
 
   // --- Detail ----------------------------------------------------------
 
   itWithDb('detail returns the full snapshot + all hits (multi-keyword R1)', async () => {
-    const res = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R1}`).expect(200);
+    const res = await agent.get(`/api/monitor/exams/${ids.R1}`).expect(200);
     expect(res.body.recordId).toBe(ids.R1);
     expect(res.body.monitorLevel).toBe('RED');
     expect(res.body.reportContent).toBe('胃窦见一处隆起性病变，病理提示黏膜内腺癌。');
@@ -869,13 +846,13 @@ describe('Monitor API (e2e, real Postgres)', () => {
   });
 
   itWithDb('detail dedupes keywords that matched via multiple rules (R9)', async () => {
-    const res = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R9}`).expect(200);
+    const res = await agent.get(`/api/monitor/exams/${ids.R9}`).expect(200);
     expect(res.body.hits).toHaveLength(2);
     expect(res.body.matchedKeywords).toEqual(['腺癌']);
   });
 
   itWithDb('detail of an unclassified record has empty hits and no body', async () => {
-    const res = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R7}`).expect(200);
+    const res = await agent.get(`/api/monitor/exams/${ids.R7}`).expect(200);
     expect(res.body.monitorLevel).toBe('UNCLASSIFIED');
     expect(res.body.hits).toEqual([]);
     expect(res.body.reportContent).toBeNull();
@@ -889,7 +866,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
   itWithDb(
     'detail locates each hit to the report field it matched (report vs diagnosis)',
     async () => {
-      const r1 = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R1}`).expect(200);
+      const r1 = await agent.get(`/api/monitor/exams/${ids.R1}`).expect(200);
       const adenoca = r1.body.hits.find((h: { keyword: string }) => h.keyword === '腺癌');
       expect(adenoca).toEqual(
         expect.objectContaining({
@@ -900,7 +877,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
       );
       expect(adenoca.matchedField).toBe('REPORT_TEXT'); // → 命中在 报告内容
 
-      const r8 = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R8}`).expect(200);
+      const r8 = await agent.get(`/api/monitor/exams/${ids.R8}`).expect(200);
       const infiltrating = r8.body.hits.find((h: { keyword: string }) => h.keyword === '浸润癌');
       expect(infiltrating).toEqual(
         expect.objectContaining({
@@ -914,7 +891,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
 
   // Issue #8 test requirement: 空诊断 - report body present, diagnosis null.
   itWithDb('detail of a record with an empty diagnosis keeps the report body', async () => {
-    const res = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R2}`).expect(200);
+    const res = await agent.get(`/api/monitor/exams/${ids.R2}`).expect(200);
     expect(res.body.diagnosis).toBeNull();
     expect(res.body.reportContent).toBe('胃体见多发息肉样隆起。');
     expect(res.body.hits).toHaveLength(1);
@@ -927,10 +904,9 @@ describe('Monitor API (e2e, real Postgres)', () => {
     );
   });
 
-  // 权限/脱敏/审计 is owned by issue #13 (no auth exists yet) - documented,
-  // not tested here.
+  // 角色、科室范围、脱敏与审计由 issue #13 负责；本套件仅使用基础登录会话。
   itWithDb('detail returns 404 MONITOR_RECORD_NOT_FOUND for an unknown id', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await agent
       .get('/api/monitor/exams/00000000-0000-0000-0000-000000000000')
       .expect(404);
     expect(res.body.error.code).toBe('MONITOR_RECORD_NOT_FOUND');

@@ -1,10 +1,22 @@
 import { useState } from 'react';
+import { AuthGate } from './AuthGate';
+import type { AuthUser } from './authApi';
 import { RulesModal } from './RulesModal';
 import { Workbench } from './Workbench';
 import './App.css';
 
-/** Application shell for the endoscopy monitoring workbench. */
-function App(): JSX.Element {
+interface AuthenticatedAppProps {
+  user: AuthUser;
+  logout(): Promise<void>;
+  openChangePassword(): void;
+}
+
+/** Authenticated application shell for the endoscopy monitoring workbench. */
+function AuthenticatedApp({
+  user,
+  logout,
+  openChangePassword,
+}: AuthenticatedAppProps): JSX.Element {
   const [rulesOpen, setRulesOpen] = useState(false);
 
   return (
@@ -15,22 +27,28 @@ function App(): JSX.Element {
           <span>菏泽市肿瘤中医医院</span>
         </div>
         <div className="app-header__actions">
-          <nav aria-label="主导航">
+          <nav aria-label="主导航" className="app-header__nav">
             <strong>内镜中心</strong>
           </nav>
-          <span
-            className="app-user"
-            title="登录与权限将在权限与审计功能中接入"
-            aria-label="当前用户"
-          >
-            操作员 · 未登录
+          <span className="app-user" aria-label="当前用户">
+            {user.displayName}
           </span>
+          <button type="button" onClick={openChangePassword}>
+            修改密码
+          </button>
+          <button type="button" onClick={() => void logout()}>
+            退出登录
+          </button>
         </div>
       </header>
       <Workbench onOpenRules={() => setRulesOpen(true)} />
-      <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} />
+      <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} actorId={user.username} />
     </main>
   );
+}
+
+function App(): JSX.Element {
+  return <AuthGate>{(session) => <AuthenticatedApp {...session} />}</AuthGate>;
 }
 
 export default App;

@@ -32,9 +32,9 @@
   `monitor_match.keyword`，**绝不搜 `reportContent`/`diagnosis`**（防止无界全文
   扫描）。因此正文里出现某个词、但没有对应规则命中的记录，不会被 `q` 搜到。
 
-## 鉴权（占位）
+## 鉴权
 
-与 rules API 相同（issue #13 前无真实鉴权）。本接口为只读，当前无任何守卫。
+所有接口均要求 Issue #31 的有效登录 Cookie，未登录或会话过期返回 `401 AUTH_REQUIRED`。本接口保持只读；角色、科室范围、脱敏和读取审计由 Issue #13 补充。
 
 ## 统一错误格式
 

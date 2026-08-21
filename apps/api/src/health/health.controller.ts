@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { HealthStatus } from '@epgs/shared-types';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { Public } from '../auth/public.decorator';
 
 /**
  * Resolves the app version from package.json at runtime without a
@@ -22,6 +23,7 @@ function resolveVersion(): string {
 const APP_VERSION = resolveVersion();
 
 @Controller('health')
+@Public()
 export class HealthController {
   @Get()
   check(): HealthStatus {

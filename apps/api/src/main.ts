@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { AppLoggerService } from './common/logger/app-logger.service';
@@ -18,6 +20,28 @@ async function bootstrap(): Promise<void> {
   });
 
   app.useGlobalFilters(new GlobalExceptionFilter());
+
+  // Nest-standard DTO validation (class-validator/class-transformer),
+  // introduced by issue #4's rules module. whitelist/forbidNonWhitelisted
+  // reject unexpected body fields instead of silently dropping them, and
+  // transform lets query-string values (page, pageSize, isEnabled) bind
+  // to typed DTO properties.
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('EPGS API')
+    .setDescription('EPGS monitoring API - see /api/rules for issue #4 rule management endpoints.')
+    .setVersion('0.1.0')
+    .build();
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, swaggerDocument);
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('port') ?? 3000;

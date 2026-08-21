@@ -4,6 +4,8 @@ import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { PrismaModule } from './prisma/prisma.module';
+import { RulesModule } from './rules/rules.module';
 
 @Module({
   imports: [
@@ -15,7 +17,9 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
         abortEarly: false,
       },
     }),
+    PrismaModule,
     HealthModule,
+    RulesModule,
   ],
 })
 export class AppModule implements NestModule {

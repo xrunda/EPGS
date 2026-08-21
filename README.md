@@ -27,8 +27,10 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
 ```
 
 - **apps/api** — the public-facing NestJS HTTP API. Owns `GET /health`, the unified
-  error response shape, correlation-ID propagation, structured logging, and env-var
-  config validation (fail-fast on missing required vars).
+  error response shape, correlation-ID propagation, structured logging, env-var
+  config validation (fail-fast on missing required vars), and (issue #4) the
+  `monitor_rule` management API under `/api/rules` — see "Rules API" below and
+  [`docs/rules-api.md`](docs/rules-api.md).
 - **apps/worker** — a NestJS-based background service for sync/monitoring jobs. Not
   publicly exposed; runs independently with its own port/health check and its own
   `@nestjs/schedule` cron job (currently a placeholder that logs `"sync tick"`).
@@ -47,7 +49,7 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
 
 ```
 apps/
-  api/       # NestJS HTTP API (main.ts, app.module.ts, health/, common/, config/, prisma/)
+  api/       # NestJS HTTP API (main.ts, app.module.ts, health/, rules/, prisma/, common/, config/)
   worker/    # NestJS worker service (main.ts, app.module.ts, sync/, health/, config/)
   web/       # React + Vite frontend (src/App.tsx, src/ApiStatus.tsx)
 packages/
@@ -186,6 +188,31 @@ CI runs this same sequence against a real `postgres:16-alpine` service container
 `db-migrations` job (see `.github/workflows/ci.yml`), separate from the DB-free
 `build-and-test` job.
 
+## Rules API (issue #4)
+
+`GET/POST/PUT /api/rules` plus `POST /api/rules/import/{validate,confirm}` implement
+auditable CRUD + CSV bulk import for `monitor_rule` (the keyword rules that assign
+RED/YELLOW/GREEN attention levels — a monitoring-configuration label, not a clinical
+diagnosis or medical urgency ranking). Full endpoint reference, request/response
+examples, and business-rule details (uniqueness scope, optimistic locking via
+`version`, versioned audit trail) live in [`docs/rules-api.md`](docs/rules-api.md).
+Auto-generated OpenAPI/Swagger UI is served at `GET /api/docs` once `apps/api` is
+running.
+
+Seed the 6 initial RED keywords (癌/肿瘤/肿物/Ca/食管裂孔疝/贲门失弛缓症) against a
+migrated database:
+
+```bash
+pnpm --filter api exec prisma db seed
+```
+
+YELLOW/GREEN keyword lists are intentionally **not** seeded — they require sign-off
+from the endoscopy center first (see `docs/rules-api.md`'s "待确认事项").
+
+No real authentication/authorization exists yet for these write endpoints — see the
+`JWT_SECRET`/`SESSION_SECRET` row above and `apps/api/src/common/guards/
+rules-write.guard.ts` (issue #13 will replace this placeholder guard).
+
 ## Commit message convention
 
 This repo follows [Conventional Commits](https://www.conventionalcommits.org/):
@@ -217,5 +244,11 @@ container):
 5. `prisma/scripts/verify-constraints.ts` — idempotency, illegal-enum rejection, FK
    RESTRICT/CASCADE behavior, append-only `monitor_action` reconstruction, and
    workbench-filter index usage, all against real inserted rows
-6. Roll back the migration (`rollback.sql`) and confirm all monitor_* tables are gone
-7. Re-apply the migration after rollback to confirm the upgrade path still works
+6. (issue #4) `apps/api/test/rules.e2e-spec.ts` — full rules API lifecycle, duplicate/
+   conflict detection, concurrent-edit (optimistic lock) scenarios, illegal enums, and
+   CSV import (full success / partial failure / duplicate rows / encoding error / empty
+   file), all against this same real Postgres
+7. (issue #4) `prisma/seed.ts` run twice — confirms the 6 initial RED keyword rules are
+   created once and re-runs are idempotent (no duplicates)
+8. Roll back the migration (`rollback.sql`) and confirm all monitor_* tables are gone
+9. Re-apply the migration after rollback to confirm the upgrade path still works

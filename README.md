@@ -32,7 +32,11 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
 - **apps/worker** — a NestJS-based background service for sync/monitoring jobs. Not
   publicly exposed; runs independently with its own port/health check and its own
   `@nestjs/schedule` cron job (currently a placeholder that logs `"sync tick"`).
-  Real PACS/RIS sync logic lands in issue #6.
+  It also owns the read-only PACS/RIS adapter (`src/pacs-adapter/`, issue #2) that
+  converts PACS/RIS exam/report tables into stable `PacsReportDto`s; see
+  `docs/pacs-ris-adapter.md` for the assumed source schema and what still needs
+  production verification. The actual scheduled sync job that calls this adapter
+  lands in issue #6.
 - **apps/web** — a React + Vite frontend. Currently a placeholder page ("内镜中心")
   that calls `apps/api`'s `/health` endpoint to prove connectivity. Real business
   pages land in issue #9+.

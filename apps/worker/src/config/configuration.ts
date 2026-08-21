@@ -5,6 +5,8 @@ export interface WorkerConfig {
   logLevel: string;
   syncIntervalMinutes: number;
   databaseUrl: string;
+  /** 'fixture' (default, no real DB) | 'sql' (real PACS/RIS, see pacs-adapter). */
+  pacsAdapterMode: 'fixture' | 'sql';
 }
 
 export default (): WorkerConfig => ({
@@ -14,4 +16,5 @@ export default (): WorkerConfig => ({
   logLevel: process.env.LOG_LEVEL ?? 'log',
   syncIntervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '15', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',
+  pacsAdapterMode: (process.env.PACS_ADAPTER_MODE as 'fixture' | 'sql') ?? 'fixture',
 });

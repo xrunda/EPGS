@@ -4,6 +4,7 @@ import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { SyncModule } from './sync/sync.module';
+import { PacsAdapterModule } from './pacs-adapter/pacs-adapter.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { SyncModule } from './sync/sync.module';
     }),
     HealthModule,
     SyncModule,
+    PacsAdapterModule,
   ],
 })
 export class AppModule {}

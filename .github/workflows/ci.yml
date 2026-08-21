@@ -93,6 +93,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Rules API e2e suite below loads the full AppModule, whose
+      # health.controller.ts imports @epgs/shared-types - build it first
+      # so that import resolves (mirrors the root build/test/typecheck
+      # scripts' build:shared-types-first ordering).
+      - name: Build shared-types
+        run: pnpm run build:shared-types
+
       - name: Prisma validate + format check
         working-directory: apps/api
         run: |

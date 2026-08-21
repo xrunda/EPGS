@@ -86,6 +86,11 @@ function toQueryFilters(filters: WorkbenchFilters) {
   };
 }
 
+/** Summary cards show the full level distribution under every non-level filter. */
+function toSummaryQueryFilters(filters: WorkbenchFilters) {
+  return toQueryFilters({ ...filters, level: '' });
+}
+
 function validateFilters(filters: WorkbenchFilters): string | null {
   if (Boolean(filters.examDateFrom) !== Boolean(filters.examDateTo)) {
     return '开始与结束日期需同时填写，或都不填写。';
@@ -178,7 +183,7 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
     try {
       const [listResult, summaryResult] = await Promise.all([
         listExams(query),
-        getExamSummary(toQueryFilters(appliedFilters)),
+        getExamSummary(toSummaryQueryFilters(appliedFilters)),
       ]);
       setItems(listResult.items);
       setTotal(listResult.total);

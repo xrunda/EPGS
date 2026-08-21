@@ -138,7 +138,7 @@ describe('Workbench', () => {
     expect(within(row2).getAllByText('—')).toHaveLength(7);
   });
 
-  it('sends the entered filters to the list and summary endpoints on submit', async () => {
+  it('applies all filters to the list but excludes level from the summary', async () => {
     render(<Workbench onOpenRules={vi.fn()} />);
     await screen.findByText('测试患者甲');
     await waitFor(() => {
@@ -157,19 +157,25 @@ describe('Workbench', () => {
 
     await waitFor(() => {
       const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
-      expect(
-        calls.some(
-          (url) =>
-            url.includes('examDateFrom=2026-08-01') &&
-            url.includes('examDateTo=2026-08-31') &&
-            url.includes('department=%E5%86%85%E9%95%9C%E4%B8%AD%E5%BF%83') &&
-            url.includes('patientTypeCode=I') &&
-            url.includes('level=RED') &&
-            url.includes('examItem=%E8%83%83%E9%95%9C') &&
-            url.includes('patientName=%E5%BC%A0%E4%B8%89') &&
-            url.includes('keyword=%E8%85%BA%E7%99%8C'),
-        ),
-      ).toBe(true);
+      const listCalls = calls.filter((url) => url.includes('/api/monitor/exams'));
+      const summaryCalls = calls.filter((url) => url.includes('/api/monitor/summary'));
+      const listCall = listCalls[listCalls.length - 1];
+      const summaryCall = summaryCalls[summaryCalls.length - 1];
+
+      for (const expected of [
+        'examDateFrom=2026-08-01',
+        'examDateTo=2026-08-31',
+        'department=%E5%86%85%E9%95%9C%E4%B8%AD%E5%BF%83',
+        'patientTypeCode=I',
+        'examItem=%E8%83%83%E9%95%9C',
+        'patientName=%E5%BC%A0%E4%B8%89',
+        'keyword=%E8%85%BA%E7%99%8C',
+      ]) {
+        expect(listCall).toContain(expected);
+        expect(summaryCall).toContain(expected);
+      }
+      expect(listCall).toContain('level=RED');
+      expect(summaryCall).not.toContain('level=RED');
     });
   });
 
@@ -214,7 +220,24 @@ describe('Workbench', () => {
     expect(screen.getByLabelText('科室')).toHaveValue('');
   });
 
-  it('sets the level filter when a summary card is clicked', async () => {
+  it('filters the list by level without changing the summary scope', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/monitor/exams')) {
+          return jsonResponse({ items: examRows, total: 10, page: 1, pageSize: 20 });
+        }
+        if (url.includes('/api/monitor/summary')) {
+          return jsonResponse(
+            url.includes('level=RED')
+              ? { total: 10, red: 10, yellow: 0, green: 0, unclassified: 0 }
+              : summary,
+          );
+        }
+        return jsonResponse(syncStatus);
+      }),
+    );
     render(<Workbench onOpenRules={vi.fn()} />);
     await screen.findByText('测试患者甲');
 
@@ -222,13 +245,18 @@ describe('Workbench', () => {
     fireEvent.click(within(cards).getByRole('button', { name: /红色/ }));
 
     await waitFor(() => {
-      expect(
-        vi
-          .mocked(fetch)
-          .mock.calls.map(([url]) => String(url))
-          .some((url) => url.includes('level=RED')),
-      ).toBe(true);
+      const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+      const listCalls = calls.filter((url) => url.includes('/api/monitor/exams'));
+      const summaryCalls = calls.filter((url) => url.includes('/api/monitor/summary'));
+      const listCall = listCalls[listCalls.length - 1];
+      const summaryCall = summaryCalls[summaryCalls.length - 1];
+
+      expect(listCall).toContain('level=RED');
+      expect(summaryCall).not.toContain('level=RED');
     });
+    for (const accessibleName of [/全部 25/, /红色 10/, /黄色 5/, /绿色 9/, /未分级 1/]) {
+      expect(within(cards).getByRole('button', { name: accessibleName })).toBeInTheDocument();
+    }
   });
 
   it('moves through API pages', async () => {

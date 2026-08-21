@@ -13,7 +13,8 @@
 export type MonitorLevelDto = 'RED' | 'YELLOW' | 'GREEN' | 'UNCLASSIFIED';
 
 /** Which report field a rule is evaluated against. Mirrors Prisma's MatchField enum. */
-export type MatchFieldDto = 'FINDINGS' | 'IMPRESSION' | 'REPORT_TEXT' | 'STUDY_DESCRIPTION' | 'OTHER';
+export type MatchFieldDto =
+  'FINDINGS' | 'IMPRESSION' | 'REPORT_TEXT' | 'STUDY_DESCRIPTION' | 'OTHER';
 
 /** How the keyword is compared against report text. Mirrors Prisma's MatchMode enum. */
 export type MatchModeDto = 'EXACT' | 'CONTAINS' | 'REGEX';
@@ -63,7 +64,12 @@ export interface CreateMonitorRuleBody {
   category?: string | null;
   notes?: string | null;
   isEnabled?: boolean;
-  /** Opaque actor identity until issue #13 ships real auth. */
+  /**
+   * Opaque actor identity. Since issue #13, the server uses the authenticated
+   * user's username and IGNORES this value; it remains in the wire DTO for
+   * backward compatibility (the validation pipe requires it) and as a legacy
+   * fallback for callers without an access grant. Treat it as deprecated.
+   */
   actorId: string;
 }
 
@@ -78,6 +84,7 @@ export interface UpdateMonitorRuleBody {
   isEnabled?: boolean;
   /** Required optimistic-lock token: must equal the row's current `version`. */
   version: number;
+  /** Deprecated since issue #13 - the authenticated username is authoritative. */
   actorId: string;
 }
 
@@ -117,6 +124,7 @@ export interface ImportValidateResult {
 /** Body for `POST /api/rules/import/confirm`. */
 export interface ImportConfirmBody {
   importToken: string;
+  /** Deprecated since issue #13 - the authenticated username is authoritative. */
   actorId: string;
 }
 

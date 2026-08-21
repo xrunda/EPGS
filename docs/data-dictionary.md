@@ -48,6 +48,44 @@
 | `isActive`              | boolean             | LOW      | 账号是否可登录                      |
 | `createdAt`/`updatedAt` | timestamptz         | LOW      | 创建和更新时间                      |
 
+## app_user_access — 角色与数据范围授权（issue #13）
+
+登录账号（`app_user`）与授权（`app_user_access`）分离：账号只管"是谁"，授权决定
+"能看什么、能做什么"。授权按 `username` 主键与账号匹配，不建外键（账号删除后
+授权行可独立保留）。
+
+| 字段              | 类型                              | 敏感级别 | 说明                                                     |
+| ----------------- | --------------------------------- | -------- | -------------------------------------------------------- |
+| `username`        | varchar(100) PK                   | MEDIUM   | 登录账号（小写），与 `app_user.username` 对应            |
+| `roles`           | `AppRole[]`                       | MEDIUM   | 角色集合：`VIEWER` `RULE_ADMIN` `SYSTEM_ADMIN` `AUDITOR` |
+| `departmentScope` | `varchar[]`（`department_scope`） | MEDIUM   | 授权可读科室；**空数组 = 全部科室**                      |
+| `patientDetail`   | boolean（`patient_detail`）       | MEDIUM   | 是否可查看患者详情（false 时对监测响应脱敏）             |
+| `updatedAt`       | timestamptz                       | LOW      | 最近一次授权更新时间                                     |
+
+授权即时生效（每次请求实时读取，不缓存）。`roles` 为空的授权行等价于无授权——
+角色受限接口一律 `403`。
+
+## audit_log — 审计日志（issue #13）
+
+只增不删的审计流水，用于追溯"谁在何时看了/改了什么"。没有任何更新/删除接口，
+仅 `GET /api/audit`（`AUDITOR` 角色）只读分页查询。
+
+| 字段            | 类型                  | 敏感级别 | 说明                                                                                                             |
+| --------------- | --------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `id`            | UUID PK               | LOW      | 审计行主键                                                                                                       |
+| `actorUsername` | varchar(100) nullable | MEDIUM   | 操作者登录账号；无授权记录时为 null                                                                              |
+| `actorRole`     | `AppRole`             | MEDIUM   | 操作者的主角色（用于审计展示）                                                                                   |
+| `action`        | `AuditAction`         | LOW      | `EXAM_LIST` `EXAM_DETAIL` `RULE_CREATE` `RULE_UPDATE` `RULE_IMPORT` `AUDIT_VIEW`（`LOGIN`/`CONFIG_CHANGE` 预留） |
+| `resourceType`  | varchar(100)          | LOW      | 资源类型：`monitor_record` / `monitor_rule` / `audit_log`                                                        |
+| `resourceId`    | UUID nullable         | LOW      | 具体资源 id（列表类操作为 null）                                                                                 |
+| `department`    | varchar(100) nullable | MEDIUM   | 操作涉及的科室上下文                                                                                             |
+| `meta`          | jsonb nullable        | **LOW**  | 只含低敏感字段（过滤条件、masked 标记、规则语义、计数）——**绝不允许**患者姓名/报告正文/搜索词 `q` 原文/凭据      |
+| `ip`            | varchar(64) nullable  | LOW      | 来源 IP                                                                                                          |
+| `correlationId` | varchar(100) nullable | LOW      | 关联请求的 correlation id，便于与业务日志对账                                                                    |
+| `createdAt`     | timestamptz           | LOW      | 审计时间戳（列表默认倒序）                                                                                       |
+
+索引：`(action, created_at)`、`(actor_username, created_at)`、`(department, created_at)`。
+
 ## monitor_rule — 关键词规则
 
 规则采用"版本化 + 软停用"策略：编辑会改变匹配语义时应新建一行
@@ -167,11 +205,13 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
   - `apps/api/prisma/migrations/20260821040339_init_monitoring_schema/migration.sql`（issue #3 建表）
   - `apps/api/prisma/migrations/20260821073851_remove_closed_loop_readonly/migration.sql`（issue #26 移除闭环模型）
   - `apps/api/prisma/migrations/20260821093500_add_local_auth/migration.sql`（issue #31 增加本地账号）
+  - `apps/api/prisma/migrations/20260821103732_add_auth_access_and_audit_log/migration.sql`（issue #13 增加 `app_user_access`/`audit_log` 与 `AppRole`/`AuditAction` 枚举）
 - 回滚脚本（Prisma Migrate 本身没有内建 down-migration 机制，回滚脚本需手动执行，
   详见脚本头部注释）：
   - `20260821040339_init_monitoring_schema/rollback.sql`
   - `20260821073851_remove_closed_loop_readonly/rollback.sql`
   - `20260821093500_add_local_auth/rollback.sql`
+  - `20260821103732_add_auth_access_and_audit_log/rollback.sql`（删除全部角色授权与审计日志）
 - **生产数据确认门（issue #26）**：`remove_closed_loop_readonly` 迁移开头包含
   PL/pgSQL 数据门禁——若 `monitor_action` 仍存在任何数据，或任意
   `monitor_record.handling_status <> 'PENDING'`，迁移会抛出异常并中止。

@@ -45,7 +45,10 @@ export function parseRulesCsv(buffer: Buffer): CsvParseOutcome {
   try {
     text = decodeUtf8Strict(buffer);
   } catch {
-    return { rows: [], fatalError: 'File is not valid UTF-8 text. Please re-save the CSV as UTF-8.' };
+    return {
+      rows: [],
+      fatalError: 'File is not valid UTF-8 text. Please re-save the CSV as UTF-8.',
+    };
   }
 
   // Strip a UTF-8 BOM if present (common from Excel "CSV UTF-8" exports).

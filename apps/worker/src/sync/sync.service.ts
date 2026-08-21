@@ -74,7 +74,9 @@ export class SyncService implements OnModuleInit {
       // failures into SyncJobLog; this catch is only for truly
       // unexpected errors (e.g. DB connection lost outright) so the
       // scheduler loop itself never dies.
-      this.logger.error(`sync tick threw unexpectedly: ${err instanceof Error ? err.message : 'unknown error'}`);
+      this.logger.error(
+        `sync tick threw unexpectedly: ${err instanceof Error ? err.message : 'unknown error'}`,
+      );
     } finally {
       this.scheduleNext();
     }
@@ -83,7 +85,9 @@ export class SyncService implements OnModuleInit {
   /** Runs one sync pass immediately. Safe to call concurrently with the scheduled loop - guarded by `running` so a manual trigger during an in-flight scheduled run is a no-op rather than a double-run within this same process. */
   async runOnce(): Promise<SyncRunSummary | null> {
     if (this.running) {
-      this.logger.warn('sync run requested while another run is already in progress in this process - skipping');
+      this.logger.warn(
+        'sync run requested while another run is already in progress in this process - skipping',
+      );
       return null;
     }
     this.running = true;

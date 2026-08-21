@@ -458,6 +458,24 @@ describe('Monitor API (e2e, real Postgres)', () => {
         passwordHash: await hash(authPassword, { type: argon2id }),
       },
     });
+    // Issue #13: RolesGuard requires an app_user_access grant. VIEWER with an
+    // empty departmentScope (= all departments) and patientDetail=true keeps
+    // the pre-#13 assertions byte-identical: all 12 fixture rows visible,
+    // nothing masked.
+    await prisma.appUserAccess.upsert({
+      where: { username: authUsername },
+      create: {
+        username: authUsername,
+        roles: ['VIEWER'] as never,
+        departmentScope: [],
+        patientDetail: true,
+      },
+      update: {
+        roles: ['VIEWER'] as never,
+        departmentScope: [],
+        patientDetail: true,
+      },
+    });
     agent = request.agent(app.getHttpServer());
     await agent
       .post('/api/auth/login')
@@ -467,10 +485,14 @@ describe('Monitor API (e2e, real Postgres)', () => {
 
   afterAll(async () => {
     if (dbAvailable) {
-      // FK order matters: matches reference records reference rules.
+      // FK order matters: matches reference records reference rules. Issue
+      // #13 tables (audit_log, app_user_access) have no FKs - cleaned here so
+      // the next suite (and the CI seed-count step) starts clean.
+      await prisma.auditLog.deleteMany({});
       await prisma.monitorMatch.deleteMany({});
       await prisma.monitorRecord.deleteMany({});
       await prisma.monitorRule.deleteMany({});
+      await prisma.appUserAccess.deleteMany({ where: { username: authUsername } });
       await prisma.appUser.deleteMany({ where: { username: authUsername } });
     }
     if (app) await app.close();

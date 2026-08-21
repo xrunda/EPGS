@@ -47,6 +47,87 @@ model AppUser {
 }
 
 // ---------------------------------------------------------------------------
+// app_user_access - authorization grants for app_user accounts (issue #13)
+// ---------------------------------------------------------------------------
+
+/// Authorization grants for one local account, keyed by the exact username
+/// in app_user (NOT an FK - deliberately decoupled so access can be assigned
+/// independently of the account lifecycle in issue #31). There is no row
+/// unless an operator has explicitly assigned one via `auth:assign-access`:
+/// an account with no row is authenticated (issue #31) but has no roles, so
+/// role-gated endpoints return 403 (fail-closed). roles/departmentScope are
+/// stored as denormalized arrays and replaced wholesale on each assignment.
+model AppUserAccess {
+  /// Exact username from app_user.username (decoupled, not an FK).
+  username String @id @db.VarChar(100)
+
+  /// Roles granted to this user. Empty array = no roles = no role-gated access.
+  roles AppRole[]
+
+  /// Departments this user may see. Empty array = all departments. Values
+  /// must exactly match monitor_record.department strings (case-sensitive);
+  /// a mismatch silently yields an empty result set - see docs/auth.md.
+  departmentScope String[] @map("department_scope")
+
+  /// Whether this user may see unmasked HIGH-sensitivity patient detail
+  /// (patientName/reportContent/diagnosis/bedNo). False = masked responses
+  /// for all roles, including SYSTEM_ADMIN.
+  patientDetail Boolean @default(false) @map("patient_detail")
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_user_access")
+}
+
+// ---------------------------------------------------------------------------
+// audit_log - tamper-resistant-ish read audit trail (issue #13)
+// ---------------------------------------------------------------------------
+
+/// One audited operation. Written by AuditService for key reads and rules
+/// writes; the meta column carries only LOW-sensitivity context and must
+/// NEVER contain patient data, report body text, or credentials (the
+/// log-sanitization spec enforces this). Rows are append-only from the API's
+/// perspective - there is no update/delete endpoint, only AUDITOR-gated read.
+model AuditLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Username of the acting account (app_user.username). Nullable so the
+  /// service can skip writing when no authenticated identity is available.
+  actorUsername String? @map("actor_username") @db.VarChar(100)
+
+  /// Primary role of the actor at time of the action (see pickPrimaryRole).
+  actorRole AppRole @map("actor_role")
+
+  action AuditAction
+
+  /// High-level resource type, e.g. monitor_record / monitor_rule / audit_log.
+  resourceType String @map("resource_type") @db.VarChar(100)
+
+  /// Resource identifier when applicable (e.g. monitor_record.id, rule id).
+  resourceId String? @map("resource_id") @db.Uuid
+
+  /// Department context (record's department / filter value) when applicable.
+  department String? @db.VarChar(100)
+
+  /// LOW-sensitivity audit context (filters, counts, masked flag, rule
+  /// semantics). Must never contain patient data / report text / secrets.
+  meta Json?
+
+  /// Best-effort client IP (see docs/auth.md for reverse-proxy caveats).
+  ip String? @db.VarChar(64)
+
+  /// Request correlation id for joining against API error logs.
+  correlationId String? @map("correlation_id") @db.VarChar(100)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([action, createdAt])
+  @@index([actorUsername, createdAt])
+  @@index([department, createdAt])
+  @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
 
@@ -84,6 +165,33 @@ enum SyncJobStatus {
   SUCCEEDED
   FAILED
   PARTIAL
+}
+
+/// Application role assigned to a user via app_user_access (issue #13).
+/// Authorization is layered on top of issue #31's local-account JWT login.
+/// VIEWER - read-only workbench, scoped to the user's departments.
+/// RULE_ADMIN - manages monitor_rule keywords (still subject to data masking).
+/// SYSTEM_ADMIN - system operator; by default has NO patient detail rights.
+/// AUDITOR - read-only access to the audit log.
+enum AppRole {
+  VIEWER
+  RULE_ADMIN
+  SYSTEM_ADMIN
+  AUDITOR
+}
+
+/// One audited operation. LOGIN/CONFIG_CHANGE are reserved seams for issue
+/// #31 / future config-write endpoints and have no trigger point yet - do
+/// not add values without a migration + audit-contract review.
+enum AuditAction {
+  EXAM_LIST
+  EXAM_DETAIL
+  RULE_CREATE
+  RULE_UPDATE
+  RULE_IMPORT
+  CONFIG_CHANGE
+  AUDIT_VIEW
+  LOGIN
 }
 
 // ---------------------------------------------------------------------------

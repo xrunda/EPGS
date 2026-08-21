@@ -1,0 +1,62 @@
+/**
+ * Stable DTOs for issue #13's authorization + audit surfaces: the
+ * `GET /api/audit` read endpoint and the role vocabulary shared by the
+ * frontend. These mirror apps/api's `AppRole`/`AuditAction` enums and the
+ * `audit_log` table (see apps/api/prisma/schema.prisma and docs/auth.md for
+ * the authoritative documentation).
+ *
+ * The audit log is append-only from the API's perspective: rows are written
+ * by AuditService for key reads and rules writes, and read here by users with
+ * the AUDITOR role. `meta` is a low-sensitivity JSON bag (filters, counts,
+ * masked flag, rule semantics) and must never carry patient data, report body
+ * text, or credentials.
+ */
+
+/** Application role assigned to a user via app_user_access (issue #13). */
+export type AppRoleDto = 'VIEWER' | 'RULE_ADMIN' | 'SYSTEM_ADMIN' | 'AUDITOR';
+
+/**
+ * One audited operation. LOGIN / CONFIG_CHANGE are reserved seams (issue #31
+ * / future config-write endpoints) and currently have no trigger point.
+ */
+export type AuditActionDto =
+  | 'EXAM_LIST'
+  | 'EXAM_DETAIL'
+  | 'RULE_CREATE'
+  | 'RULE_UPDATE'
+  | 'RULE_IMPORT'
+  | 'CONFIG_CHANGE'
+  | 'AUDIT_VIEW'
+  | 'LOGIN';
+
+/** One row of `GET /api/audit`. */
+export interface AuditLogDto {
+  id: string;
+  /** Acting app_user.username; null only if no authenticated identity was available. */
+  actorUsername: string | null;
+  /** Primary role of the actor at the time of the action. */
+  actorRole: AppRoleDto;
+  action: AuditActionDto;
+  /** High-level resource type, e.g. monitor_record / monitor_rule / audit_log. */
+  resourceType: string;
+  /** Resource identifier when applicable (e.g. monitor_record.id, rule id). */
+  resourceId: string | null;
+  /** Department context (record's department / filter value) when applicable. */
+  department: string | null;
+  /** Low-sensitivity audit context - never patient data / report text / secrets. */
+  meta: Record<string, unknown> | null;
+  /** Best-effort client IP. */
+  ip: string | null;
+  /** Request correlation id for joining against API error logs. */
+  correlationId: string | null;
+  /** ISO 8601 UTC instant. */
+  createdAt: string;
+}
+
+/** Paginated response envelope for `GET /api/audit`. */
+export interface PaginatedAuditLog {
+  items: AuditLogDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

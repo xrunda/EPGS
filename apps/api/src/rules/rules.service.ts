@@ -52,10 +52,14 @@ export class RulesService {
     return toRuleDto(rule);
   }
 
-  async create(dto: CreateRuleDto): Promise<MonitorRuleDto> {
+  async create(dto: CreateRuleDto, actorUsername?: string): Promise<MonitorRuleDto> {
     const keyword = dto.keyword.trim();
     const matchMode = dto.matchMode ?? 'CONTAINS';
     const isEnabled = dto.isEnabled ?? true;
+    // Issue #13: when the caller is authenticated, the server-side username
+    // is authoritative (dto.actorId is kept only for backwards-compatible
+    // DTO shape and is ignored by the controller).
+    const actor = actorUsername ?? dto.actorId;
 
     // ruleGroupId defaults to this row's own id (see schema doc) - the id
     // isn't known before insert, so this is a create-then-patch pair
@@ -85,8 +89,8 @@ export class RulesService {
           isEnabled,
           version: 1,
           ruleGroupId: '00000000-0000-0000-0000-000000000000',
-          createdBy: dto.actorId,
-          updatedBy: dto.actorId,
+          createdBy: actor,
+          updatedBy: actor,
         },
       });
 
@@ -99,7 +103,9 @@ export class RulesService {
     return toRuleDto(finalized);
   }
 
-  async update(id: string, dto: UpdateRuleDto): Promise<MonitorRuleDto> {
+  async update(id: string, dto: UpdateRuleDto, actorUsername?: string): Promise<MonitorRuleDto> {
+    // Issue #13: authenticated username is authoritative over dto.actorId.
+    const actor = actorUsername ?? dto.actorId;
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.monitorRule.findUnique({ where: { id } });
       if (!current) throw new RuleNotFoundException(id);
@@ -159,7 +165,12 @@ export class RulesService {
       if (nextEnabled) {
         await this.assertNoConflict(
           tx,
-          { keyword: nextKeyword, level: nextLevel, matchField: nextMatchField, matchMode: nextMatchMode },
+          {
+            keyword: nextKeyword,
+            level: nextLevel,
+            matchField: nextMatchField,
+            matchMode: nextMatchMode,
+          },
           // Exclude the rule's own group from the conflict check - editing
           // a rule (versioned or in-place) must not conflict with its own
           // prior version(s).
@@ -184,7 +195,7 @@ export class RulesService {
             notes: nextNotes,
             isEnabled: nextEnabled,
             version: current.version + 1,
-            updatedBy: dto.actorId,
+            updatedBy: actor,
           },
         });
         if (result.count === 0) {
@@ -201,7 +212,7 @@ export class RulesService {
       // produced them (see schema.prisma + data-dictionary.md).
       const disableResult = await tx.monitorRule.updateMany({
         where: { id, version: dto.version },
-        data: { isEnabled: false, updatedBy: dto.actorId },
+        data: { isEnabled: false, updatedBy: actor },
       });
       if (disableResult.count === 0) {
         const latest = await tx.monitorRule.findUniqueOrThrow({ where: { id } });
@@ -219,8 +230,8 @@ export class RulesService {
           isEnabled: nextEnabled,
           version: current.version + 1,
           ruleGroupId: current.ruleGroupId,
-          createdBy: dto.actorId,
-          updatedBy: dto.actorId,
+          createdBy: actor,
+          updatedBy: actor,
         },
       });
 

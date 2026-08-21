@@ -18,8 +18,7 @@ import type { MatchStrategy, StrategyHit } from './types';
  * common CJK/ASCII punctuation, and start/end of string. Anything else
  * (CJK ideographs, ASCII letters/digits) is treated as "part of a word".
  */
-const BOUNDARY_PATTERN =
-  /[\s,.;:!?，。；：！？、（）()【】[\]"“”'‘’《》<>\-—_/\\]/;
+const BOUNDARY_PATTERN = /[\s,.;:!?，。；：！？、（）()【】[\]"“”'‘’《》<>\-—_/\\]/;
 
 function isBoundary(ch: string | undefined): boolean {
   if (ch === undefined) {

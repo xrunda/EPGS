@@ -280,6 +280,36 @@ hidden and cannot be supplied as a command-line argument:
 pnpm --filter @epgs/api auth:reset-password --username admin
 ```
 
+## Roles, data-scope and audit (issue #13)
+
+Issue #31 authenticates; issue #13 authorizes. Each login maps to an
+`app_user_access` grant (roles + department scope + patient-detail flag) that a
+global `RolesGuard` enforces per request:
+
+- **Roles**: `VIEWER` (read, department-scoped), `RULE_ADMIN` (rule writes),
+  `SYSTEM_ADMIN` (read, masked), `AUDITOR` (read-only audit trail).
+- **Data-scope**: a grant's `departmentScope` (empty = all departments) narrows
+  every monitor query; out-of-scope records return `404`, never 403.
+- **Masking**: without `patientDetail`, patient names keep only the surname,
+  bed numbers become `***`, and report text / diagnosis / hit snippets are
+  nulled with a `dataAccess: { masked: true }` flag.
+- **Audit**: `GET /api/monitor/exams*`, rule writes, and audit reads write
+  append-only `audit_log` rows (fail-open; meta never holds patient data).
+  `GET /api/audit` is AUDITOR-only.
+- **Actor authority**: on rule writes the server-side login wins over any
+  `actorId` in the request body.
+
+Assign grants with the CLI (takes effect immediately, no re-login):
+
+```bash
+pnpm --filter @epgs/api auth:assign-access --username admin --roles SYSTEM_ADMIN
+pnpm --filter @epgs/api auth:assign-access --username doctor --roles VIEWER --departments 消化内科 --patient-detail
+pnpm --filter @epgs/api auth:show-access --username doctor
+```
+
+See [`docs/auth.md`](docs/auth.md) for the full permission matrix, masking
+rules and audit design.
+
 ## Monitor API (issue #7, #8)
 
 `GET /api/monitor/exams`, `GET /api/monitor/exams/:id` and

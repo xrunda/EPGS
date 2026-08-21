@@ -8,6 +8,37 @@ import { MonitorRecordNotFoundException } from './errors/monitor-record-not-foun
 import { resolveDateRange } from './monitor-time';
 import { toExamDetailDto, toExamDto } from './monitor.mapper';
 import { MonitorExamDetailDto, MonitorSummaryDto, PaginatedMonitorExams } from '@epgs/shared-types';
+import { buildDepartmentScopeWhere, maskExamDetail, maskExamRow } from '../access/data-scope';
+
+/** Issue #13 query options: data-scope restriction + patient-data masking. */
+export interface MonitorQueryOptions {
+  /** Authorized department names; empty = all departments. */
+  scope?: string[];
+  /** True when the caller lacks patientDetail rights (mask HIGH-sensitivity fields). */
+  maskPatient?: boolean;
+}
+
+/**
+ * The department condition = authorized scope AND the caller's own filter,
+ * merged into one Prisma field filter. A scoped user filtering for a
+ * department outside their scope gets no rows (never a leak); with no scope
+ * the result is the pre-#13 `{ equals, mode: 'insensitive' }` shape.
+ */
+function buildDepartmentWhere(
+  requested?: string,
+  scope?: string[],
+): Prisma.StringNullableFilter | undefined {
+  if (scope?.length && requested) {
+    return { in: scope, equals: requested, mode: 'insensitive' };
+  }
+  if (scope?.length) {
+    return { in: scope };
+  }
+  if (requested) {
+    return { equals: requested, mode: 'insensitive' };
+  }
+  return undefined;
+}
 
 /**
  * Read-only monitor workbench queries (issue #7): the list, the detail
@@ -47,13 +78,25 @@ export class MonitorService {
       UNCLASSIFIED: 'unclassified',
     };
 
-  async list(query: ListExamsQueryDto): Promise<PaginatedMonitorExams> {
+  /** Detail hit evidence + rule provenance (issue #8) - shared by both lookup paths. */
+  private static readonly DETAIL_INCLUDE = {
+    matches: {
+      orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
+      // Issue #8: each hit carries the exact rule version that produced
+      // it (ruleId is a scalar on the match row; version lives on the
+      // versioned, never-deleted rule). list() never needs this - only
+      // the detail endpoint surfaces hit evidence.
+      include: { rule: { select: { version: true } } },
+    },
+  } as const satisfies Prisma.MonitorRecordInclude;
+
+  async list(query: ListExamsQueryDto, opts?: MonitorQueryOptions): Promise<PaginatedMonitorExams> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const where = this.buildWhere(query);
+    const where = this.buildWhere(query, opts?.scope);
     const orderBy = this.buildOrderBy(query);
 
-    const [items, total] = await this.prisma.$transaction([
+    const [rows, total] = await this.prisma.$transaction([
       this.prisma.monitorRecord.findMany({
         where,
         orderBy,
@@ -64,30 +107,39 @@ export class MonitorService {
       this.prisma.monitorRecord.count({ where }),
     ]);
 
+    const items = rows.map((row) => toExamDto(row));
+    const masked = opts?.maskPatient ?? false;
     return {
-      items: items.map((row) => toExamDto(row)),
+      items: masked ? items.map(maskExamRow) : items,
       total,
       page,
       pageSize,
+      // Present ONLY when the server masked for this caller (issue #13) - an
+      // unmasked response is byte-identical to pre-#13, so existing clients
+      // are unaffected.
+      ...(masked ? { dataAccess: { masked: true } } : {}),
     };
   }
 
-  async getDetail(id: string): Promise<MonitorExamDetailDto> {
-    const record = await this.prisma.monitorRecord.findUnique({
-      where: { id },
-      include: {
-        matches: {
-          orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
-          // Issue #8: each hit carries the exact rule version that produced
-          // it (ruleId is a scalar on the match row; version lives on the
-          // versioned, never-deleted rule). list() never needs this - only
-          // the detail endpoint surfaces hit evidence.
-          include: { rule: { select: { version: true } } },
-        },
-      },
-    });
+  async getDetail(id: string, opts?: MonitorQueryOptions): Promise<MonitorExamDetailDto> {
+    // Horizontal-escalation guard (issue #13): when the caller is scoped,
+    // the lookup is narrowed to their departments, so an out-of-scope id
+    // resolves to "not found" (404) rather than 403 - it never reveals that
+    // the record exists.
+    const scopeWhere = buildDepartmentScopeWhere(opts?.scope);
+    const record =
+      scopeWhere.department !== undefined
+        ? await this.prisma.monitorRecord.findFirst({
+            where: { id, ...scopeWhere },
+            include: MonitorService.DETAIL_INCLUDE,
+          })
+        : await this.prisma.monitorRecord.findUnique({
+            where: { id },
+            include: MonitorService.DETAIL_INCLUDE,
+          });
     if (!record) throw new MonitorRecordNotFoundException(id);
-    return toExamDetailDto(record);
+    const dto = toExamDetailDto(record);
+    return opts?.maskPatient ? maskExamDetail(dto) : dto;
   }
 
   /**
@@ -97,8 +149,10 @@ export class MonitorService {
    * lands in exactly one bucket, so total == sum(red, yellow, green,
    * unclassified) always holds for the same `where`.
    */
-  async summary(query: SummaryQueryDto): Promise<MonitorSummaryDto> {
-    const where = this.buildWhere(query);
+  async summary(query: SummaryQueryDto, opts?: MonitorQueryOptions): Promise<MonitorSummaryDto> {
+    // Counts are not patient-identifying by themselves (aggregate only), so
+    // summary never masks - it only honors the department scope.
+    const where = this.buildWhere(query, opts?.scope);
     const groups = await this.prisma.monitorRecord.groupBy({
       by: ['currentLevel'],
       where,
@@ -115,9 +169,16 @@ export class MonitorService {
     return result;
   }
 
-  private buildWhere(query: MonitorFiltersDto): Prisma.MonitorRecordWhereInput {
+  private buildWhere(query: MonitorFiltersDto, scope?: string[]): Prisma.MonitorRecordWhereInput {
     const range = resolveDateRange(query.examDateFrom, query.examDateTo);
+    // Department = scope (issue #13) AND the caller's own department filter,
+    // merged into one field condition so the hard authorization boundary is
+    // never widened by a filter param: a scoped user asking for a department
+    // outside their scope gets no rows, never a leak. When there is no scope
+    // the condition is byte-identical to pre-#13 (spec-stable).
+    const department = buildDepartmentWhere(query.department, scope);
     return {
+      ...(department ? { department } : {}),
       ...(range
         ? {
             examTime: {
@@ -125,9 +186,6 @@ export class MonitorService {
               ...(range.lt ? { lt: range.lt } : {}),
             },
           }
-        : {}),
-      ...(query.department
-        ? { department: { equals: query.department, mode: 'insensitive' } }
         : {}),
       ...(query.patientTypeCode ? { patientTypeCode: query.patientTypeCode } : {}),
       ...(query.level ? { currentLevel: query.level } : {}),

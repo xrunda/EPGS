@@ -13,9 +13,24 @@
 ## 鉴权
 
 全部接口要求 Issue #31 的有效登录 Cookie；未登录或会话过期返回
-`401 AUTH_REQUIRED`。当前所有已登录账号都可维护规则，调用方同时传入当前账号
-作为 `actorId`，用于 `createdBy`/`updatedBy`。角色化写权限和完整变更审计仍由
-Issue #13 实现；`RulesWriteGuard` 暂不承担角色判断。
+`401 AUTH_REQUIRED`。
+
+### 角色（Issue #13）
+
+- **读取**（`GET /api/rules`、`GET /api/rules/:id`）：任意已登录账号。
+- **写**（创建/编辑/导入校验/导入确认）：仅 `RULE_ADMIN`，否则 `403
+FORBIDDEN`。原 `RulesWriteGuard` 占位守卫已被移除，角色判断由全局
+  `RolesGuard` 承担。
+
+### 执行者（Issue #13）
+
+写操作的执行者以**服务端登录账号**为准：即使请求体把 `actorId` 篡改成其他值，
+落库的 `createdBy`/`updatedBy` 与审计 `actorUsername` 仍是登录账号。`actorId`
+仅保留以兼容旧 DTO 形状。
+
+每次创建/编辑/导入确认都会在 `audit_log` 落一条
+`RULE_CREATE`/`RULE_UPDATE`/`RULE_IMPORT` 记录（meta 只含规则语义与计数，绝不含
+患者数据）。
 
 ## 统一错误格式
 
@@ -258,7 +273,9 @@ CSV 导入接口自行建立。
 ## 测试
 
 - 单元测试（mock Prisma，无需数据库）：`apps/api/src/rules/**/*.spec.ts`、
-  `apps/api/src/common/guards/rules-write.guard.spec.ts`。
+  `apps/api/src/access/**/*.spec.ts`（RolesGuard/数据范围/脱敏/授权 CLI，issue
+  #13）。原 `RulesWriteGuard` 及其 spec 已随 issue #13 删除，被全局
+  `RolesGuard` 取代。
 - 端到端测试（需要真实 Postgres，已应用 issue #3 迁移）：
   `apps/api/test/rules.e2e-spec.ts`，覆盖完整生命周期、重复冲突、并发修改
   （含"语义编辑后旧行仍被引用"与"两个操作人都基于旧版本做非语义编辑"两类

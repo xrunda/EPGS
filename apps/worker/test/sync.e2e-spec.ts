@@ -1,8 +1,9 @@
+import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { PrismaClient, SyncJobStatus, MonitorLevel, MatchField, MatchMode } from '@prisma/client';
 import { FetchReportsParams, FetchReportsResult, PacsReportDto } from '@epgs/shared-types';
 import { PacsRisAdapter } from '../src/pacs-adapter/pacs-ris-adapter.interface';
-import { FixturePacsRisAdapter } from '../src/pacs-adapter/fixture-pacs-ris-adapter';
+import { CsvPacsRisAdapter } from '../src/pacs-adapter/csv-pacs-ris-adapter';
 import { runSync, SyncRunnerOptions } from '../src/sync/sync-runner';
 import { SYNC_JOB_NAME } from '../src/sync/sync-cursor';
 
@@ -28,6 +29,14 @@ describe('Sync job (e2e, real Postgres)', () => {
   let prisma: PrismaClient;
   let dbAvailable = true;
   const silentLogger = new Logger('sync.e2e-spec');
+  const fixturePath = join(
+    __dirname,
+    '..',
+    'src',
+    'pacs-adapter',
+    'fixtures',
+    'reports.fixture.csv',
+  );
 
   const baseOptions: SyncRunnerOptions = {
     pageSize: 200,
@@ -110,7 +119,7 @@ describe('Sync job (e2e, real Postgres)', () => {
     'first full window: syncing the fixture dataset from scratch creates MonitorRecord + SyncJobLog rows',
     async () => {
       await seedRedRule();
-      const adapter = new FixturePacsRisAdapter();
+      const adapter = new CsvPacsRisAdapter({ filePath: fixturePath });
       const now = new Date('2026-08-21T00:00:00Z'); // well after the fixture's fixed Aug 1-2 2026 dates
 
       const summary = await runSync(prisma, adapter, now, baseOptions, silentLogger);
@@ -134,7 +143,7 @@ describe('Sync job (e2e, real Postgres)', () => {
     're-running the exact same batch twice does not increase MonitorRecord/MonitorMatch counts (idempotency)',
     async () => {
       await seedRedRule();
-      const adapter = new FixturePacsRisAdapter();
+      const adapter = new CsvPacsRisAdapter({ filePath: fixturePath });
       const now = new Date('2026-08-21T00:00:00Z');
 
       await runSync(prisma, adapter, now, baseOptions, silentLogger);
@@ -518,7 +527,7 @@ function makeReport(overrides: Partial<PacsReportDto> = {}): PacsReportDto {
     ...overrides,
   };
 }
-/** Simple in-memory adapter returning all `items` whose sourceUpdatedAt falls in [since, until) in one page - enough for these targeted scenario tests without re-implementing FixturePacsRisAdapter's fuller pagination. */
+/** Simple in-memory adapter for targeted failure/recovery scenarios; CSV pagination is tested separately. */
 class StubAdapter implements PacsRisAdapter {
   constructor(public items: PacsReportDto[]) {}
 

@@ -46,26 +46,31 @@ export const envValidationSchema = Joi.object({
     .uri({ scheme: [/postgres(ql)?/] })
     .required(),
 
-  // Selects the PacsRisAdapter implementation (see src/pacs-adapter).
-  // 'fixture' (default) uses synthetic in-memory data - safe for local
-  // dev/CI with no real PACS/RIS connection. 'sql' is an unfinished
-  // skeleton (issue #2, no live driver wired). 'http' (issue #6) calls
-  // the real issue #20 database gateway contract over HTTP.
-  PACS_ADAPTER_MODE: Joi.string().valid('fixture', 'sql', 'http').default('fixture'),
-
-  // Optional: only meaningful when PACS_ADAPTER_MODE=sql. Connection
-  // details for the dedicated read-only PACS/RIS account. Never
-  // hardcode real values - injected via environment/secret manager only.
-  PACS_DB_HOST: Joi.string().optional(),
-  PACS_DB_PORT: Joi.number().port().optional(),
-  PACS_DB_NAME: Joi.string().optional(),
-  PACS_DB_USER: Joi.string().optional(),
-  PACS_DB_PASSWORD: Joi.string().optional(),
+  // The hospital database gateway is outside this repository. Production
+  // uses HTTP; local development may read a synthetic API-shaped CSV.
+  PACS_ADAPTER_MODE: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().valid('http').required(),
+    otherwise: Joi.string().valid('csv', 'http').default('csv'),
+  }),
+  PACS_MOCK_CSV_PATH: Joi.string().when('PACS_ADAPTER_MODE', {
+    is: 'csv',
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
 
   // Required when PACS_ADAPTER_MODE=http (issue #6, docs/api/pacs-ris-data-api.md).
   // No real test-environment value exists in this repo/CI - only used
   // against a mock HTTP server in tests. Never commit a real value.
-  PACS_HTTP_BASE_URL: Joi.string().uri().optional(),
-  PACS_HTTP_SERVICE_TOKEN: Joi.string().optional(),
+  PACS_HTTP_BASE_URL: Joi.string().uri().when('PACS_ADAPTER_MODE', {
+    is: 'http',
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
+  PACS_HTTP_SERVICE_TOKEN: Joi.string().when('PACS_ADAPTER_MODE', {
+    is: 'http',
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
   PACS_HTTP_TIMEOUT_MS: Joi.number().integer().min(1).default(10000),
 });

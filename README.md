@@ -19,7 +19,7 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
                                                                  ▼
 ┌─────────────┐    reads config the same way as api      ┌─────────────┐
 │ apps/worker │ ─────────────────────────────────────────│  PostgreSQL │
-│   NestJS    │   scheduled placeholder job ("sync tick") │  (docker)   │
+│   NestJS    │   REST/CSV sync and keyword matching       │  (docker)   │
 └─────────────┘                                           └─────────────┘
 
         apps/api, apps/worker, apps/web all depend on packages/shared-types
@@ -33,14 +33,11 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
   monitor workbench API under `/api/monitor` (list/filter/summary + detail) — see
   "Rules API" / "Monitor API" below and [`docs/rules-api.md`](docs/rules-api.md) /
   [`docs/api/monitor-api.md`](docs/api/monitor-api.md).
-- **apps/worker** — a NestJS-based background service for sync/monitoring jobs. Not
-  publicly exposed; runs independently with its own port/health check and its own
-  `@nestjs/schedule` cron job (currently a placeholder that logs `"sync tick"`).
-  It also owns the read-only PACS/RIS adapter (`src/pacs-adapter/`, issue #2) that
-  converts PACS/RIS exam/report tables into stable `PacsReportDto`s; see
-  `docs/pacs-ris-adapter.md` for the assumed source schema and what still needs
-  production verification. The actual scheduled sync job that calls this adapter
-  lands in issue #6.
+- **apps/worker** — a NestJS background service that periodically reads endoscopy
+  reports, runs keyword matching, and idempotently updates the EPGS PostgreSQL read
+  model. Production consumes the separately deployed hospital REST gateway; local
+  development can read an API-shaped synthetic CSV. This repository never connects
+  directly to the hospital source database. See [`docs/pacs-ris-adapter.md`](docs/pacs-ris-adapter.md).
 - **apps/web** — a React + Vite frontend implementing the read-only monitor
   workbench (issue #9): filters, attention-level summary cards, the exam list with
   pagination, and a read-only detail drawer that shows the report/diagnosis and hit
@@ -137,18 +134,22 @@ exit immediately with a clear, non-secret-leaking error message (e.g.
 `Config validation error: "DATABASE_URL" is required`) rather than starting in a
 broken state.
 
-| Variable                | Used by          | Purpose                                             | Example / default                            |
-| ----------------------- | ---------------- | --------------------------------------------------- | -------------------------------------------- |
-| `NODE_ENV`              | api, worker      | Runtime environment                                 | `development`                                |
-| `PORT`                  | api, worker, web | HTTP port for that app                              | api `3000`, worker `3001`, web `5173`        |
-| `TZ`                    | api, worker      | Process timezone                                    | `Asia/Shanghai`                              |
-| `LOG_LEVEL`             | api, worker      | Minimum log level (`fatal`..`verbose`)              | `log`                                        |
-| `DATABASE_URL`          | api, worker      | PostgreSQL connection string (required, no default) | `postgresql://epgs:epgs@localhost:5432/epgs` |
-| `SYNC_INTERVAL_MINUTES` | worker           | Cadence for the (placeholder) sync job              | `15`                                         |
-| `VITE_API_BASE_URL`     | web              | Base URL web uses to call the API                   | `http://localhost:3000`                      |
-| `JWT_SECRET`            | api              | 本地登录 JWT 签名密钥（至少 32 字符，必填）         | 无默认值                                     |
-| `JWT_EXPIRES_SECONDS`   | api              | 登录 Cookie 与 JWT 有效期（秒）                     | `28800`                                      |
-| `WEB_ORIGIN`            | api              | 允许携带 Cookie 调用 API 的前端来源                 | `http://localhost:5173`                      |
+| Variable                  | Used by          | Purpose                                             | Example / default                            |
+| ------------------------- | ---------------- | --------------------------------------------------- | -------------------------------------------- |
+| `NODE_ENV`                | api, worker      | Runtime environment                                 | `development`                                |
+| `PORT`                    | api, worker, web | HTTP port for that app                              | api `3000`, worker `3001`, web `5173`        |
+| `TZ`                      | api, worker      | Process timezone                                    | `Asia/Shanghai`                              |
+| `LOG_LEVEL`               | api, worker      | Minimum log level (`fatal`..`verbose`)              | `log`                                        |
+| `DATABASE_URL`            | api, worker      | PostgreSQL connection string (required, no default) | `postgresql://epgs:epgs@localhost:5432/epgs` |
+| `SYNC_INTERVAL_MINUTES`   | worker           | Scheduled source-sync cadence                       | `3`                                          |
+| `PACS_ADAPTER_MODE`       | worker           | `csv` for local Mock or `http` for hospital REST    | `csv`                                        |
+| `PACS_MOCK_CSV_PATH`      | worker           | API-shaped CSV path; required in `csv` mode         | `../../Doc/moke-data.csv`                    |
+| `PACS_HTTP_BASE_URL`      | worker           | Hospital REST gateway; required in `http` mode      | no default                                   |
+| `PACS_HTTP_SERVICE_TOKEN` | worker           | Gateway Bearer Token; required in `http` mode       | no default                                   |
+| `VITE_API_BASE_URL`       | web              | Base URL web uses to call the API                   | `http://localhost:3000`                      |
+| `JWT_SECRET`              | api              | 本地登录 JWT 签名密钥（至少 32 字符，必填）         | 无默认值                                     |
+| `JWT_EXPIRES_SECONDS`     | api              | 登录 Cookie 与 JWT 有效期（秒）                     | `28800`                                      |
+| `WEB_ORIGIN`              | api              | 允许携带 Cookie 调用 API 的前端来源                 | `http://localhost:5173`                      |
 
 See `.env.example` (root) and `apps/*/.env.example` for the full, commented list.
 

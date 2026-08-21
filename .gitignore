@@ -33,3 +33,7 @@ apps/**/generated/
 # Misc
 *.pid
 *.pid.lock
+
+# Hospital-provided mock export. Keep outside Git until its synthetic/
+# desensitized status has been reviewed; tests use the committed fixture CSV.
+Doc/moke-data.csv

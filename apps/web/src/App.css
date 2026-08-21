@@ -3,6 +3,7 @@ body,
 #root {
   min-height: 100%;
 }
+
 body {
   margin: 0;
 }
@@ -12,6 +13,7 @@ body {
   background: #edf3f2;
   color: #19383d;
 }
+
 .app-header {
   display: flex;
   align-items: center;
@@ -21,12 +23,14 @@ body {
   background: #153f46;
   color: #fff;
 }
+
 .app-brand {
   display: flex;
   align-items: center;
   gap: 12px;
   font-weight: 700;
 }
+
 .app-brand__mark {
   display: grid;
   width: 34px;
@@ -38,109 +42,62 @@ body {
   color: #153f46;
   font-size: 13px;
 }
-.app-header nav {
+
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-header__nav {
   align-self: stretch;
   display: flex;
   align-items: center;
   padding: 0 4px;
   border-bottom: 3px solid #6fc1cb;
   font-size: 14px;
-  gap: 12px;
 }
-.app-header__nav button {
+
+.app-header__actions button {
   border: 0;
   padding: 6px 8px;
   border-radius: 6px;
   background: transparent;
   color: #d6eeea;
 }
-.app-header__nav button:hover,
-.app-header__nav button:focus-visible {
+
+.app-header__actions button:hover,
+.app-header__actions button:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.35);
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
+
 .app-user {
-  padding-left: 18px;
+  padding-left: 16px;
   border-left: 1px solid rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
   font-weight: 700;
-}
-.app-workbench {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  margin: 42px auto 0;
-  width: min(1180px, calc(100% - 48px));
-  padding: 30px 32px;
-  border: 1px solid #d2dfdd;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 12px 32px rgba(21, 63, 70, 0.06);
-}
-.app-workbench h1 {
-  margin: 3px 0 5px;
-  color: #153f46;
-  font-size: 28px;
-}
-.app-workbench p {
-  margin: 0;
-  color: #718588;
-}
-.app-kicker {
-  color: #3a7882 !important;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-}
-.app-rules-button {
-  min-height: 42px;
-  padding: 0 20px;
-  border: 1px solid #176b78;
-  border-radius: 6px;
-  background: #176b78;
-  color: #fff;
-  font-weight: 700;
-}
-.app-rules-button:hover {
-  background: #125a65;
-}
-.app-rules-button:active {
-  transform: scale(0.98);
-}
-.app-status {
-  width: min(1180px, calc(100% - 48px));
-  margin: 12px auto;
-  color: #718588;
-  font-size: 12px;
+  white-space: nowrap;
 }
 
 @media (max-width: 640px) {
   .app-header {
     padding: 0 18px;
   }
+
   .app-brand {
     font-size: 13px;
   }
-  .app-header__nav strong,
-  .app-header__nav button:first-of-type {
+
+  .app-header__nav,
+  .app-header__actions button:first-of-type {
     display: none;
   }
+
   .app-user {
     padding-left: 0;
     border-left: 0;
-  }
-  .app-workbench {
-    align-items: flex-start;
-    flex-direction: column;
-    margin-top: 20px;
-    width: calc(100% - 28px);
-    padding: 22px;
-  }
-  .app-rules-button {
-    width: 100%;
-  }
-  .app-status {
-    width: calc(100% - 28px);
   }
 }

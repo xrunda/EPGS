@@ -1,20 +1,22 @@
 import { useState } from 'react';
-import { ApiStatus } from './ApiStatus';
-import { RulesModal } from './RulesModal';
 import { AuthGate } from './AuthGate';
 import type { AuthUser } from './authApi';
+import { RulesModal } from './RulesModal';
+import { Workbench } from './Workbench';
 import './App.css';
 
-/** Application shell for the endoscopy monitoring workbench. */
-function Workbench({
-  user,
-  logout,
-  openChangePassword,
-}: {
+interface AuthenticatedAppProps {
   user: AuthUser;
   logout(): Promise<void>;
   openChangePassword(): void;
-}): JSX.Element {
+}
+
+/** Authenticated application shell for the endoscopy monitoring workbench. */
+function AuthenticatedApp({
+  user,
+  logout,
+  openChangePassword,
+}: AuthenticatedAppProps): JSX.Element {
   const [rulesOpen, setRulesOpen] = useState(false);
 
   return (
@@ -24,37 +26,29 @@ function Workbench({
           <span className="app-brand__mark">EP</span>
           <span>菏泽市肿瘤中医医院</span>
         </div>
-        <nav aria-label="主导航" className="app-header__nav">
-          <strong>内镜中心</strong>
-          <span className="app-user">{user.displayName}</span>
+        <div className="app-header__actions">
+          <nav aria-label="主导航" className="app-header__nav">
+            <strong>内镜中心</strong>
+          </nav>
+          <span className="app-user" aria-label="当前用户">
+            {user.displayName}
+          </span>
           <button type="button" onClick={openChangePassword}>
             修改密码
           </button>
           <button type="button" onClick={() => void logout()}>
             退出登录
           </button>
-        </nav>
-      </header>
-      <section className="app-workbench">
-        <div>
-          <p className="app-kicker">ENDOSCOPY MONITORING</p>
-          <h1>内镜中心</h1>
-          <p>内镜重点患者监测系统</p>
         </div>
-        <button className="app-rules-button" type="button" onClick={() => setRulesOpen(true)}>
-          监测规则
-        </button>
-      </section>
-      <div className="app-status">
-        <ApiStatus />
-      </div>
+      </header>
+      <Workbench onOpenRules={() => setRulesOpen(true)} />
       <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} actorId={user.username} />
     </main>
   );
 }
 
 function App(): JSX.Element {
-  return <AuthGate>{(session) => <Workbench {...session} />}</AuthGate>;
+  return <AuthGate>{(session) => <AuthenticatedApp {...session} />}</AuthGate>;
 }
 
 export default App;

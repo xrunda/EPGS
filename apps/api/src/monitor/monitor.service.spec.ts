@@ -244,6 +244,8 @@ describe('MonitorService', () => {
         diagnosis: '诊断意见快照',
         matches: [
           {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1 },
             keyword: '腺癌',
             level: 'RED',
             matchedField: 'REPORT_TEXT',
@@ -255,10 +257,24 @@ describe('MonitorService', () => {
 
       const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
 
+      // Issue #8: the detail query must pull the versioned rule so each hit
+      // is auditable back to the exact rule version that produced it.
+      expect(prisma.monitorRecord.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            matches: {
+              orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
+              include: { rule: { select: { version: true } } },
+            },
+          },
+        }),
+      );
       expect(dto.reportContent).toBe('报告正文快照');
       expect(dto.diagnosis).toBe('诊断意见快照');
       expect(dto.hits).toHaveLength(1);
       expect(dto.hits[0]).toEqual({
+        ruleId: '00000000-0000-0000-0000-0000000000aa',
+        ruleVersion: 1,
         keyword: '腺癌',
         level: 'RED',
         matchedField: 'REPORT_TEXT',

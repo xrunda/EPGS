@@ -8,9 +8,12 @@ import { GlobalExceptionFilter } from '../src/common/filters/global-exception.fi
 import { hash, argon2id } from 'argon2';
 
 /**
- * Full-stack e2e test for issue #7's read-only monitor workbench API
- * (`GET /api/monitor/exams`, `GET /api/monitor/exams/:id`,
- * `GET /api/monitor/summary`) against a REAL Postgres instance.
+ * Full-stack e2e test for issue #7's read-only monitor workbench API and
+ * issue #8's detail/hit-evidence contract (`GET /api/monitor/exams`,
+ * `GET /api/monitor/exams/:id`, `GET /api/monitor/summary`) against a REAL
+ * Postgres instance. The #8 detail tests assert each hit's rule provenance
+ * (ruleId/ruleVersion) and its report-field location (matchedField → 报告内容/
+ * 诊断) in addition to the #7 snapshot fields.
  *
  * The suite is purely read-only (the API writes nothing), so the synthetic
  * fixture is seeded ONCE in beforeAll and never re-wiped between tests -
@@ -39,6 +42,9 @@ describe('Monitor API (e2e, real Postgres)', () => {
 
   /** record.id per fixture key, captured at seed time. */
   let ids: Record<string, string> = {};
+
+  /** monitor_rule.id per fixture rule key (rule-1..rule-6), for hit-evidence assertions (issue #8). */
+  let ruleIds: Record<string, string> = {};
 
   interface FixtureMatch {
     keyword: string;
@@ -357,6 +363,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
       });
       ruleIdByKey[rule.key] = ruleId;
     }
+    ruleIds = ruleIdByKey;
     // Resolve a rule id by (keyword, matchField) for match creation.
     const ruleIdByTuple = new Map<string, string>();
     for (const rule of FIXTURE_RULES) {
@@ -819,12 +826,22 @@ describe('Monitor API (e2e, real Postgres)', () => {
     expect(res.body.diagnosis).toBe('胃腺癌（早期）。');
     expect(res.body.hits).toHaveLength(2);
     expect(res.body.hits[0]).toEqual({
+      ruleId: ruleIds['rule-1'],
+      ruleVersion: 1,
       keyword: '腺癌',
       level: 'RED',
       matchedField: 'REPORT_TEXT',
       contextSnippet: '…黏膜内腺癌…',
       matchedAt: '2026-08-20T08:15:30.000Z',
     });
+    expect(res.body.hits[1]).toEqual(
+      expect.objectContaining({
+        ruleId: ruleIds['rule-4'],
+        ruleVersion: 1,
+        keyword: '息肉样',
+        matchedField: 'FINDINGS',
+      }),
+    );
     expect(res.body.matchedKeywords).toEqual(['腺癌', '息肉样']);
   });
 
@@ -842,6 +859,53 @@ describe('Monitor API (e2e, real Postgres)', () => {
     expect(res.body.diagnosis).toBeNull();
   });
 
+  // Issue #8: every hit is locatable to the exact report field it matched -
+  // matchedField maps FINDINGS/IMPRESSION to 报告内容/诊断 (see
+  // docs/api/monitor-api.md). R1's 腺癌 hit came from the REPORT_TEXT rule
+  // (报告内容), R8's 浸润癌 hit from the IMPRESSION rule (诊断).
+  itWithDb(
+    'detail locates each hit to the report field it matched (report vs diagnosis)',
+    async () => {
+      const r1 = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R1}`).expect(200);
+      const adenoca = r1.body.hits.find((h: { keyword: string }) => h.keyword === '腺癌');
+      expect(adenoca).toEqual(
+        expect.objectContaining({
+          ruleId: ruleIds['rule-1'],
+          ruleVersion: 1,
+          matchedField: 'REPORT_TEXT',
+        }),
+      );
+      expect(adenoca.matchedField).toBe('REPORT_TEXT'); // → 命中在 报告内容
+
+      const r8 = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R8}`).expect(200);
+      const infiltrating = r8.body.hits.find((h: { keyword: string }) => h.keyword === '浸润癌');
+      expect(infiltrating).toEqual(
+        expect.objectContaining({
+          ruleId: ruleIds['rule-3'],
+          ruleVersion: 1,
+          matchedField: 'IMPRESSION', // → 命中在 诊断
+        }),
+      );
+    },
+  );
+
+  // Issue #8 test requirement: 空诊断 - report body present, diagnosis null.
+  itWithDb('detail of a record with an empty diagnosis keeps the report body', async () => {
+    const res = await request(app.getHttpServer()).get(`/api/monitor/exams/${ids.R2}`).expect(200);
+    expect(res.body.diagnosis).toBeNull();
+    expect(res.body.reportContent).toBe('胃体见多发息肉样隆起。');
+    expect(res.body.hits).toHaveLength(1);
+    expect(res.body.hits[0]).toEqual(
+      expect.objectContaining({
+        ruleId: ruleIds['rule-4'],
+        ruleVersion: 1,
+        keyword: '息肉样',
+      }),
+    );
+  });
+
+  // 权限/脱敏/审计 is owned by issue #13 (no auth exists yet) - documented,
+  // not tested here.
   itWithDb('detail returns 404 MONITOR_RECORD_NOT_FOUND for an unknown id', async () => {
     const res = await agent
       .get('/api/monitor/exams/00000000-0000-0000-0000-000000000000')

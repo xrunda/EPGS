@@ -1,5 +1,5 @@
 /**
- * Stable wire DTOs for the read-only monitor workbench API (issue #7):
+ * Stable wire DTOs for the read-only monitor workbench API (issue #7 + #8):
  * `GET /api/monitor/exams`, `GET /api/monitor/exams/:id`,
  * `GET /api/monitor/summary`.
  *
@@ -7,8 +7,11 @@
  * is deliberately NO report/handling/disposition status anywhere in these
  * shapes. The report body (`reportContent`/`diagnosis`) only ever appears
  * in the DETAIL DTO (`MonitorExamDetailDto`); list responses never carry it
- * (see MonitorExamDto). See apps/api/prisma/schema.prisma and
- * docs/data-dictionary.md for the authoritative field-level documentation.
+ * (see MonitorExamDto). The detail hits additionally carry the exact rule
+ * provenance (`ruleId`/`ruleVersion`, issue #8) so each hit is auditable
+ * back to the rule version that produced it. See
+ * apps/api/prisma/schema.prisma and docs/data-dictionary.md for the
+ * authoritative field-level documentation.
  */
 
 import { MatchFieldDto, MonitorLevelDto } from './rules';
@@ -46,8 +49,29 @@ export interface MonitorExamDto {
   matchedKeywords: string[];
 }
 
-/** One hit-evidence row shown in the workbench detail drawer. */
+/**
+ * One hit-evidence row shown in the workbench detail drawer (issue #8).
+ *
+ * `matchedField` mirrors the `MatchField` enum stored on the match and the
+ * rule. It locates the hit within the report, mapping to the issue #8 spec's
+ * `field(REPORT_CONTENT/DIAGNOSIS)` as follows:
+ *
+ * | matchedField        | 报告位置                     | reportContent/diagnosis |
+ * | ------------------- | ---------------------------- | ----------------------- |
+ * | `FINDINGS`          | 报告内容（所见描述）         | 命中在 `reportContent`  |
+ * | `IMPRESSION`        | 诊断意见                     | 命中在 `diagnosis`      |
+ * | `REPORT_TEXT`/`OTHER` | 全文（两个字段都查）        | 可能命中任意一个        |
+ * | `STUDY_DESCRIPTION` | 检查描述（当前无独立文本源） | —                       |
+ *
+ * `ruleId`/`ruleVersion` pin the exact rule version that produced the hit
+ * (rules are versioned, never deleted — the FK is RESTRICT — so the
+ * reference stays resolvable and auditable).
+ */
 export interface MonitorExamHitDto {
+  /** The monitor_rule row that produced this hit. */
+  ruleId: string;
+  /** Version of that rule at match time (rules are immutable + versioned). */
+  ruleVersion: number;
   keyword: string;
   level: MonitorLevelDto;
   matchedField: MatchFieldDto;

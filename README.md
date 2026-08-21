@@ -41,9 +41,12 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
   `docs/pacs-ris-adapter.md` for the assumed source schema and what still needs
   production verification. The actual scheduled sync job that calls this adapter
   lands in issue #6.
-- **apps/web** — a React + Vite frontend. Currently a placeholder page ("内镜中心")
-  that calls `apps/api`'s `/health` endpoint to prove connectivity. Real business
-  pages land in issue #9+.
+- **apps/web** — a React + Vite frontend implementing the read-only monitor
+  workbench (issue #9): filters, attention-level summary cards, the exam list with
+  pagination, and a read-only detail drawer that shows the report/diagnosis and hit
+  evidence from `apps/api`'s `/api/monitor` endpoints (see "Monitor API" below and
+  `docs/product/read-only-display-spec.md`). The 监测规则 button opens the rule
+  configuration modal (issue #11).
 - **packages/shared-types** — TypeScript types/interfaces shared across api/worker/web
   (e.g. `HealthStatus`, `ApiErrorBody`), proving the workspace linking works end to end.
 
@@ -53,7 +56,7 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
 apps/
   api/       # NestJS HTTP API (main.ts, app.module.ts, health/, rules/, prisma/, common/, config/)
   worker/    # NestJS worker service (main.ts, app.module.ts, sync/, health/, config/)
-  web/       # React + Vite frontend (src/App.tsx, src/ApiStatus.tsx)
+  web/       # React + Vite frontend (src/App.tsx, src/Workbench.tsx, src/DetailDrawer.tsx)
 packages/
   shared-types/   # Shared TS types (HealthStatus, ApiErrorBody)
 .github/workflows/ci.yml   # CI: lint, typecheck, test, build on PR + push to main
@@ -72,10 +75,22 @@ docker-compose.yml          # Local Postgres for later issues
 - [`docs/api/pacs-ris-data-api.md`](docs/api/pacs-ris-data-api.md) and
   [`docs/api/pacs-ris-data-api.openapi.yaml`](docs/api/pacs-ris-data-api.openapi.yaml) —
   target read-only database-gateway API contract for issue #24.
-- [`docs/api/monitor-api.md`](docs/api/monitor-api.md) — issue #7's read-only
+- [`docs/api/monitor-api.md`](docs/api/monitor-api.md) — issue #7/#8's read-only
   monitor workbench API contract (`/api/monitor/exams`, `/api/monitor/exams/:id`,
   `/api/monitor/summary`): filter semantics, Shanghai-day boundaries, sort contract,
-  pagination, error codes.
+  pagination, error codes, and the detail endpoint's hit evidence (rule provenance +
+  matched-field location).
+- **Web workbench (issues #9/#10)** — the frontend single-page workbench consuming
+  the monitor API: header + user-info placeholder (real identity lands in #13),
+  toolbar (last sync time from `/api/system/sync-status`, 立即刷新, 监测规则),
+  filters, five attention-level summary cards (clicking one sets the level filter),
+  paginated exam list, and a read-only detail drawer that keeps the workbench
+  context. The drawer highlights the hit keywords in place inside 报告内容/诊断
+  (React `<mark>` nodes — the original text is never rewritten), shows the hits'
+  field location + context snippet, and returns keyboard focus to the triggering
+  查看详情 button when it closes. Department/exam-item filters are text inputs for
+  now (no distinct-values endpoint yet); level is always shown as a text label,
+  never color-only.
 
 ## Prerequisites
 
@@ -264,7 +279,7 @@ hidden and cannot be supplied as a command-line argument:
 pnpm --filter @epgs/api auth:reset-password --username admin
 ```
 
-## Monitor API (issue #7)
+## Monitor API (issue #7, #8)
 
 `GET /api/monitor/exams`, `GET /api/monitor/exams/:id` and
 `GET /api/monitor/summary` implement the **read-only** endoscopy workbench: a
@@ -272,7 +287,10 @@ filterable/paginated list, the attention-level summary cards, and a detail drawe
 They surface the synced exam snapshot (`monitor_record`) plus its hit evidence
 (`monitor_match`) — the product converged to read-only display (issue #26), so there
 is deliberately no report/disposition status anywhere in these responses, and the
-list **never** returns `reportContent`/`diagnosis` (detail endpoint only).
+list **never** returns `reportContent`/`diagnosis` (detail endpoint only). The
+detail endpoint (issue #8) also returns, per hit, the exact rule provenance
+(`ruleId`/`ruleVersion`) and the report-field location (`matchedField` →
+报告内容/诊断, see the mapping table in the API docs).
 
 Key semantics (full contract in [`docs/api/monitor-api.md`](docs/api/monitor-api.md)):
 

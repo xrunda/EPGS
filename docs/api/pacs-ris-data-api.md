@@ -10,8 +10,16 @@
 
 该接口由医院数据库网关提供给 EPGS Worker，只读访问
 `Ens_RISReportResult`、`PA_Adm` 和 `PA_PatMas`。浏览器不得直接调用。
+网关是医院内网独立服务，其数据库连接和 SQL 实现不属于本仓库。
 
 网关只返回源数据，不返回关注等级、命中关键词和任何上报/处置状态。
+
+### 1.1 EPGS 开发模式
+
+- 生产：`PACS_ADAPTER_MODE=http`，仅通过本文档定义的 REST API 取数。
+- 本地：`PACS_ADAPTER_MODE=csv`，从 `PACS_MOCK_CSV_PATH` 读取与
+  `EndoscopyReport` 字段同名的 UTF-8 CSV。
+- CSV 与 HTTP 返回使用同一套契约校验和 DTO 映射；CSV 仅供本地测试，不得在生产替代网关。
 
 ## 2. 通用约定
 

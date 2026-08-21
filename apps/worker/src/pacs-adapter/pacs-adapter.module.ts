@@ -1,22 +1,13 @@
 import { Module, Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PACS_RIS_ADAPTER } from './pacs-ris-adapter.interface';
-import { FixturePacsRisAdapter } from './fixture-pacs-ris-adapter';
-import { SqlPacsRisAdapter } from './sql-pacs-ris-adapter';
+import { CsvPacsRisAdapter } from './csv-pacs-ris-adapter';
 import { HttpPacsRisAdapter } from './http-pacs-ris-adapter';
 
 /**
- * Selects the active PacsRisAdapter implementation based on
- * PACS_ADAPTER_MODE ('fixture' | 'sql' | 'http'). Defaults to 'fixture'
- * when unset so local dev and CI never require a real PACS/RIS
- * connection.
- *
- * `PACS_SQL_EXECUTOR` (the parameterized query driver SqlPacsRisAdapter
- * depends on) is intentionally NOT wired here - issue #2 only delivered
- * the adapter skeleton and its SQL template/tests, and no later issue
- * has wired a concrete driver. It is a still-unfinished implementation
- * path, distinct from 'http' (issue #6), which is fully wired against
- * the issue #20 contract below.
+ * Selects either local API-shaped CSV data or the hospital REST gateway.
+ * Database connectivity belongs to the separately deployed gateway and
+ * is intentionally unavailable from this repository.
  *
  * 'http' mode requires PACS_HTTP_BASE_URL and PACS_HTTP_SERVICE_TOKEN -
  * see env.validation.ts. Neither value is ever logged or hardcoded.
@@ -24,10 +15,7 @@ import { HttpPacsRisAdapter } from './http-pacs-ris-adapter';
 const pacsRisAdapterProvider: Provider = {
   provide: PACS_RIS_ADAPTER,
   useFactory: (config: ConfigService) => {
-    const mode = config.get<string>('pacsAdapterMode', 'fixture');
-    if (mode === 'sql') {
-      return new SqlPacsRisAdapter();
-    }
+    const mode = config.get<string>('pacsAdapterMode', 'csv');
     if (mode === 'http') {
       const baseUrl = config.get<string>('pacsHttpBaseUrl');
       const serviceToken = config.get<string>('pacsHttpServiceToken');
@@ -39,7 +27,14 @@ const pacsRisAdapterProvider: Provider = {
       }
       return new HttpPacsRisAdapter({ baseUrl, serviceToken, timeoutMs });
     }
-    return new FixturePacsRisAdapter();
+    if (mode === 'csv') {
+      const filePath = config.get<string>('pacsMockCsvPath');
+      if (!filePath) {
+        throw new Error('PACS_ADAPTER_MODE=csv requires PACS_MOCK_CSV_PATH to be set.');
+      }
+      return new CsvPacsRisAdapter({ filePath });
+    }
+    throw new Error('PACS_ADAPTER_MODE must be csv or http.');
   },
   inject: [ConfigService],
 };

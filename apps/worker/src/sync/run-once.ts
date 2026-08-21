@@ -31,7 +31,7 @@ import { SyncService } from './sync.service';
  *
  * Trade-off (documented, not hidden): this requires shell/deploy access
  * to the worker's runtime environment (env vars, network reachability to
- * Postgres and, in `http` PACS_ADAPTER_MODE, the #20 gateway) rather than
+ * Postgres and, in `http` PACS_ADAPTER_MODE, the hospital REST gateway) rather than
  * a simple authenticated HTTP call from a separate ops tool. If a
  * follow-up issue wants a remotely triggerable endpoint (e.g. for an
  * external scheduler/runbook), it should add proper authentication at

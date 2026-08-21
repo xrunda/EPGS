@@ -78,6 +78,11 @@ export class MonitorService {
       include: {
         matches: {
           orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
+          // Issue #8: each hit carries the exact rule version that produced
+          // it (ruleId is a scalar on the match row; version lives on the
+          // versioned, never-deleted rule). list() never needs this - only
+          // the detail endpoint surfaces hit evidence.
+          include: { rule: { select: { version: true } } },
         },
       },
     });

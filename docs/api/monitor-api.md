@@ -1,7 +1,9 @@
-# EPGS 内镜监测工作台 API（issue #7）
+# EPGS 内镜监测工作台 API（issue #7、#8）
 
 本文档描述 `apps/api/src/monitor/` 实现的**只读**内镜监测工作台 API：列表、筛选、
-汇总与详情。供工作台页面（issue #9+）与关注等级汇总卡片使用。
+汇总与详情。供工作台页面（issue #9+）与关注等级汇总卡片使用。issue #8 的
+**详情与命中证据**契约在本文档的「详情接口」小节：每条命中的 `ruleId`/`ruleVersion`
+规则来源与 `matchedField` 命中位置定位。
 
 这三个接口全部是只读的——它们不写入、不修改任何数据。字段级含义参见
 `apps/api/prisma/schema.prisma` 与 `docs/data-dictionary.md` 的
@@ -198,8 +200,9 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
 
 ### `GET /api/monitor/exams/{id}`
 
-详情（工作台抽屉）。返回列表行全部字段 **加** 报告正文快照、诊断意见与全部命中
-证据：
+详情（工作台抽屉，issue #8）。返回列表行全部字段 **加** 报告正文快照、诊断意见与
+全部命中证据。每条命中带**规则来源**（`ruleId` + `ruleVersion`，issue #8）与
+**命中位置**（`matchedField`，见下方定位表）：
 
 ```json
 {
@@ -217,6 +220,8 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
   "diagnosis": "胃腺癌（早期）。",
   "hits": [
     {
+      "ruleId": "11111111-1111-4111-8111-0000000000aa",
+      "ruleVersion": 1,
       "keyword": "腺癌",
       "level": "RED",
       "matchedField": "REPORT_TEXT",
@@ -224,6 +229,8 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "matchedAt": "2026-08-20T08:15:30.000Z"
     },
     {
+      "ruleId": "11111111-1111-4111-8111-0000000000bb",
+      "ruleVersion": 1,
       "keyword": "息肉样",
       "level": "YELLOW",
       "matchedField": "FINDINGS",
@@ -234,9 +241,27 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
 }
 ```
 
-- `hits` 按 `matchedAt asc, id asc` 排序；`matchedKeywords` 为去重后的关键词列表，
-  按最早命中顺序排列。
+- `hits` 即 issue #8 的 `matches`（本 API 命名为 `hits`）。按
+  `matchedAt asc, id asc` 排序；`matchedKeywords` 为去重后的关键词列表，按最早命中
+  顺序排列。
+- **`ruleId` + `ruleVersion`**（issue #8）：命中由哪条 `monitor_rule` 的哪个版本
+  产生。规则是版本化、只软禁用的（FK RESTRICT，永不物理删除），因此该引用永远
+  可解析——命中证据可审计回产生它的确切规则版本。
+- **`matchedField` 命中位置定位**：issue #8 规格写作 `field(REPORT_CONTENT/
+DIAGNOSIS)`，实现沿用 issue #5/#26 收敛后的 `MatchField` 枚举，二者映射如下：
+
+  | `matchedField`        | 报告位置                     | 命中文本         |
+  | --------------------- | ---------------------------- | ---------------- |
+  | `FINDINGS`            | 报告内容（所见描述）         | `reportContent`  |
+  | `IMPRESSION`          | 诊断意见                     | `diagnosis`      |
+  | `REPORT_TEXT`/`OTHER` | 全文（两个字段都查）         | 可能命中任意一个 |
+  | `STUDY_DESCRIPTION`   | 检查描述（当前无独立文本源） | —                |
+
+  因此「所有关键词命中均可定位到报告内容或诊断」（issue #8 验收）成立。
+
 - id 不存在返回 `404 MONITOR_RECORD_NOT_FOUND`；id 不是合法 UUID 返回 `400`。
+- 权限、脱敏与审计日志（issue #8 验收「权限/脱敏/审计符合 #13」）在 issue #13
+  实现——当前无鉴权，本接口只读。
 
 ### `GET /api/monitor/summary`
 
@@ -265,12 +290,14 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
 
 - 单元测试（mock Prisma，无需数据库）：`apps/api/src/monitor/monitor.service.spec.ts`
   —— where/orderBy 形状、Shanghai 展示格式、关键词去重、patientType 透传、
-  汇总聚合、详情未找到。
+  汇总聚合、详情未找到、详情查询包含 `rule.version`（issue #8）。
 - 端到端测试（真实 Postgres）：`apps/api/test/monitor.e2e-spec.ts` —— 组合筛选、
   跨 UTC 日界的 Shanghai 边界、自然日边界（午夜 00:00、23:59）、null 行、稳定分页、
-  非法参数 400、汇总与列表同筛一致性、只读详情。该文件在检测不到可用 Postgres 时
-  全部用例 no-op 通过（不影响 issue #1 的无数据库 CI）；CI 中真正执行在
-  `.github/workflows/ci.yml` 的 `db-migrations` job。
+  非法参数 400、汇总与列表同筛一致性、只读详情，以及 issue #8 的命中证据契约
+  （每条命中的 `ruleId`/`ruleVersion` 规则来源、`matchedField` 报告位置定位、
+  空诊断行）。该文件在检测不到可用 Postgres 时全部用例 no-op 通过（不影响
+  issue #1 的无数据库 CI）；CI 中真正执行在 `.github/workflows/ci.yml` 的
+  `db-migrations` job。
 
 本地验证 real Postgres 的临时实例方式（与 `docs/rules-api.md` 相同）：
 

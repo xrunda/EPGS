@@ -8,11 +8,13 @@ import {
 import { formatShanghaiDateTime } from './monitor-time';
 
 /**
- * Maps monitor_record rows to the issue #7 wire DTOs. The list row shape
+ * Maps monitor_record rows to the issue #7/#8 wire DTOs. The list row shape
  * (MonitorExamListRow) deliberately carries ONLY the list-display fields -
  * reportContent/diagnosis never appear in a list query's select, so they
  * cannot leak into the response (they are served only by the detail
- * endpoint via MonitorExamDetailRow).
+ * endpoint via MonitorExamDetailRow). The detail hit rows additionally
+ * carry rule provenance (ruleId + the versioned rule's version) per issue
+ * #8, so each hit is auditable back to the exact rule that produced it.
  */
 
 export interface MonitorExamListRow {
@@ -28,11 +30,14 @@ export interface MonitorExamListRow {
   matches: { keyword: string; matchedAt: Date }[];
 }
 
+/** A detail hit = match row + the versioned rule it references (issue #8). */
+export type MonitorExamHitRow = MonitorMatch & { rule: { version: number } };
+
 /** Detail row = list row + report body snapshot + full hit rows. */
 export interface MonitorExamDetailRow extends MonitorExamListRow {
   reportContent: string | null;
   diagnosis: string | null;
-  matches: MonitorMatch[];
+  matches: MonitorExamHitRow[];
 }
 
 export function toExamDto(row: MonitorExamListRow): MonitorExamDto {
@@ -64,8 +69,10 @@ function toPatientType(code: string | null, name: string | null): MonitorPatient
   return { code, name };
 }
 
-function toHitDto(hit: MonitorMatch): MonitorExamHitDto {
+function toHitDto(hit: MonitorExamHitRow): MonitorExamHitDto {
   return {
+    ruleId: hit.ruleId,
+    ruleVersion: hit.rule.version,
     keyword: hit.keyword,
     level: hit.level,
     matchedField: hit.matchedField,

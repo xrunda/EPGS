@@ -47,11 +47,12 @@ export const envValidationSchema = Joi.object({
     .required(),
 
   // The hospital database gateway is outside this repository. Production
-  // uses HTTP; local development may read a synthetic API-shaped CSV.
+  // uses http or soap depending on what the hospital exposes; local
+  // development may read a synthetic API-shaped CSV.
   PACS_ADAPTER_MODE: Joi.when('NODE_ENV', {
     is: 'production',
-    then: Joi.string().valid('http').required(),
-    otherwise: Joi.string().valid('csv', 'http').default('csv'),
+    then: Joi.string().valid('http', 'soap').required(),
+    otherwise: Joi.string().valid('csv', 'http', 'soap').default('csv'),
   }),
   PACS_MOCK_CSV_PATH: Joi.string().when('PACS_ADAPTER_MODE', {
     is: 'csv',
@@ -73,4 +74,30 @@ export const envValidationSchema = Joi.object({
     otherwise: Joi.forbidden(),
   }),
   PACS_HTTP_TIMEOUT_MS: Joi.number().integer().min(1).default(10000),
+
+  // Required when PACS_ADAPTER_MODE=soap - the DHC/InterSystems Ensemble
+  // EnsWebService gateway confirmed by a live probe (see
+  // docs/pacs-ris-adapter.md). No real credentials exist in this
+  // repo/CI - never commit a real value.
+  PACS_SOAP_BASE_URL: Joi.string().uri().when('PACS_ADAPTER_MODE', {
+    is: 'soap',
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
+  PACS_SOAP_USERNAME: Joi.string().when('PACS_ADAPTER_MODE', {
+    is: 'soap',
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
+  PACS_SOAP_PASSWORD: Joi.string().when('PACS_ADAPTER_MODE', {
+    is: 'soap',
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
+  PACS_SOAP_KEY_NAME: Joi.string().when('PACS_ADAPTER_MODE', {
+    is: 'soap',
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
+  PACS_SOAP_TIMEOUT_MS: Joi.number().integer().min(1).default(15000),
 });

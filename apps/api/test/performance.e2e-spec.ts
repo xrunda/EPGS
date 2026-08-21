@@ -321,10 +321,13 @@ describe('Performance (e2e, real Postgres): common filters ≤ 3s at 100k rows',
       'list examItem substring (unindexed seq scan)',
       `${list}?examItem=${encodeURIComponent('胃镜')}`,
     );
-    await measure('list q=张三 patientName substring', `${list}?q=${encodeURIComponent('张三')}`);
     await measure(
-      'list q=胃镜 matched-keyword correlated subquery',
-      `${list}?q=${encodeURIComponent('胃镜')}`,
+      'list patientName=张三 substring',
+      `${list}?patientName=${encodeURIComponent('张三')}`,
+    );
+    await measure(
+      'list keyword=胃镜 matched-keyword exact match',
+      `${list}?keyword=${encodeURIComponent('胃镜')}`,
     );
     await measure(
       'summary department (GROUP BY indexed level)',

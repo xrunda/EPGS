@@ -155,6 +155,15 @@
 .workbench__keywords {
   max-width: 220px;
 }
+.workbench__row--red {
+  background: #fdf3f2;
+}
+.workbench__row--yellow {
+  background: #fffaf0;
+}
+.workbench__row--green {
+  background: #f2f9f4;
+}
 .workbench__table .table-actions {
   padding: 0;
   border: 0;

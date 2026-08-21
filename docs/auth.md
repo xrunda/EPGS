@@ -149,8 +149,8 @@ pnpm --filter @epgs/api auth:show-access --username doctor
 `RULE_IMPORT`、`AUDIT_VIEW`；`LOGIN`、`CONFIG_CHANGE` 预留在枚举中，尚未接入。
 
 - 审计 `meta` 只含低敏感字段（过滤条件、`masked` 标记、规则语义、计数），
-  **绝不包含**患者姓名/报告正文/搜索关键词 `q` 本身（仅记 `hadQ` 布尔）。
-  `log-sanitization` 静态测试对全源码树强制该约束。
+  **绝不包含**患者姓名本身（仅记 `hadPatientName` 布尔）；命中关键词 `keyword`
+  来自规则库、非敏感，原样记录。`log-sanitization` 静态测试对全源码树强制该约束。
 - **审计 fail-open**：写失败仅记告警日志，绝不让业务请求变成 500；授权始终
   fail-closed。无授权记录的账号（例如只访问健康检查）不产生审计行。
 - 审计查询支持按 `action`/`actorUsername`/`department` 过滤 + 分页（`GET

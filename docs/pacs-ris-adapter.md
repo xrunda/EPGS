@@ -23,7 +23,7 @@ REST API 向 EPGS Worker 提供数据。
 
 ```env
 PACS_ADAPTER_MODE=csv
-PACS_MOCK_CSV_PATH=../../Doc/moke-data.csv
+PACS_MOCK_CSV_PATH=../../Doc/moke-data.utf8.csv
 ```
 
 CSV 为 UTF-8，表头必须与最终 REST API 字段同名：
@@ -39,7 +39,43 @@ reportContent,diagnosis
 错误只记录行号和字段契约，不记录姓名、报告正文或诊断。
 
 仓库中的 `reports.fixture.csv` 仅含合成数据，用于自动化测试。
-`Doc/moke-data.csv` 默认被 Git 忽略，在确认完全脱敏前不得提交。
+`Doc/moke-*.csv`（医院原始导出与本地转换产物）默认被 Git 忽略，在确认完全脱敏前
+不得提交。
+
+#### 医院导出 mock 数据的本地转换（issue #42）
+
+医院提供的内镜导出文件通常不满足上述契约：
+
+- **编码**：GB18030/GBK（适配器要求 UTF-8）。
+- **表头**：11 个中文字段（`检查号,登记号,姓名,科室,床号,类型,检查项目,检查日期,
+检查时间,报告内容,诊断`），而非 12 个英文 wire 名。
+- **日期/时间**：如 `2026-8-2 0:00` / `8:48:08`（月、日、时不补零，日期列还嵌入
+  Excel 的 `0:00`）。
+- **文件名**：实际导出名用 U+2011 非断行连字符 `moke‑data.csv`，与文档的 ASCII
+  连字符不同。
+
+`apps/worker` 提供转换入口，把医院原始导出转成适配器契约一致的 UTF-8 + 英文表头
+CSV（输出到上述 `PACS_MOCK_CSV_PATH` 默认路径），并在写盘前用适配器同款
+`parseCsvReports` 做全量校验：
+
+```bash
+pnpm --filter worker run mock:convert
+# 可选显式路径（相对 apps/worker 的 cwd，与 PACS_MOCK_CSV_PATH 的约定一致）：
+#   pnpm --filter worker run mock:convert --input ../../Doc/moke‑data.csv --output ../../Doc/moke-data.utf8.csv
+```
+
+转换逻辑：GB18030→UTF-8、11 中文字段→12 英文 wire 名（`类型` 的 I/O 按
+`docs/acceptance.md` 字典派生出 `patientTypeName`：I→住院、O→门诊）、日期去 `0:00`
+并补零、时间补零。转换后按文档默认配置即可 `pnpm dev`。
+
+**注意同步窗口**：首次同步只回看 `SYNC_FIRST_RUN_LOOKBACK_MINUTES`（默认 1440 分钟
+= 24 小时）。若 mock 数据的检查日期早于该窗口（如导出的检查日期是几周前），首次
+`pnpm dev` 会看到 `fetched 0 report(s)` —— 属正常行为，把该变量调大以覆盖检查日期
+即可（例如覆盖一个月：`SYNC_FIRST_RUN_LOOKBACK_MINUTES=43200`）。
+
+**安全约束**：原始文件与转换产物都含疑似真实患者数据，脚本只报告行数、绝不打印
+行内容；两者均被 `Doc/moke-*` 忽略，未完成脱敏评审前不得提交（`git ls-files`
+应无 `Doc/moke`）。
 
 ### 2.2 生产 REST
 

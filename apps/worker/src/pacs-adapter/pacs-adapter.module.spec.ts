@@ -5,6 +5,7 @@ import { CsvPacsRisAdapter } from './csv-pacs-ris-adapter';
 import { HttpPacsRisAdapter } from './http-pacs-ris-adapter';
 import { PacsAdapterModule } from './pacs-adapter.module';
 import { PACS_RIS_ADAPTER } from './pacs-ris-adapter.interface';
+import { SoapPacsRisAdapter } from './soap-pacs-ris-adapter';
 
 const FIXTURE_PATH = join(__dirname, 'fixtures', 'reports.fixture.csv');
 
@@ -42,9 +43,22 @@ describe('PacsAdapterModule', () => {
     expect(moduleRef.get(PACS_RIS_ADAPTER)).toBeInstanceOf(HttpPacsRisAdapter);
   });
 
+  it('provides SoapPacsRisAdapter for the DHC/Ensemble SOAP gateway mode', async () => {
+    const moduleRef = await buildModule({
+      pacsAdapterMode: 'soap',
+      pacsSoapBaseUrl: 'https://gateway.example.invalid/imedical/webservice/web.DHCENS.EnsWebService.cls',
+      pacsSoapUsername: 'synthetic-test-user',
+      pacsSoapPassword: 'synthetic-test-password',
+      pacsSoapKeyName: 'W00000206',
+      pacsSoapTimeoutMs: 1000,
+    });
+
+    expect(moduleRef.get(PACS_RIS_ADAPTER)).toBeInstanceOf(SoapPacsRisAdapter);
+  });
+
   it('does not expose a SQL adapter mode', async () => {
     await expect(buildModule({ pacsAdapterMode: 'sql' })).rejects.toThrow(
-      /PACS_ADAPTER_MODE must be csv or http/i,
+      /PACS_ADAPTER_MODE must be csv, http or soap/i,
     );
   });
 });

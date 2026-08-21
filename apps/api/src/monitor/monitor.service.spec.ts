@@ -88,7 +88,8 @@ describe('MonitorService', () => {
         patientTypeCode: 'I',
         level: 'RED',
         examItem: '电子胃镜',
-        q: '腺癌',
+        patientName: '张三',
+        keyword: '腺癌',
       } as any);
 
       expect(prisma.monitorRecord.findMany).toHaveBeenCalledWith(
@@ -102,10 +103,8 @@ describe('MonitorService', () => {
             patientTypeCode: 'I',
             currentLevel: 'RED',
             examItem: { contains: '电子胃镜', mode: 'insensitive' },
-            OR: [
-              { patientName: { contains: '腺癌', mode: 'insensitive' } },
-              { matches: { some: { keyword: { contains: '腺癌', mode: 'insensitive' } } } },
-            ],
+            patientName: { contains: '张三', mode: 'insensitive' },
+            matches: { some: { keyword: '腺癌' } },
           },
         }),
       );

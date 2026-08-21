@@ -38,7 +38,7 @@ async function bootstrap(): Promise<void> {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('EPGS API')
     .setDescription(
-      'EPGS monitoring API - see /api/rules for issue #4 rule management and /api/monitor for the issue #7 read-only workbench endpoints.',
+      'EPGS monitoring API - see /api/rules for issue #4 rule management and /api/monitor for the issue #7/#8 read-only workbench endpoints (list/filter/summary + detail with hit evidence).',
     )
     .setVersion('0.1.0')
     .build();

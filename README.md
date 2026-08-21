@@ -72,10 +72,11 @@ docker-compose.yml          # Local Postgres for later issues
 - [`docs/api/pacs-ris-data-api.md`](docs/api/pacs-ris-data-api.md) and
   [`docs/api/pacs-ris-data-api.openapi.yaml`](docs/api/pacs-ris-data-api.openapi.yaml) —
   target read-only database-gateway API contract for issue #24.
-- [`docs/api/monitor-api.md`](docs/api/monitor-api.md) — issue #7's read-only
+- [`docs/api/monitor-api.md`](docs/api/monitor-api.md) — issue #7/#8's read-only
   monitor workbench API contract (`/api/monitor/exams`, `/api/monitor/exams/:id`,
   `/api/monitor/summary`): filter semantics, Shanghai-day boundaries, sort contract,
-  pagination, error codes.
+  pagination, error codes, and the detail endpoint's hit evidence (rule provenance +
+  matched-field location).
 
 ## Prerequisites
 
@@ -241,7 +242,7 @@ No real authentication/authorization exists yet for these write endpoints — se
 `JWT_SECRET`/`SESSION_SECRET` row above and `apps/api/src/common/guards/
 rules-write.guard.ts` (issue #13 will replace this placeholder guard).
 
-## Monitor API (issue #7)
+## Monitor API (issue #7, #8)
 
 `GET /api/monitor/exams`, `GET /api/monitor/exams/:id` and
 `GET /api/monitor/summary` implement the **read-only** endoscopy workbench: a
@@ -249,7 +250,10 @@ filterable/paginated list, the attention-level summary cards, and a detail drawe
 They surface the synced exam snapshot (`monitor_record`) plus its hit evidence
 (`monitor_match`) — the product converged to read-only display (issue #26), so there
 is deliberately no report/disposition status anywhere in these responses, and the
-list **never** returns `reportContent`/`diagnosis` (detail endpoint only).
+list **never** returns `reportContent`/`diagnosis` (detail endpoint only). The
+detail endpoint (issue #8) also returns, per hit, the exact rule provenance
+(`ruleId`/`ruleVersion`) and the report-field location (`matchedField` →
+报告内容/诊断, see the mapping table in the API docs).
 
 Key semantics (full contract in [`docs/api/monitor-api.md`](docs/api/monitor-api.md)):
 

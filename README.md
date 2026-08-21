@@ -126,8 +126,9 @@ pnpm --filter web run test        # web component tests (Vitest + React Testing 
 ```
 
 CI does **not** require a running Postgres for these tests — `apps/api`'s e2e suite
-supplies a fallback `DATABASE_URL` so config validation passes without a live DB, and
-Prisma is initialized with a datasource-only schema (no models yet; see below).
+supplies a fallback `DATABASE_URL` so config validation passes without a live DB.
+Migration/constraint verification against a real Postgres runs as a separate CI job
+(see "Database / Prisma" below).
 
 ## Build commands
 
@@ -152,16 +153,38 @@ ESLint + Prettier are configured at the root and extended by each app.
 
 ## Database / Prisma
 
-`apps/api/prisma/schema.prisma` currently defines only the `datasource` and
-`generator` blocks — **no models yet**. This keeps issue #1's CI free of any live
-Postgres dependency while proving the ORM tooling is wired up. Issue #3 will add the
-actual data model (`monitor_rule`, `monitor_record`, etc.) and migrations.
+`apps/api/prisma/schema.prisma` defines the EPGS monitoring business schema (issue #3):
+`MonitorRule`, `MonitorRecord`, `MonitorMatch`, `MonitorAction`, `SyncJobLog` and their
+enums. This schema is decoupled from PACS/RIS — it does not duplicate imaging data and
+does not implement the keyword-matching algorithm (issue #5) or any HTTP API
+(issue #4/#7/#8). Field meaning, sensitivity classification and retention policy are
+documented in [`docs/data-dictionary.md`](docs/data-dictionary.md).
 
-`docker-compose.yml` provides a local Postgres for when later issues need it:
+The initial migration lives at
+`apps/api/prisma/migrations/20260821040339_init_monitoring_schema/migration.sql`, with
+a companion manual rollback script (`rollback.sql`) in the same directory — see that
+file's header comment for how to apply it (Prisma Migrate has no built-in "down"
+concept).
+
+`docker-compose.yml` provides a local Postgres for running/validating migrations:
 
 ```bash
-docker compose up -d
+docker compose up -d postgres
+cp apps/api/.env.example apps/api/.env   # DATABASE_URL points at the compose Postgres
+pnpm --filter api exec prisma migrate deploy   # apply migrations
+pnpm --filter api exec prisma migrate status   # confirm up to date
+pnpm --filter api exec ts-node --transpile-only prisma/scripts/verify-constraints.ts
+# (run from apps/api) — exercises idempotency, illegal-enum rejection, FK
+# RESTRICT/CASCADE behavior and workbench-filter index usage against a real DB
+
+# manual rollback:
+psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821040339_init_monitoring_schema/rollback.sql
+psql "$DATABASE_URL" -c "DELETE FROM \"_prisma_migrations\" WHERE migration_name = '20260821040339_init_monitoring_schema';"
 ```
+
+CI runs this same sequence against a real `postgres:16-alpine` service container in the
+`db-migrations` job (see `.github/workflows/ci.yml`), separate from the DB-free
+`build-and-test` job.
 
 ## Commit message convention
 
@@ -171,7 +194,9 @@ reference the issue number being closed, e.g. `Closes #1`.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every PR and push to `main`:
+`.github/workflows/ci.yml` runs on every PR and push to `main`, with two jobs:
+
+**`build-and-test`** (no live database required):
 
 1. Checkout
 2. Setup Node v24 + pnpm (with pnpm cache)
@@ -181,4 +206,16 @@ reference the issue number being closed, e.g. `Closes #1`.
 6. `pnpm run test` — unit + e2e tests across all workspaces
 7. `pnpm run build` — production build for api, worker, web, shared-types
 
-No live database is required for CI to pass.
+**`db-migrations`** (issue #3, runs against a real `postgres:16-alpine` service
+container):
+
+1. `prisma validate` + `prisma format` (fails if the schema file isn't already
+   formatted)
+2. Apply migrations to an empty database (`prisma migrate deploy`)
+3. Re-apply migrations to confirm idempotency (no pending migrations the second time)
+4. `prisma migrate diff` to assert the schema has no drift vs. the migration history
+5. `prisma/scripts/verify-constraints.ts` — idempotency, illegal-enum rejection, FK
+   RESTRICT/CASCADE behavior, append-only `monitor_action` reconstruction, and
+   workbench-filter index usage, all against real inserted rows
+6. Roll back the migration (`rollback.sql`) and confirm all monitor_* tables are gone
+7. Re-apply the migration after rollback to confirm the upgrade path still works

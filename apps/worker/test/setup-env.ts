@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 // Ensures required env vars exist before any module under test is
 // imported (ConfigModule's Joi validation runs at import/decoration
 // time). Mirrors apps/api/test/setup-env.ts's pattern.
@@ -7,4 +9,3 @@ process.env.PACS_ADAPTER_MODE = process.env.PACS_ADAPTER_MODE ?? 'csv';
 process.env.PACS_MOCK_CSV_PATH =
   process.env.PACS_MOCK_CSV_PATH ??
   join(__dirname, '..', 'src', 'pacs-adapter', 'fixtures', 'reports.fixture.csv');
-import { join } from 'node:path';

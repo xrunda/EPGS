@@ -59,6 +59,18 @@ docker-compose.yml          # Local Postgres for later issues
 .env.example                # Root env var reference (see also apps/*/.env.example)
 ```
 
+## Current product and data contracts
+
+- [`docs/product/read-only-display-spec.md`](docs/product/read-only-display-spec.md) —
+  current read-only UI scope, confirmed display fields, filters, summary cards, and removed
+  reporting/disposition functionality.
+- [`docs/pacs-ris-adapter.md`](docs/pacs-ris-adapter.md) — confirmed InterSystems
+  IRIS/Caché source tables and field mapping, plus stable-ID and incremental-sync items that
+  must be verified before production use.
+- [`docs/api/pacs-ris-data-api.md`](docs/api/pacs-ris-data-api.md) and
+  [`docs/api/pacs-ris-data-api.openapi.yaml`](docs/api/pacs-ris-data-api.openapi.yaml) —
+  target read-only database-gateway API contract for issue #24.
+
 ## Prerequisites
 
 - Node.js **v24** (see `.nvmrc` — run `nvm use`)

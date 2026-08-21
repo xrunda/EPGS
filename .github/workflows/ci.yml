@@ -96,13 +96,11 @@ jobs:
       # Rules API e2e suite below loads the full AppModule, whose
       # health.controller.ts imports @epgs/shared-types - build it first
       # so that import resolves (mirrors the root build/test/typecheck
-      # scripts' build:shared-types-first ordering). apps/worker's sync
-      # e2e suite (issue #6) additionally depends on @epgs/matching-engine.
-      - name: Build shared-types
-        run: pnpm run build:shared-types
-
-      - name: Build matching-engine
-        run: pnpm --filter @epgs/matching-engine run build
+      # scripts' build:libs-first ordering). apps/worker's sync e2e suite
+      # (issue #6) additionally depends on @epgs/matching-engine, hence
+      # build:libs (not just build:shared-types) here.
+      - name: Build shared-types + matching-engine
+        run: pnpm run build:libs
 
       - name: Prisma validate + format check
         working-directory: apps/api

@@ -18,4 +18,20 @@ export const envValidationSchema = Joi.object({
   DATABASE_URL: Joi.string()
     .uri({ scheme: [/postgres(ql)?/] })
     .required(),
+
+  // Selects the PacsRisAdapter implementation (see src/pacs-adapter).
+  // 'fixture' (default) uses synthetic in-memory data - safe for local
+  // dev/CI with no real PACS/RIS connection. 'sql' is a skeleton for a
+  // real read-only PACS/RIS database and is not wired to a live driver
+  // by issue #2 - see docs/pacs-ris-adapter.md.
+  PACS_ADAPTER_MODE: Joi.string().valid('fixture', 'sql').default('fixture'),
+
+  // Optional: only meaningful when PACS_ADAPTER_MODE=sql. Connection
+  // details for the dedicated read-only PACS/RIS account. Never
+  // hardcode real values - injected via environment/secret manager only.
+  PACS_DB_HOST: Joi.string().optional(),
+  PACS_DB_PORT: Joi.number().port().optional(),
+  PACS_DB_NAME: Joi.string().optional(),
+  PACS_DB_USER: Joi.string().optional(),
+  PACS_DB_PASSWORD: Joi.string().optional(),
 });

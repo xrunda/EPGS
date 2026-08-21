@@ -1,16 +1,17 @@
 openapi: 3.0.3
 info:
-  title: EPGS PACS/RIS 内镜数据 API
-  version: 1.0.0
+  title: EPGS IRIS/Caché 内镜数据 API
+  version: 2.0.0
+  description: |
+    医院 IRIS/Caché 数据库网关提供给 EPGS Worker 的只读接口。
+    数据来自 Ens_RISReportResult、PA_Adm、PA_PatMas，仅限 RISR_SysCode='ES'。
+    不面向浏览器，不返回关注等级或任何上报/处置字段。
   license:
     name: Proprietary - Internal Use Only
     url: https://github.com/xrunda/EPGS
-  description: |
-    医院 PACS/RIS 数据库网关提供给 EPGS Worker 的只读内部接口。
-    本接口不面向浏览器，不计算关键词命中、关注等级或上报状态。
 servers:
   - url: https://{internalHost}/api/v1/endoscopy
-    description: 医院内网环境；真实地址通过安全渠道提供
+    description: 医院内网；实际地址通过安全渠道提供
     variables:
       internalHost:
         default: api.example.invalid
@@ -18,9 +19,9 @@ security:
   - bearerAuth: []
 tags:
   - name: Reports
-    description: 内镜检查及报告数据
+    description: 内镜检查结果只读查询
   - name: Dictionaries
-    description: 受控字典数据
+    description: 科室等受控字典数据
   - name: System
     description: 数据网关健康状态
 paths:
@@ -28,45 +29,48 @@ paths:
     get:
       tags: [Reports]
       operationId: listEndoscopyReports
-      summary: 按源更新时间增量读取内镜报告
+      summary: 按日期窗口分页读取内镜结果
       description: |
-        返回固定时间窗口内按 sourceUpdatedAt、reportId 升序排列的报告。
-        updatedFrom 为包含下限，updatedTo 为不包含上限；禁止无时间下限扫描。
+        后端始终附加 RISR_SysCode='ES'。日期和所有筛选必须参数绑定。
+        稳定 sourceRecordId 的实际表达式由 Issue #24 实库核验后确定。
       parameters:
         - $ref: '#/components/parameters/RequestId'
-        - name: updatedFrom
+        - name: dateFrom
           in: query
           required: true
-          description: 源记录更新时间包含下限（UTC RFC 3339）
           schema:
             type: string
-            format: date-time
-          example: '2026-08-21T00:00:00Z'
-        - name: updatedTo
+            format: date
+          example: '2026-08-21'
+        - name: dateTo
           in: query
-          required: false
-          description: 源记录更新时间不包含上限；省略时固定为请求开始时间
+          required: true
           schema:
             type: string
-            format: date-time
-          example: '2026-08-22T00:00:00Z'
+            format: date
+          example: '2026-08-22'
         - name: department
           in: query
           required: false
-          description: 标准化科室 ID 或名称；具体匹配方式由数据库核验确定
           schema:
             type: string
-            maxLength: 100
-        - name: deviceId
+            maxLength: 220
+        - name: patientType
+          in: query
+          required: false
+          description: PAADM_Type 源代码
+          schema:
+            type: string
+            maxLength: 16
+        - name: examItem
           in: query
           required: false
           schema:
             type: string
-            maxLength: 100
+            maxLength: 256
         - name: cursor
           in: query
           required: false
-          description: 上一页返回的不透明游标；客户端不得解析或修改
           schema:
             type: string
             maxLength: 2048
@@ -80,17 +84,17 @@ paths:
             default: 200
       responses:
         '200':
-          description: 成功返回一页报告
+          description: 成功返回一页内镜结果
           headers:
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PacsReportPageResponse'
+                $ref: '#/components/schemas/ReportPageResponse'
               examples:
                 synthetic:
-                  $ref: '#/components/examples/PacsReportPageExample'
+                  $ref: '#/components/examples/ReportPage'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -105,31 +109,28 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/DataSourceUnavailable'
-  /reports/{reportId}:
+  /reports/{sourceRecordId}:
     get:
       tags: [Reports]
       operationId: getEndoscopyReport
-      summary: 查询单份内镜报告
+      summary: 查询单条内镜结果
       parameters:
         - $ref: '#/components/parameters/RequestId'
-        - name: reportId
+        - name: sourceRecordId
           in: path
           required: true
-          description: 生产核验确认的报告版本稳定唯一键
+          description: 实库核验确认的稳定结果记录 ID
           schema:
             type: string
             minLength: 1
             maxLength: 200
       responses:
         '200':
-          description: 成功返回报告详情
-          headers:
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
+          description: 成功返回内镜结果
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PacsReportResponse'
+                $ref: '#/components/schemas/ReportResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -146,15 +147,12 @@ paths:
     get:
       tags: [Dictionaries]
       operationId: listEndoscopyDepartments
-      summary: 获取内镜报告关联科室字典
+      summary: 获取内镜结果关联科室字典
       parameters:
         - $ref: '#/components/parameters/RequestId'
       responses:
         '200':
           description: 成功返回科室字典
-          headers:
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
           content:
             application/json:
               schema:
@@ -170,17 +168,13 @@ paths:
   /health:
     get:
       tags: [System]
-      operationId: getPacsRisGatewayHealth
-      summary: 获取数据网关和数据库健康状态
-      description: 不返回数据库产品、地址、库名、账号、SQL 或堆栈。
+      operationId: getIrisGatewayHealth
+      summary: 获取网关与 IRIS/Caché 数据源状态
       parameters:
         - $ref: '#/components/parameters/RequestId'
       responses:
         '200':
-          description: 网关可服务；status 可为 UP 或 DEGRADED
-          headers:
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
+          description: 网关可服务，状态为 UP 或 DEGRADED
           content:
             application/json:
               schema:
@@ -206,116 +200,68 @@ components:
       name: X-Request-Id
       in: header
       required: false
-      description: 调用方生成的关联 ID；缺失时服务端生成
       schema:
         type: string
         minLength: 8
         maxLength: 128
   headers:
     RequestId:
-      description: 服务端接受或生成的关联 ID
+      description: 调用关联 ID
       schema:
         type: string
   schemas:
-    PacsReportStatus:
-      type: string
-      enum:
-        - EXAM_IN_PROGRESS
-        - AWAITING_REPORT
-        - DRAFT
-        - PENDING_REVIEW
-        - REVIEWED
-        - FINAL_REVIEWED
-        - UNKNOWN
-    PatientSex:
-      type: string
-      enum: [M, F, UNKNOWN]
-    Department:
-      type: object
-      additionalProperties: false
-      required: [id, name]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        active:
-          type: boolean
-          default: true
-    PacsReport:
+    EndoscopyReport:
       type: object
       additionalProperties: false
       required:
-        - patientId
+        - sourceRecordId
         - patientName
-        - sex
-        - department
-        - studyAccessionNo
-        - examItem
-        - examTime
-        - reportId
-        - reportStatus
-        - sourceUpdatedAt
+        - patientTypeName
+        - examDate
       properties:
-        patientId:
+        sourceRecordId:
           type: string
-          description: PATIENTINFO 中的稳定患者 ID
-        inpatientNo:
-          type: string
-          nullable: true
+          description: 实库核验确认的稳定结果记录 ID
         patientName:
           type: string
-        sex:
-          $ref: '#/components/schemas/PatientSex'
-        age:
-          type: integer
-          nullable: true
-          minimum: 0
-          maximum: 150
+          description: PA_PatMas.PAPMI_Name
         department:
           type: string
           nullable: true
+          description: PAADM_DepCode_DR->CTLOC_Desc
         bedNo:
           type: string
           nullable: true
-        studyAccessionNo:
+          description: PAADM_CurrentBed_DR->BED_Code
+        patientTypeCode:
           type: string
+          nullable: true
+          description: PA_Adm.PAADM_Type 原值
+        patientTypeName:
+          type: string
+          description: 经医院字典确认的中文含义；未知时包含源代码
         examItem:
           type: string
+          nullable: true
+          description: Ens_RISReportResult.RISR_ItemDesc
+        examDate:
+          type: string
+          format: date
+          description: Ens_RISReportResult.RISR_ReportDate
         examTime:
           type: string
-          format: date-time
-        reportId:
-          type: string
-        reportStatus:
-          $ref: '#/components/schemas/PacsReportStatus'
-        rawStatusCode:
+          nullable: true
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?$'
+          description: Ens_RISReportResult.RISR_ReportTime，HH:mm:ss[.fraction]
+        reportContent:
           type: string
           nullable: true
-        reportSavedAt:
-          type: string
-          format: date-time
-          nullable: true
-        reportSubmittedAt:
-          type: string
-          format: date-time
-          nullable: true
-        reportReviewedAt:
-          type: string
-          format: date-time
-          nullable: true
-        describeText:
+          description: Ens_RISReportResult.RISR_ExamDesc 原文
+        diagnosis:
           type: string
           nullable: true
-          description: REPORTCONTENT.RPT_DESCRIBE 原文
-        diagnoseText:
-          type: string
-          nullable: true
-          description: REPORTCONTENT.RPT_DIAGNOSE 原文
-        sourceUpdatedAt:
-          type: string
-          format: date-time
-    PacsReportPage:
+          description: Ens_RISReportResult.RISR_DiagDesc 原文
+    ReportPage:
       type: object
       additionalProperties: false
       required: [items, nextCursor, hasMore]
@@ -324,13 +270,13 @@ components:
           type: array
           maxItems: 500
           items:
-            $ref: '#/components/schemas/PacsReport'
+            $ref: '#/components/schemas/EndoscopyReport'
         nextCursor:
           type: string
           nullable: true
         hasMore:
           type: boolean
-    PacsReportPageResponse:
+    ReportPageResponse:
       type: object
       additionalProperties: false
       required: [requestId, serverTime, data]
@@ -341,8 +287,8 @@ components:
           type: string
           format: date-time
         data:
-          $ref: '#/components/schemas/PacsReportPage'
-    PacsReportResponse:
+          $ref: '#/components/schemas/ReportPage'
+    ReportResponse:
       type: object
       additionalProperties: false
       required: [requestId, serverTime, data]
@@ -353,7 +299,18 @@ components:
           type: string
           format: date-time
         data:
-          $ref: '#/components/schemas/PacsReport'
+          $ref: '#/components/schemas/EndoscopyReport'
+    Department:
+      type: object
+      additionalProperties: false
+      required: [id, name, active]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        active:
+          type: boolean
     DepartmentList:
       type: object
       additionalProperties: false
@@ -435,7 +392,7 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Unauthenticated:
-      description: 缺少或无效服务身份
+      description: 服务身份缺失或无效
       content:
         application/json:
           schema:
@@ -447,7 +404,7 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     ReportNotFound:
-      description: 报告不存在
+      description: 记录不存在
       content:
         application/json:
           schema:
@@ -460,11 +417,6 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     RateLimited:
       description: 超过调用限制
-      headers:
-        Retry-After:
-          description: 建议重试等待秒数
-          schema:
-            type: integer
       content:
         application/json:
           schema:
@@ -476,37 +428,29 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     DataSourceUnavailable:
-      description: PACS/RIS 数据源不可用或超时
+      description: IRIS/Caché 数据源不可用
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   examples:
-    PacsReportPageExample:
-      summary: 仅包含合成测试数据
+    ReportPage:
+      summary: 仅包含合成数据
       value:
-        requestId: 018f-example-request-id
-        serverTime: '2026-08-21T02:06:00Z'
+        requestId: synthetic-request-id
+        serverTime: '2026-08-21T06:00:00Z'
         data:
           items:
-            - patientId: TEST-P-0001
-              inpatientNo: TEST-I-0001
+            - sourceRecordId: TEST-RIS-0001
               patientName: 测试患者甲
-              sex: F
-              age: 62
               department: 测试科室
               bedNo: TEST-12
-              studyAccessionNo: TEST-A-20260821001
+              patientTypeCode: I
+              patientTypeName: 住院
               examItem: 电子胃镜检查
-              examTime: '2026-08-21T01:30:00Z'
-              reportId: TEST-R-0001
-              reportStatus: PENDING_REVIEW
-              rawStatusCode: SUBMITTED
-              reportSavedAt: '2026-08-21T01:55:00Z'
-              reportSubmittedAt: '2026-08-21T02:00:00Z'
-              reportReviewedAt: null
-              describeText: 测试检查所见文本，仅为合成数据。
-              diagnoseText: 测试诊断意见文本，仅为合成数据。
-              sourceUpdatedAt: '2026-08-21T02:00:05Z'
+              examDate: '2026-08-21'
+              examTime: '10:05:30'
+              reportContent: 测试报告内容，仅为合成数据。
+              diagnosis: 测试诊断，仅为合成数据。
           nextCursor: opaque-cursor-value
           hasMore: true

@@ -190,17 +190,14 @@ export class MonitorService {
       ...(query.patientTypeCode ? { patientTypeCode: query.patientTypeCode } : {}),
       ...(query.level ? { currentLevel: query.level } : {}),
       ...(query.examItem ? { examItem: { contains: query.examItem, mode: 'insensitive' } } : {}),
-      // q searches patientName OR the keyword snapshot on a matched rule -
-      // NOT reportContent/diagnosis (issue #7: 防止无界全文扫描). A record
-      // is matched if ANY of its monitor_match rows' keyword contains q.
-      ...(query.q
-        ? {
-            OR: [
-              { patientName: { contains: query.q, mode: 'insensitive' } },
-              { matches: { some: { keyword: { contains: query.q, mode: 'insensitive' } } } },
-            ],
-          }
+      // patientName and keyword are independent filters combined by AND
+      // (both clauses on the same top-level object) - NOT reportContent/
+      // diagnosis (issue #7: 防止无界全文扫描). keyword matches if ANY of
+      // the record's monitor_match rows carries that exact keyword.
+      ...(query.patientName
+        ? { patientName: { contains: query.patientName, mode: 'insensitive' } }
         : {}),
+      ...(query.keyword ? { matches: { some: { keyword: query.keyword } } } : {}),
     };
   }
 

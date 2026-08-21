@@ -422,19 +422,22 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     expect(detailRows[0].department).toBe('消化内科');
   });
 
-  itWithDb('the list read also writes an EXAM_LIST audit row without the raw q value', async () => {
-    await agents.viewer.get('/api/monitor/exams').query({ q: '测试患者甲' }).expect(200);
+  itWithDb(
+    'the list read also writes an EXAM_LIST audit row without the raw patientName value',
+    async () => {
+      await agents.viewer.get('/api/monitor/exams').query({ patientName: '测试患者甲' }).expect(200);
 
-    const rows = await prisma.auditLog.findMany({
-      where: { action: 'EXAM_LIST', actorUsername: USERS.viewer },
-      orderBy: { createdAt: 'desc' },
-      take: 1,
-    });
-    expect(rows.length).toBeGreaterThan(0);
-    const meta = rows[0].meta as Record<string, unknown>;
-    // hadQ is a flag only - the actual search string (a possible patient
-    // name) must never be stored.
-    expect(meta.hadQ).toBe(true);
-    expect(JSON.stringify(meta)).not.toMatch(/测试患者甲/);
-  });
+      const rows = await prisma.auditLog.findMany({
+        where: { action: 'EXAM_LIST', actorUsername: USERS.viewer },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      });
+      expect(rows.length).toBeGreaterThan(0);
+      const meta = rows[0].meta as Record<string, unknown>;
+      // hadPatientName is a flag only - the actual search string (a
+      // possible patient name) must never be stored.
+      expect(meta.hadPatientName).toBe(true);
+      expect(JSON.stringify(meta)).not.toMatch(/测试患者甲/);
+    },
+  );
 });

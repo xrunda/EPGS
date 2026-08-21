@@ -666,27 +666,42 @@ describe('Monitor API (e2e, real Postgres)', () => {
     expect(res2.body.total).toBe(3);
   });
 
-  itWithDb('q searches patientName and matched keyword only - never report text', async () => {
-    const byName = await agent.get('/api/monitor/exams').query({ q: '测试患者' }).expect(200);
+  itWithDb('patientName searches patientName only - never report text', async () => {
+    const byName = await agent
+      .get('/api/monitor/exams')
+      .query({ patientName: '测试患者' })
+      .expect(200);
     expect(byName.body.total).toBe(11); // all except R7 (null patientName)
     expect(byName.body.items.some((item: { recordId: string }) => item.recordId === ids.R7)).toBe(
       false,
     );
 
-    const byNameExact = await agent.get('/api/monitor/exams').query({ q: '患者子' }).expect(200);
+    const byNameExact = await agent
+      .get('/api/monitor/exams')
+      .query({ patientName: '患者子' })
+      .expect(200);
     expect(byNameExact.body.total).toBe(1);
     expect(byNameExact.body.items[0].recordId).toBe(ids.R12);
+  });
 
-    // q=癌 finds R1/R8/R9 via their matched keyword, but NOT R12 whose
-    // report body mentions 腺癌 yet has no rule hit - proving q does not
-    // scan reportContent/diagnosis.
-    const byKeyword = await agent.get('/api/monitor/exams').query({ q: '癌' }).expect(200);
+  itWithDb('keyword matches the exact matched-rule keyword only - never report text', async () => {
+    // keyword='腺癌' finds R1/R8/R9 via their matched keyword, but NOT R12
+    // whose report body mentions 腺癌 yet has no rule hit - proving keyword
+    // does not scan reportContent/diagnosis, and matches the exact keyword
+    // rather than a substring.
+    const byKeyword = await agent
+      .get('/api/monitor/exams')
+      .query({ keyword: '腺癌' })
+      .expect(200);
     expect(byKeyword.body.total).toBe(3);
     expect(
       byKeyword.body.items.some((item: { recordId: string }) => item.recordId === ids.R12),
     ).toBe(false);
 
-    const byKeyword2 = await agent.get('/api/monitor/exams').query({ q: '息肉' }).expect(200);
+    const byKeyword2 = await agent
+      .get('/api/monitor/exams')
+      .query({ keyword: '息肉样' })
+      .expect(200);
     expect(byKeyword2.body.total).toBe(5);
   });
 
@@ -713,7 +728,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
   itWithDb('returns an empty result set for a filter combination with no matches', async () => {
     const res = await agent
       .get('/api/monitor/exams')
-      .query({ level: 'GREEN', q: '息肉' })
+      .query({ level: 'GREEN', keyword: '息肉样' })
       .expect(200);
     expect(res.body.total).toBe(0);
     expect(res.body.items).toHaveLength(0);
@@ -739,7 +754,10 @@ describe('Monitor API (e2e, real Postgres)', () => {
   itWithDb(
     'formats examDate/examTime in Asia/Shanghai (incl. midnight 00:00:00, not 24:00:00)',
     async () => {
-      const res = await agent.get('/api/monitor/exams').query({ q: '患者癸' }).expect(200);
+      const res = await agent
+        .get('/api/monitor/exams')
+        .query({ patientName: '患者癸' })
+        .expect(200);
       const r11 = res.body.items[0];
       expect(r11.examDate).toBe('2026-08-18');
       expect(r11.examTime).toBe('00:00:00');
@@ -829,7 +847,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
   itWithDb('summary reflects every applied filter', async () => {
     await assertSummaryMatchesList({ level: 'RED' });
     await assertSummaryMatchesList({ department: '呼吸内科' });
-    await assertSummaryMatchesList({ q: '息肉', level: 'YELLOW' });
+    await assertSummaryMatchesList({ keyword: '息肉样', level: 'YELLOW' });
     await assertSummaryMatchesList({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20' });
   });
 

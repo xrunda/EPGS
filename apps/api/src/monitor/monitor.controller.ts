@@ -22,7 +22,7 @@ import { MonitorExamDetailDto, MonitorSummaryDto, PaginatedMonitorExams } from '
  * (@CurrentUser()): a scoped caller only ever sees their departments, and a
  * caller without patientDetail rights gets HIGH-sensitivity fields masked.
  * Each read is recorded as an EXAM_LIST / EXAM_DETAIL audit row (meta never
- * carries the raw `q` value, which could be a patient name).
+ * carries the raw `patientName` filter value).
  */
 @ApiTags('monitor')
 @Controller('api/monitor')
@@ -66,9 +66,11 @@ export class MonitorController {
         examItem: query.examItem ?? null,
         examDateFrom: query.examDateFrom ?? null,
         examDateTo: query.examDateTo ?? null,
-        // Only a flag - the raw `q` could be a patient name and must not be
-        // stored in the audit trail.
-        hadQ: (query.q ?? '') !== '',
+        // Only a flag - the raw patientName filter must not be stored in
+        // the audit trail. keyword is a non-sensitive rule-library value
+        // (selected from a dropdown) and is recorded verbatim.
+        hadPatientName: (query.patientName ?? '') !== '',
+        keyword: query.keyword ?? null,
         masked: opts.maskPatient ?? false,
         total: result.total,
       },

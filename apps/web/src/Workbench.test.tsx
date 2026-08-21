@@ -54,6 +54,11 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as Response;
 }
 
+const ruleRows = [
+  { id: 'rule-1', keyword: '腺癌', level: 'RED' },
+  { id: 'rule-2', keyword: '浸润癌', level: 'RED' },
+];
+
 function defaultFetch(): void {
   vi.stubGlobal(
     'fetch',
@@ -70,6 +75,9 @@ function defaultFetch(): void {
       }
       if (url.includes('/api/system/sync-status')) {
         return jsonResponse(syncStatus);
+      }
+      if (url.includes('/api/rules')) {
+        return jsonResponse({ items: ruleRows, total: ruleRows.length, page: 1, pageSize: 200 });
       }
       return jsonResponse({ items: [], total: 0, page: 1, pageSize: 20 });
     }),
@@ -112,13 +120,16 @@ describe('Workbench', () => {
     expect(within(row1).getByText('腺癌、浸润癌')).toBeInTheDocument();
 
     const row2 = screen.getByRole('row', { name: /绿色/ });
-    expect(within(row2).getByText('O')).toBeInTheDocument();
+    expect(within(row2).getByText('门诊（O）')).toBeInTheDocument();
     expect(within(row2).getAllByText('—')).toHaveLength(7);
   });
 
   it('sends the entered filters to the list and summary endpoints on submit', async () => {
     render(<Workbench onOpenRules={vi.fn()} />);
     await screen.findByText('测试患者甲');
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: '腺癌' })).toBeInTheDocument();
+    });
 
     fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-08-01' } });
     fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-08-31' } });
@@ -126,7 +137,8 @@ describe('Workbench', () => {
     fireEvent.change(screen.getByLabelText('患者类型'), { target: { value: 'I' } });
     fireEvent.change(screen.getByLabelText('关注等级'), { target: { value: 'RED' } });
     fireEvent.change(screen.getByLabelText('检查项目'), { target: { value: '胃镜' } });
-    fireEvent.change(screen.getByLabelText('姓名 / 关键词'), { target: { value: '腺癌' } });
+    fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '张三' } });
+    fireEvent.change(screen.getByLabelText('命中关键词'), { target: { value: '腺癌' } });
     fireEvent.click(screen.getByRole('button', { name: '查询' }));
 
     await waitFor(() => {
@@ -140,7 +152,8 @@ describe('Workbench', () => {
             url.includes('patientTypeCode=I') &&
             url.includes('level=RED') &&
             url.includes('examItem=%E8%83%83%E9%95%9C') &&
-            url.includes('q=%E8%85%BA%E7%99%8C'),
+            url.includes('patientName=%E5%BC%A0%E4%B8%89') &&
+            url.includes('keyword=%E8%85%BA%E7%99%8C'),
         ),
       ).toBe(true);
     });
@@ -309,5 +322,47 @@ describe('Workbench', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(trigger).toHaveFocus());
     expect(screen.queryByRole('dialog', { name: '检查详情' })).not.toBeInTheDocument();
+  });
+
+  it('shows the raw code for an unconfirmed patientType with no I/O fallback', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/monitor/exams')) {
+          return jsonResponse({
+            items: [
+              {
+                recordId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+                monitorLevel: 'UNCLASSIFIED',
+                patientName: '测试患者丙',
+                department: null,
+                bedNo: null,
+                patientType: { code: 'X', name: null },
+                examItem: null,
+                examDate: null,
+                examTime: null,
+                matchedKeywords: [],
+              },
+            ],
+            total: 1,
+            page: 1,
+            pageSize: 20,
+          });
+        }
+        if (url.includes('/api/monitor/summary')) {
+          return jsonResponse(summary);
+        }
+        if (url.includes('/api/system/sync-status')) {
+          return jsonResponse(syncStatus);
+        }
+        return jsonResponse({ items: [], total: 0, page: 1, pageSize: 20 });
+      }),
+    );
+
+    render(<Workbench onOpenRules={vi.fn()} />);
+
+    const row = await screen.findByRole('row', { name: /测试患者丙/ });
+    expect(within(row).getByText('X')).toBeInTheDocument();
   });
 });

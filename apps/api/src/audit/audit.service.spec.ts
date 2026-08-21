@@ -7,7 +7,7 @@ describe('AuditService (issue #13)', () => {
     actorUsername: 'doctor',
     actorRole: AppRole.VIEWER,
     resourceType: 'monitor_record',
-    meta: { page: 1, pageSize: 20, masked: true, hadQ: false },
+    meta: { page: 1, pageSize: 20, masked: true, hadPatientName: false },
     ip: '127.0.0.1',
     correlationId: 'corr-1',
   };

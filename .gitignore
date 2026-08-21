@@ -45,3 +45,8 @@ apps/**/generated/
 # U+2011 variant, and the output of apps/worker's mock:convert entry alike - all
 # contain likely-real patient data and must never be staged (issue #42).
 Doc/moke*
+
+# Raw SOAP gateway captures (real patient data via curl/SoapUI against the
+# hospital's DHC/Ensemble EnsWebService) - never stage, same as Doc/moke*.
+tmp.md
+/tmp.*.md

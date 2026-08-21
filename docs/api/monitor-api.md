@@ -32,9 +32,11 @@
 - **`patientType` 保留源编码 + 已确认的中文名**：源编码（如 `I`/`O`）原样返回；
   `name` 只有被确认过才填（住院/门诊…）。未知编码 `name` 为 `null`，由前端展示
   原始编码，**永不猜测**中文含义。
-- **`q` 模糊搜索只搜姓名 + 命中关键词**：`patientName` 或
-  `monitor_match.keyword`，**绝不搜 `reportContent`/`diagnosis`**（防止无界全文
-  扫描）。因此正文里出现某个词、但没有对应规则命中的记录，不会被 `q` 搜到。
+- **`patientName`/`keyword` 是两个独立参数，AND 组合**：`patientName` 子串匹配
+  姓名，`keyword` 精确匹配命中关键词 `monitor_match.keyword`（来自
+  `GET /api/rules` 的规则库，非子串），**绝不搜 `reportContent`/`diagnosis`**
+  （防止无界全文扫描）。因此正文里出现某个词、但没有对应规则命中的记录，不会被
+  `keyword` 搜到。
 
 ## 鉴权
 
@@ -56,8 +58,9 @@
 ### 审计（Issue #13）
 
 每次 `GET /api/monitor/exams` 与 `GET /api/monitor/exams/:id` 都会在 `audit_log`
-落一条 `EXAM_LIST`/`EXAM_DETAIL` 记录（含 `masked` 标记；`q` 只记 `hadQ` 布尔，
-不落原文）。`GET /api/monitor/summary` 只做科室范围限制，不审计。
+落一条 `EXAM_LIST`/`EXAM_DETAIL` 记录（含 `masked` 标记；`patientName` 只记
+`hadPatientName` 布尔，不落原文；`keyword` 是规则库里的非敏感值，原样记录）。
+`GET /api/monitor/summary` 只做科室范围限制，不审计。
 
 ## 统一错误格式
 
@@ -124,7 +127,8 @@
 | `patientTypeCode` | 字符串                                | 患者类型源编码**精确匹配**（如 `I`/`O`）                                         |
 | `level`           | `RED`/`YELLOW`/`GREEN`/`UNCLASSIFIED` | 关注等级精确匹配                                                                 |
 | `examItem`        | 字符串                                | 检查项目**子串匹配**（大小写不敏感）                                             |
-| `q`               | 字符串                                | `patientName` **或** 命中关键词 `keyword` 子串匹配（大小写不敏感），**不含正文** |
+| `patientName`     | 字符串                                | 姓名**子串匹配**（大小写不敏感）                                                 |
+| `keyword`         | 字符串                                | 命中关键词 `monitor_match.keyword` **精确匹配**（来自 `GET /api/rules`），**不含正文** |
 
 ### 排序
 

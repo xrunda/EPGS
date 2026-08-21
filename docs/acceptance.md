@@ -75,13 +75,13 @@
 | 证据                                                                       | 位置                                                                                                                                                                                                                                                                   |
 | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 日期上下界语义（含排他上界、开区间）                                       | `apps/api/test/monitor.e2e-spec.ts` → `'treats examDateTo as an exclusive upper bound...'`、`'supports open-ended date bounds'`                                                                                                                                        |
-| 科室（大小写不敏感精确）、患者类型（精确）、等级、检查项目（子串）、q 搜索 | 同文件 → `'filters by department...'`、`'filters by patientTypeCode exact match'`、`'filters by attention level'`、`'filters by examItem substring...'`、`'q searches patientName and matched keyword only - never report text'`、`'combines filters (AND semantics)'` |
+| 科室（大小写不敏感精确）、患者类型（精确）、等级、检查项目（子串）、姓名/关键词搜索 | 同文件 → `'filters by department...'`、`'filters by patientTypeCode exact match'`、`'filters by attention level'`、`'filters by examItem substring...'`、`'patientName searches patientName only - never report text'`、`'keyword matches the exact matched-rule keyword only - never report text'`、`'combines filters (AND semantics)'` |
 | 汇总与列表同口径                                                           | 同文件 → `'summary matches the list under the same filters (empty query)'`、`'summary reflects every applied filter'`                                                                                                                                                  |
 | 非法参数 400（口径防回归）                                                 | 同文件 → `'rejects invalid params with 400'`                                                                                                                                                                                                                           |
 
 > 场景 5 的筛选条件与性能基准（验收标准 3）**同一套参数**：`performance.e2e-spec.ts`
 > 对完全相同的 `level`/`department`/`examDateFrom`/`examDateTo`/`patientTypeCode`/
-> `examItem`/`q` 在 100k 行下实测 ≤3s。
+> `examItem`/`patientName`/`keyword` 在 100k 行下实测 ≤3s。
 
 ### 场景 6：汇总五项与列表数量一致，不存在待上报数量
 

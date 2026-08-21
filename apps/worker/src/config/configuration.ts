@@ -10,8 +10,8 @@ export interface WorkerConfig {
   syncMaxRetries: number;
   syncRetryBaseDelayMs: number;
   databaseUrl: string;
-  /** 'csv' for local synthetic data | 'http' for the hospital REST gateway. */
-  pacsAdapterMode: 'csv' | 'http';
+  /** 'csv' for local synthetic data | 'http' for the #24 REST gateway | 'soap' for the DHC/Ensemble gateway. */
+  pacsAdapterMode: 'csv' | 'http' | 'soap';
   /** Only used when pacsAdapterMode='csv'. */
   pacsMockCsvPath?: string;
   /** Only used when pacsAdapterMode='http'. Never logged. */
@@ -19,6 +19,15 @@ export interface WorkerConfig {
   /** Only used when pacsAdapterMode='http'. Never logged. */
   pacsHttpServiceToken?: string;
   pacsHttpTimeoutMs: number;
+  /** Only used when pacsAdapterMode='soap'. Never logged. */
+  pacsSoapBaseUrl?: string;
+  /** Only used when pacsAdapterMode='soap'. Never logged. */
+  pacsSoapUsername?: string;
+  /** Only used when pacsAdapterMode='soap'. Never logged. */
+  pacsSoapPassword?: string;
+  /** Only used when pacsAdapterMode='soap'. The DHCWebInterface KeyName for endoscopy reports. */
+  pacsSoapKeyName?: string;
+  pacsSoapTimeoutMs: number;
 }
 
 export default (): WorkerConfig => ({
@@ -38,4 +47,9 @@ export default (): WorkerConfig => ({
   pacsHttpBaseUrl: process.env.PACS_HTTP_BASE_URL,
   pacsHttpServiceToken: process.env.PACS_HTTP_SERVICE_TOKEN,
   pacsHttpTimeoutMs: parseInt(process.env.PACS_HTTP_TIMEOUT_MS ?? '10000', 10),
+  pacsSoapBaseUrl: process.env.PACS_SOAP_BASE_URL,
+  pacsSoapUsername: process.env.PACS_SOAP_USERNAME,
+  pacsSoapPassword: process.env.PACS_SOAP_PASSWORD,
+  pacsSoapKeyName: process.env.PACS_SOAP_KEY_NAME,
+  pacsSoapTimeoutMs: parseInt(process.env.PACS_SOAP_TIMEOUT_MS ?? '15000', 10),
 });

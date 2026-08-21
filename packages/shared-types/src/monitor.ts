@@ -153,8 +153,10 @@ export interface MonitorFiltersQuery {
   level?: MonitorLevelDto;
   /** Exam item substring (case-insensitive). */
   examItem?: string;
-  /** Fuzzy search over patientName OR matched keyword only - NOT report body text. */
-  q?: string;
+  /** Patient name substring (case-insensitive). Combined with `keyword` via AND, not OR. */
+  patientName?: string;
+  /** Exact matched-rule keyword (from MonitorRuleDto.keyword) - NOT report body text. Combined with `patientName` via AND. */
+  keyword?: string;
 }
 
 /** Query params for `GET /api/monitor/exams`. */

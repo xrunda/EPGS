@@ -7,6 +7,7 @@ import type {
   SyncStatusDto,
 } from '@epgs/shared-types';
 import { getExamSummary, listExams, MonitorApiError, getSyncStatus } from './monitorApi';
+import { listRules } from './rulesApi';
 import { DetailDrawer } from './DetailDrawer';
 import './Workbench.css';
 
@@ -22,7 +23,8 @@ interface WorkbenchFilters {
   patientTypeCode: string;
   level: '' | MonitorLevelDto;
   examItem: string;
-  q: string;
+  patientName: string;
+  keyword: string;
 }
 
 const EMPTY_FILTERS: WorkbenchFilters = {
@@ -32,8 +34,15 @@ const EMPTY_FILTERS: WorkbenchFilters = {
   patientTypeCode: '',
   level: '',
   examItem: '',
-  q: '',
+  patientName: '',
+  keyword: '',
 };
+
+/** Display-only I/O options; see PATIENT_TYPE_CODE_FALLBACK_LABELS below for why this is safe. */
+const PATIENT_TYPE_FILTER_OPTIONS: Array<{ code: string; label: string }> = [
+  { code: 'I', label: '住院' },
+  { code: 'O', label: '门诊' },
+];
 
 const PAGE_SIZE = 20;
 
@@ -71,7 +80,8 @@ function toQueryFilters(filters: WorkbenchFilters) {
     patientTypeCode: filters.patientTypeCode.trim() || undefined,
     level: filters.level || undefined,
     examItem: filters.examItem.trim() || undefined,
-    q: filters.q.trim() || undefined,
+    patientName: filters.patientName.trim() || undefined,
+    keyword: filters.keyword || undefined,
   };
 }
 
@@ -85,10 +95,27 @@ function validateFilters(filters: WorkbenchFilters): string | null {
   return null;
 }
 
+/**
+ * Fallback labels for the raw PAADM_Type code when the source dictionary
+ * hasn't confirmed a name yet. I/O are the hospital's standard inpatient/
+ * outpatient codes and are display-only - never written back or used as
+ * a filter/match value, so this doesn't require the source dictionary
+ * verification that other patientType values still do.
+ */
+const PATIENT_TYPE_CODE_FALLBACK_LABELS: Record<string, string> = {
+  I: '住院',
+  O: '门诊',
+};
+
 function formatPatientType(exam: MonitorExamDto): string {
   const { name, code } = exam.patientType;
   if (name && code) return `${name}（${code}）`;
-  return name ?? code ?? '—';
+  if (name) return name;
+  if (code) {
+    const fallback = PATIENT_TYPE_CODE_FALLBACK_LABELS[code];
+    return fallback ? `${fallback}（${code}）` : code;
+  }
+  return '—';
 }
 
 /** Formats an ISO UTC instant as Asia/Shanghai wall time `YYYY-MM-DD HH:mm:ss`. */
@@ -127,6 +154,7 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
   const [page, setPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [keywordOptions, setKeywordOptions] = useState<string[]>([]);
   /** The 查看详情 button that opened the drawer; receives focus back on close. */
   const detailTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -178,6 +206,26 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
   useEffect(() => {
     void loadSyncStatus();
   }, [loadSyncStatus, reloadKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listRules({ isEnabled: true, pageSize: 200 })
+      .then((result) => {
+        if (cancelled) return;
+        const distinct = Array.from(new Set(result.items.map((rule) => rule.keyword))).sort(
+          (a, b) => a.localeCompare(b, 'zh-CN'),
+        );
+        setKeywordOptions(distinct);
+      })
+      .catch(() => {
+        // Non-fatal: the keyword dropdown just stays empty (still usable
+        // for name-only search); the main record/summary load surfaces
+        // its own error banner independently.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
   function applyFilters(next: WorkbenchFilters): void {
     const validationError = validateFilters(next);
@@ -263,11 +311,17 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
         </label>
         <label>
           患者类型
-          <input
+          <select
             value={filters.patientTypeCode}
             onChange={(event) => setFilters({ ...filters, patientTypeCode: event.target.value })}
-            placeholder="如 I / O"
-          />
+          >
+            <option value="">全部类型</option>
+            {PATIENT_TYPE_FILTER_OPTIONS.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           关注等级
@@ -293,13 +347,28 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
           />
         </label>
         <label>
-          姓名 / 关键词
+          姓名
           <input
-            value={filters.q}
-            onChange={(event) => setFilters({ ...filters, q: event.target.value })}
-            placeholder="姓名或命中关键词"
-            title="仅搜索患者姓名和命中的关键词，不搜索报告正文。"
+            value={filters.patientName}
+            onChange={(event) => setFilters({ ...filters, patientName: event.target.value })}
+            placeholder="患者姓名"
+            title="仅搜索患者姓名，不搜索报告正文。"
           />
+        </label>
+        <label>
+          命中关键词
+          <select
+            value={filters.keyword}
+            onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
+            title="按监测规则库中的关键词筛选，不搜索报告正文。"
+          >
+            <option value="">全部关键词</option>
+            {keywordOptions.map((keyword) => (
+              <option key={keyword} value={keyword}>
+                {keyword}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="workbench__filter-actions">
           <button className="button button--primary" type="submit">
@@ -367,7 +436,10 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
             </thead>
             <tbody>
               {items.map((exam) => (
-                <tr key={exam.recordId}>
+                <tr
+                  key={exam.recordId}
+                  className={`workbench__row workbench__row--${exam.monitorLevel.toLowerCase()}`}
+                >
                   <td>
                     <span className={`level-tag level-tag--${exam.monitorLevel.toLowerCase()}`}>
                       {LEVEL_LABELS[exam.monitorLevel]}

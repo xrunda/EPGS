@@ -71,7 +71,9 @@
 - [ ] **性能阈值告警**：`GET /api/monitor/exams` 常见筛选 p95 超过 3s 告警
       （验收基准见 [docs/acceptance.md](./acceptance.md) 验收标准 3）。
 - [ ] **数据量增长预案**：若 `monitor_record` 量级远超 100k 行，评估
-      `examItem`/`q` 子串搜索的 `pg_trgm` 索引（btree 无法加速 `ILIKE %..%`）。
+      `examItem`/`patientName` 子串搜索的 `pg_trgm` 索引（btree 无法加速
+      `ILIKE %..%`）；`keyword` 已改为精确匹配，走普通索引即可，无需
+      `pg_trgm`。
 
 ## 6. 初始账号与角色分配
 

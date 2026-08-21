@@ -58,10 +58,18 @@ export class MonitorFiltersDto {
   examItem?: string;
 
   @ApiPropertyOptional({
-    description:
-      'Fuzzy search over patientName OR matched keyword only - deliberately NOT report body text (avoids unindexed full-text scans).',
+    description: 'Patient name substring (case-insensitive). Combined with `keyword` via AND.',
   })
   @IsOptional()
   @IsString()
-  q?: string;
+  patientName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Exact matched-rule keyword (from GET /api/rules). Deliberately NOT report body text ' +
+      '(avoids unindexed full-text scans). Combined with `patientName` via AND.',
+  })
+  @IsOptional()
+  @IsString()
+  keyword?: string;
 }

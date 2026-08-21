@@ -1,0 +1,222 @@
+.workbench {
+  width: min(1180px, calc(100% - 48px));
+  margin: 42px auto 0;
+  padding-bottom: 48px;
+}
+
+.workbench__heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+.workbench__heading h1 {
+  margin: 3px 0 5px;
+  color: #153f46;
+  font-size: 28px;
+}
+.workbench__heading p {
+  margin: 0;
+  color: #718588;
+}
+.workbench__kicker {
+  color: #3a7882 !important;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+.workbench__subtitle {
+  font-size: 13px;
+}
+.workbench__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workbench__sync {
+  margin-right: 8px;
+  color: #63777a;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.workbench__filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr)) 150px;
+  gap: 14px;
+  align-items: end;
+  margin-top: 28px;
+  padding: 20px 24px;
+  border: 1px solid #d2dfdd;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(21, 63, 70, 0.05);
+}
+.workbench__filters label,
+.workbench__date-range {
+  display: grid;
+  gap: 7px;
+  color: #4c6266;
+  font-size: 13px;
+  font-weight: 600;
+}
+.workbench__date-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workbench__date-inputs > span {
+  color: #8aa0a3;
+}
+.workbench__filters input,
+.workbench__filters select {
+  width: 100%;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid #c7d5d3;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d3033;
+  outline: none;
+}
+.workbench__filters input:focus,
+.workbench__filters select:focus {
+  border-color: #247181;
+  box-shadow: 0 0 0 3px rgba(36, 113, 129, 0.12);
+}
+.workbench__filter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.workbench__cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+}
+.workbench-card {
+  display: grid;
+  gap: 4px;
+  padding: 16px 20px;
+  border: 1px solid #d2dfdd;
+  border-radius: 10px;
+  background: #fff;
+  color: #4c6266;
+  text-align: left;
+  box-shadow: 0 8px 24px rgba(21, 63, 70, 0.05);
+}
+.workbench-card:hover {
+  border-color: #9bb6b7;
+  background: #f6faf9;
+}
+.workbench-card--active {
+  border-color: #176b78;
+  box-shadow: inset 0 0 0 1px #176b78;
+}
+.workbench-card__label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.workbench-card__value {
+  color: #153f46;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.workbench__table-wrap {
+  margin-top: 18px;
+  overflow-x: auto;
+  border: 1px solid #d2dfdd;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(21, 63, 70, 0.05);
+}
+.workbench__table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.workbench__table th {
+  padding: 12px 14px;
+  background: #f1f6f5;
+  color: #617579;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.workbench__table td {
+  padding: 14px;
+  border-top: 1px solid #e5eceb;
+  color: #334b4f;
+  vertical-align: middle;
+}
+.workbench__keywords {
+  max-width: 220px;
+}
+.workbench__table .table-actions {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #176b78;
+  font-weight: 650;
+}
+.workbench__table .table-actions:hover {
+  text-decoration: underline;
+}
+.workbench__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px;
+  border-top: 1px solid #e5eceb;
+  color: #63777a;
+  font-size: 13px;
+}
+
+.workbench-state {
+  display: grid;
+  min-height: 280px;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  color: #6d8083;
+}
+.workbench-state p {
+  margin: 0;
+  color: #3c5559;
+  font-weight: 700;
+}
+.workbench-state span {
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .workbench {
+    width: calc(100% - 28px);
+    margin-top: 20px;
+  }
+  .workbench__heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .workbench__toolbar {
+    flex-wrap: wrap;
+  }
+  .workbench__filters {
+    grid-template-columns: 1fr 1fr;
+  }
+  .workbench__cards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .workbench__filters {
+    grid-template-columns: 1fr;
+  }
+  .workbench__cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

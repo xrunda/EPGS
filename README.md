@@ -41,9 +41,12 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
   `docs/pacs-ris-adapter.md` for the assumed source schema and what still needs
   production verification. The actual scheduled sync job that calls this adapter
   lands in issue #6.
-- **apps/web** — a React + Vite frontend. Currently a placeholder page ("内镜中心")
-  that calls `apps/api`'s `/health` endpoint to prove connectivity. Real business
-  pages land in issue #9+.
+- **apps/web** — a React + Vite frontend implementing the read-only monitor
+  workbench (issue #9): filters, attention-level summary cards, the exam list with
+  pagination, and a read-only detail drawer that shows the report/diagnosis and hit
+  evidence from `apps/api`'s `/api/monitor` endpoints (see "Monitor API" below and
+  `docs/product/read-only-display-spec.md`). The 监测规则 button opens the rule
+  configuration modal (issue #11).
 - **packages/shared-types** — TypeScript types/interfaces shared across api/worker/web
   (e.g. `HealthStatus`, `ApiErrorBody`), proving the workspace linking works end to end.
 
@@ -53,7 +56,7 @@ sync logic is implemented yet — those land in later issues (#2–#14). See
 apps/
   api/       # NestJS HTTP API (main.ts, app.module.ts, health/, rules/, prisma/, common/, config/)
   worker/    # NestJS worker service (main.ts, app.module.ts, sync/, health/, config/)
-  web/       # React + Vite frontend (src/App.tsx, src/ApiStatus.tsx)
+  web/       # React + Vite frontend (src/App.tsx, src/Workbench.tsx, src/DetailDrawer.tsx)
 packages/
   shared-types/   # Shared TS types (HealthStatus, ApiErrorBody)
 .github/workflows/ci.yml   # CI: lint, typecheck, test, build on PR + push to main
@@ -77,6 +80,13 @@ docker-compose.yml          # Local Postgres for later issues
   `/api/monitor/summary`): filter semantics, Shanghai-day boundaries, sort contract,
   pagination, error codes, and the detail endpoint's hit evidence (rule provenance +
   matched-field location).
+- **Web workbench (issue #9)** — the frontend single-page workbench consuming the
+  monitor API: header + user-info placeholder (real identity lands in #13), toolbar
+  (last sync time from `/api/system/sync-status`, 立即刷新, 监测规则), filters,
+  five attention-level summary cards (clicking one sets the level filter),
+  paginated exam list, and a read-only detail drawer that keeps the workbench
+  context. Department/exam-item filters are text inputs for now (no distinct-values
+  endpoint yet); level is always shown as a text label, never color-only.
 
 ## Prerequisites
 

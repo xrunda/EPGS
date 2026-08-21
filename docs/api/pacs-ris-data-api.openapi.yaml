@@ -1,0 +1,512 @@
+openapi: 3.0.3
+info:
+  title: EPGS PACS/RIS 内镜数据 API
+  version: 1.0.0
+  license:
+    name: Proprietary - Internal Use Only
+    url: https://github.com/xrunda/EPGS
+  description: |
+    医院 PACS/RIS 数据库网关提供给 EPGS Worker 的只读内部接口。
+    本接口不面向浏览器，不计算关键词命中、关注等级或上报状态。
+servers:
+  - url: https://{internalHost}/api/v1/endoscopy
+    description: 医院内网环境；真实地址通过安全渠道提供
+    variables:
+      internalHost:
+        default: api.example.invalid
+security:
+  - bearerAuth: []
+tags:
+  - name: Reports
+    description: 内镜检查及报告数据
+  - name: Dictionaries
+    description: 受控字典数据
+  - name: System
+    description: 数据网关健康状态
+paths:
+  /reports:
+    get:
+      tags: [Reports]
+      operationId: listEndoscopyReports
+      summary: 按源更新时间增量读取内镜报告
+      description: |
+        返回固定时间窗口内按 sourceUpdatedAt、reportId 升序排列的报告。
+        updatedFrom 为包含下限，updatedTo 为不包含上限；禁止无时间下限扫描。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: updatedFrom
+          in: query
+          required: true
+          description: 源记录更新时间包含下限（UTC RFC 3339）
+          schema:
+            type: string
+            format: date-time
+          example: '2026-08-21T00:00:00Z'
+        - name: updatedTo
+          in: query
+          required: false
+          description: 源记录更新时间不包含上限；省略时固定为请求开始时间
+          schema:
+            type: string
+            format: date-time
+          example: '2026-08-22T00:00:00Z'
+        - name: department
+          in: query
+          required: false
+          description: 标准化科室 ID 或名称；具体匹配方式由数据库核验确定
+          schema:
+            type: string
+            maxLength: 100
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: cursor
+          in: query
+          required: false
+          description: 上一页返回的不透明游标；客户端不得解析或修改
+          schema:
+            type: string
+            maxLength: 2048
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        '200':
+          description: 成功返回一页报告
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacsReportPageResponse'
+              examples:
+                synthetic:
+                  $ref: '#/components/examples/PacsReportPageExample'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/CursorMismatch'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DataSourceUnavailable'
+  /reports/{reportId}:
+    get:
+      tags: [Reports]
+      operationId: getEndoscopyReport
+      summary: 查询单份内镜报告
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: reportId
+          in: path
+          required: true
+          description: 生产核验确认的报告版本稳定唯一键
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      responses:
+        '200':
+          description: 成功返回报告详情
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacsReportResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ReportNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DataSourceUnavailable'
+  /departments:
+    get:
+      tags: [Dictionaries]
+      operationId: listEndoscopyDepartments
+      summary: 获取内镜报告关联科室字典
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 成功返回科室字典
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DataSourceUnavailable'
+  /health:
+    get:
+      tags: [System]
+      operationId: getPacsRisGatewayHealth
+      summary: 获取数据网关和数据库健康状态
+      description: 不返回数据库产品、地址、库名、账号、SQL 或堆栈。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 网关可服务；status 可为 UP 或 DEGRADED
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: 数据源不可用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-token
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: 调用方生成的关联 ID；缺失时服务端生成
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+  headers:
+    RequestId:
+      description: 服务端接受或生成的关联 ID
+      schema:
+        type: string
+  schemas:
+    PacsReportStatus:
+      type: string
+      enum:
+        - EXAM_IN_PROGRESS
+        - AWAITING_REPORT
+        - DRAFT
+        - PENDING_REVIEW
+        - REVIEWED
+        - FINAL_REVIEWED
+        - UNKNOWN
+    PatientSex:
+      type: string
+      enum: [M, F, UNKNOWN]
+    Department:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        active:
+          type: boolean
+          default: true
+    PacsReport:
+      type: object
+      additionalProperties: false
+      required:
+        - patientId
+        - patientName
+        - sex
+        - department
+        - studyAccessionNo
+        - examItem
+        - examTime
+        - reportId
+        - reportStatus
+        - sourceUpdatedAt
+      properties:
+        patientId:
+          type: string
+          description: PATIENTINFO 中的稳定患者 ID
+        inpatientNo:
+          type: string
+          nullable: true
+        patientName:
+          type: string
+        sex:
+          $ref: '#/components/schemas/PatientSex'
+        age:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 150
+        department:
+          type: string
+          nullable: true
+        bedNo:
+          type: string
+          nullable: true
+        studyAccessionNo:
+          type: string
+        examItem:
+          type: string
+        examTime:
+          type: string
+          format: date-time
+        reportId:
+          type: string
+        reportStatus:
+          $ref: '#/components/schemas/PacsReportStatus'
+        rawStatusCode:
+          type: string
+          nullable: true
+        reportSavedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reportSubmittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reportReviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        describeText:
+          type: string
+          nullable: true
+          description: REPORTCONTENT.RPT_DESCRIBE 原文
+        diagnoseText:
+          type: string
+          nullable: true
+          description: REPORTCONTENT.RPT_DIAGNOSE 原文
+        sourceUpdatedAt:
+          type: string
+          format: date-time
+    PacsReportPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/PacsReport'
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore:
+          type: boolean
+    PacsReportPageResponse:
+      type: object
+      additionalProperties: false
+      required: [requestId, serverTime, data]
+      properties:
+        requestId:
+          type: string
+        serverTime:
+          type: string
+          format: date-time
+        data:
+          $ref: '#/components/schemas/PacsReportPage'
+    PacsReportResponse:
+      type: object
+      additionalProperties: false
+      required: [requestId, serverTime, data]
+      properties:
+        requestId:
+          type: string
+        serverTime:
+          type: string
+          format: date-time
+        data:
+          $ref: '#/components/schemas/PacsReport'
+    DepartmentList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Department'
+    DepartmentListResponse:
+      type: object
+      additionalProperties: false
+      required: [requestId, serverTime, data]
+      properties:
+        requestId:
+          type: string
+        serverTime:
+          type: string
+          format: date-time
+        data:
+          $ref: '#/components/schemas/DepartmentList'
+    ServiceStatus:
+      type: string
+      enum: [UP, DEGRADED, DOWN]
+    HealthData:
+      type: object
+      additionalProperties: false
+      required: [status, database]
+      properties:
+        status:
+          $ref: '#/components/schemas/ServiceStatus'
+        database:
+          $ref: '#/components/schemas/ServiceStatus'
+        schemaVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastSuccessfulQueryAt:
+          type: string
+          format: date-time
+          nullable: true
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [requestId, serverTime, data]
+      properties:
+        requestId:
+          type: string
+        serverTime:
+          type: string
+          format: date-time
+        data:
+          $ref: '#/components/schemas/HealthData'
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [requestId, code, message]
+      properties:
+        requestId:
+          type: string
+        code:
+          type: string
+          enum:
+            - INVALID_ARGUMENT
+            - UNAUTHENTICATED
+            - FORBIDDEN
+            - REPORT_NOT_FOUND
+            - CURSOR_FILTER_MISMATCH
+            - RATE_LIMITED
+            - INTERNAL_ERROR
+            - DATA_SOURCE_UNAVAILABLE
+        message:
+          type: string
+  responses:
+    BadRequest:
+      description: 请求参数非法
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthenticated:
+      description: 缺少或无效服务身份
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: 调用方无权限
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ReportNotFound:
+      description: 报告不存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    CursorMismatch:
+      description: 游标与原过滤条件不一致
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: 超过调用限制
+      headers:
+        Retry-After:
+          description: 建议重试等待秒数
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: 已脱敏的内部错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DataSourceUnavailable:
+      description: PACS/RIS 数据源不可用或超时
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  examples:
+    PacsReportPageExample:
+      summary: 仅包含合成测试数据
+      value:
+        requestId: 018f-example-request-id
+        serverTime: '2026-08-21T02:06:00Z'
+        data:
+          items:
+            - patientId: TEST-P-0001
+              inpatientNo: TEST-I-0001
+              patientName: 测试患者甲
+              sex: F
+              age: 62
+              department: 测试科室
+              bedNo: TEST-12
+              studyAccessionNo: TEST-A-20260821001
+              examItem: 电子胃镜检查
+              examTime: '2026-08-21T01:30:00Z'
+              reportId: TEST-R-0001
+              reportStatus: PENDING_REVIEW
+              rawStatusCode: SUBMITTED
+              reportSavedAt: '2026-08-21T01:55:00Z'
+              reportSubmittedAt: '2026-08-21T02:00:00Z'
+              reportReviewedAt: null
+              describeText: 测试检查所见文本，仅为合成数据。
+              diagnoseText: 测试诊断意见文本，仅为合成数据。
+              sourceUpdatedAt: '2026-08-21T02:00:05Z'
+          nextCursor: opaque-cursor-value
+          hasMore: true

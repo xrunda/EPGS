@@ -48,7 +48,7 @@ import {
       useFactory: (config: ConfigService) => ({
         httpOnly: true as const,
         sameSite: 'lax' as const,
-        secure: config.get<string>('nodeEnv') === 'production',
+        secure: config.get<boolean>('cookieSecure'),
         path: '/' as const,
         maxAge: config.getOrThrow<number>('jwtExpiresSeconds') * 1000,
       }),

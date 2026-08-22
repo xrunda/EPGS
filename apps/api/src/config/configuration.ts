@@ -22,16 +22,32 @@ export interface AppConfig {
   jwtSecret: string;
   jwtExpiresSeconds: number;
   webOrigin: string;
+  /**
+   * Whether the auth session cookie gets the `Secure` attribute (browsers
+   * silently drop `Secure` cookies over plain HTTP). Defaults to
+   * `nodeEnv === 'production'`, but can be overridden explicitly for
+   * deployments that run NODE_ENV=production behind plain HTTP (e.g. an
+   * internal-only bastion host with no TLS termination) - without this,
+   * login on such a deployment appears to succeed but every subsequent
+   * request comes back 401 because the cookie never persisted.
+   */
+  cookieSecure: boolean;
 }
 
-export default (): AppConfig => ({
-  nodeEnv: process.env.NODE_ENV ?? 'development',
-  port: parseInt(process.env.PORT ?? '3000', 10),
-  tz: process.env.TZ ?? 'Asia/Shanghai',
-  logLevel: process.env.LOG_LEVEL ?? 'log',
-  databaseUrl: process.env.DATABASE_URL ?? '',
-  syncIntervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '3', 10),
-  jwtSecret: process.env.JWT_SECRET ?? '',
-  jwtExpiresSeconds: parseInt(process.env.JWT_EXPIRES_SECONDS ?? '28800', 10),
-  webOrigin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',
-});
+export default (): AppConfig => {
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  return {
+    nodeEnv,
+    port: parseInt(process.env.PORT ?? '3000', 10),
+    tz: process.env.TZ ?? 'Asia/Shanghai',
+    logLevel: process.env.LOG_LEVEL ?? 'log',
+    databaseUrl: process.env.DATABASE_URL ?? '',
+    syncIntervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '3', 10),
+    jwtSecret: process.env.JWT_SECRET ?? '',
+    jwtExpiresSeconds: parseInt(process.env.JWT_EXPIRES_SECONDS ?? '28800', 10),
+    webOrigin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',
+    cookieSecure: process.env.COOKIE_SECURE
+      ? process.env.COOKIE_SECURE === 'true'
+      : nodeEnv === 'production',
+  };
+};

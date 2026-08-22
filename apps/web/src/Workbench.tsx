@@ -46,6 +46,9 @@ const PATIENT_TYPE_FILTER_OPTIONS: Array<{ code: string; label: string }> = [
 
 const PAGE_SIZE = 20;
 
+/** Auto-refresh cadence for the exam list/summary (issue #48). */
+const AUTO_REFRESH_SECONDS = 60;
+
 const LEVEL_LABELS: Record<MonitorLevelDto, string> = {
   RED: '红色',
   YELLOW: '黄色',
@@ -159,6 +162,7 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
   const [appliedFilters, setAppliedFilters] = useState<WorkbenchFilters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(AUTO_REFRESH_SECONDS);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [keywordOptions, setKeywordOptions] = useState<string[]>([]);
   /** The 查看详情 button that opened the drawer; receives focus back on close. */
@@ -208,6 +212,27 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
   useEffect(() => {
     void load();
   }, [load, reloadKey]);
+
+  // Resets to AUTO_REFRESH_SECONDS on every reload (manual click or the
+  // tick below), then counts down once a second and triggers the next
+  // auto-refresh at zero. Paused while the tab isn't visible so a
+  // backgrounded tab doesn't pile up refresh requests nobody sees.
+  useEffect(() => {
+    setSecondsUntilRefresh(AUTO_REFRESH_SECONDS);
+    const interval = window.setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
+      setSecondsUntilRefresh((seconds) => {
+        if (seconds <= 1) {
+          setReloadKey((c) => c + 1);
+          return AUTO_REFRESH_SECONDS;
+        }
+        return seconds - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [reloadKey]);
 
   useEffect(() => {
     void loadSyncStatus();
@@ -273,6 +298,7 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
         </div>
         <div className="workbench__toolbar">
           <span className="workbench__sync">{syncLine}</span>
+          <span className="workbench__countdown">{secondsUntilRefresh} 秒后刷新</span>
           <button className="button" type="button" onClick={() => setReloadKey((c) => c + 1)}>
             立即刷新
           </button>

@@ -39,6 +39,12 @@
   font-size: 13px;
   white-space: nowrap;
 }
+.workbench__countdown {
+  margin-right: 8px;
+  color: #99a3a5;
+  font-size: 13px;
+  white-space: nowrap;
+}
 
 .workbench__filters {
   display: grid;

@@ -127,6 +127,30 @@ function formatPatientType(exam: MonitorExamDto): string {
   return '—';
 }
 
+/** Quick date-range presets for 检查日期范围 (issue #49). */
+const DATE_RANGE_PRESETS: Array<{ key: string; label: string; days: number }> = [
+  { key: '1d', label: '近一日', days: 1 },
+  { key: '3d', label: '近三日', days: 3 },
+  { key: '7d', label: '近一周', days: 7 },
+  { key: '30d', label: '近一月', days: 30 },
+];
+
+/** Formats a Date as the `YYYY-MM-DD` string `<input type="date">` expects. */
+function toDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** [from, to] (both inclusive, `YYYY-MM-DD`) for "the last N days including today". */
+function dateRangeForPreset(days: number): { from: string; to: string } {
+  const today = new Date();
+  const from = new Date(today);
+  from.setDate(from.getDate() - (days - 1));
+  return { from: toDateInputValue(from), to: toDateInputValue(today) };
+}
+
 /** Formats an ISO UTC instant as Asia/Shanghai wall time `YYYY-MM-DD HH:mm:ss`. */
 function formatSyncTime(iso: string | null): string {
   if (!iso) return '暂无同步记录';
@@ -160,6 +184,8 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<WorkbenchFilters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<WorkbenchFilters>(EMPTY_FILTERS);
+  /** Which 检查日期范围 quick-preset (if any) matches the current filters; cleared on manual date edits. */
+  const [dateRangePreset, setDateRangePreset] = useState<string>('');
   const [page, setPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
   const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(AUTO_REFRESH_SECONDS);
@@ -278,7 +304,16 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
     setFilters(EMPTY_FILTERS);
     setPage(1);
     setAppliedFilters(EMPTY_FILTERS);
+    setDateRangePreset('');
     setError(null);
+  }
+
+  function selectDateRangePreset(preset: { key: string; days: number }): void {
+    const { from, to } = dateRangeForPreset(preset.days);
+    const next = { ...filters, examDateFrom: from, examDateTo: to };
+    setFilters(next);
+    setDateRangePreset(preset.key);
+    applyFilters(next);
   }
 
   const syncHealth = syncStatus?.health ?? null;
@@ -321,16 +356,38 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
             <input
               type="date"
               value={filters.examDateFrom}
-              onChange={(event) => setFilters({ ...filters, examDateFrom: event.target.value })}
+              onChange={(event) => {
+                setDateRangePreset('');
+                setFilters({ ...filters, examDateFrom: event.target.value });
+              }}
               aria-label="开始日期"
             />
             <span aria-hidden="true">至</span>
             <input
               type="date"
               value={filters.examDateTo}
-              onChange={(event) => setFilters({ ...filters, examDateTo: event.target.value })}
+              onChange={(event) => {
+                setDateRangePreset('');
+                setFilters({ ...filters, examDateTo: event.target.value });
+              }}
               aria-label="结束日期"
             />
+          </span>
+          <span className="workbench__date-presets" role="group" aria-label="快捷日期范围">
+            {DATE_RANGE_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                className={
+                  dateRangePreset === preset.key
+                    ? 'workbench__date-preset workbench__date-preset--active'
+                    : 'workbench__date-preset'
+                }
+                onClick={() => selectDateRangePreset(preset)}
+              >
+                {preset.label}
+              </button>
+            ))}
           </span>
         </label>
         <label>

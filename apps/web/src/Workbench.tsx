@@ -309,6 +309,14 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
   }
 
   function selectDateRangePreset(preset: { key: string; days: number }): void {
+    // Clicking the already-active preset toggles it off, clearing the date range.
+    if (dateRangePreset === preset.key) {
+      const cleared = { ...filters, examDateFrom: '', examDateTo: '' };
+      setFilters(cleared);
+      setDateRangePreset('');
+      applyFilters(cleared);
+      return;
+    }
     const { from, to } = dateRangeForPreset(preset.days);
     const next = { ...filters, examDateFrom: from, examDateTo: to };
     setFilters(next);

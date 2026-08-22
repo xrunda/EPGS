@@ -91,7 +91,7 @@
   font-weight: 600;
   cursor: pointer;
 }
-.workbench__date-preset:hover {
+.workbench__date-preset:hover:not(.workbench__date-preset--active) {
   border-color: #247181;
   color: #247181;
 }

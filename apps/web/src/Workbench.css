@@ -74,6 +74,32 @@
 .workbench__date-inputs > span {
   color: #8aa0a3;
 }
+.workbench__date-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+.workbench__date-preset {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid #c7d5d3;
+  border-radius: 13px;
+  background: #fff;
+  color: #4c6266;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.workbench__date-preset:hover {
+  border-color: #247181;
+  color: #247181;
+}
+.workbench__date-preset--active {
+  border-color: #247181;
+  background: #247181;
+  color: #fff;
+}
 .workbench__filters input,
 .workbench__filters select {
   width: 100%;

@@ -1,0 +1,84 @@
+/**
+ * Shared design tokens for the EPGS clinical workbench.
+ * Single source of truth for color, elevation, radius, and motion so every
+ * screen (workbench, drawer, modal, auth) reads as one system.
+ */
+:root {
+  /* Brand teal scale */
+  --ink-900: #0f2e33;
+  --ink-800: #143f45;
+  --ink-700: #17474e;
+  --ink-600: #29484d;
+  --ink-500: #3c5559;
+  --ink-400: #4c6266;
+  --ink-300: #63777a;
+  --ink-200: #8aa0a3;
+  --ink-100: #b7c6c8;
+
+  --teal-900: #0d3a3f;
+  --teal-800: #125a65;
+  --teal-700: #176b78;
+  --teal-600: #1c7d8a;
+  --teal-500: #247181;
+  --teal-400: #3a95a3;
+
+  --surface-app: #eef4f3;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f6faf9;
+  --surface-panel: #f8fbfa;
+  --border-subtle: #e5eceb;
+  --border-default: #d2dfdd;
+  --border-strong: #c2d0ce;
+
+  /* Semantic (attention levels) */
+  --red-ink: #a73732;
+  --red-accent: #d84a43;
+  --red-wash: #fff7f6;
+  --red-tint: #fbe8e6;
+
+  --yellow-ink: #7b5a00;
+  --yellow-accent: #d7a20d;
+  --yellow-wash: #fffbef;
+  --yellow-tint: #fff3d9;
+
+  --green-ink: #287044;
+  --green-accent: #3c9560;
+  --green-wash: #f4fbf6;
+  --green-tint: #e3f3e9;
+
+  /* Elevation — layered, soft, directional (not flat single-drop) */
+  --shadow-xs: 0 1px 2px rgba(15, 46, 51, 0.05);
+  --shadow-sm:
+    0 1px 2px rgba(15, 46, 51, 0.04),
+    0 4px 10px rgba(15, 46, 51, 0.05);
+  --shadow-md:
+    0 2px 4px rgba(15, 46, 51, 0.04),
+    0 10px 26px rgba(15, 46, 51, 0.07);
+  --shadow-lg:
+    0 8px 16px rgba(10, 28, 31, 0.08),
+    0 24px 56px rgba(10, 28, 31, 0.16);
+  --shadow-focus: 0 0 0 3px rgba(36, 113, 129, 0.16);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 130ms;
+  --dur-base: 190ms;
+  --dur-slow: 320ms;
+
+  --font-sans:
+    'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SFMono-Regular', ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}

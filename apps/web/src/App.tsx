@@ -3,6 +3,7 @@ import { AuthGate } from './AuthGate';
 import type { AuthUser } from './authApi';
 import { RulesModal } from './RulesModal';
 import { Workbench } from './Workbench';
+import hospitalLogo from './assets/hospital-logo.jpg';
 import './App.css';
 
 interface AuthenticatedAppProps {
@@ -23,8 +24,9 @@ function AuthenticatedApp({
     <main className="app-shell">
       <header className="app-header">
         <div className="app-brand">
-          <span className="app-brand__mark">EP</span>
-          <span>菏泽市肿瘤中医医院</span>
+          <span className="app-brand__mark">
+            <img src={hospitalLogo} alt="菏泽市肿瘤中医医院" />
+          </span>
         </div>
         <div className="app-header__actions">
           <nav aria-label="主导航" className="app-header__nav">

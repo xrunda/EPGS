@@ -6,11 +6,19 @@ body,
 
 body {
   margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .app-shell {
   min-height: 100dvh;
-  background: #edf3f2;
+  background: var(--surface-app);
+  background-image: radial-gradient(
+    1200px 480px at 12% -10%,
+    rgba(23, 107, 120, 0.06),
+    transparent 60%
+  );
   color: #19383d;
 }
 
@@ -20,8 +28,9 @@ body {
   justify-content: space-between;
   min-height: 64px;
   padding: 0 32px;
-  background: #153f46;
+  background: linear-gradient(155deg, var(--ink-800) 0%, var(--teal-900) 100%);
   color: #fff;
+  box-shadow: var(--shadow-sm);
 }
 
 .app-brand {
@@ -29,18 +38,25 @@ body {
   align-items: center;
   gap: 12px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .app-brand__mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
+  display: block;
+  flex-shrink: 0;
+  width: 290px;
+  height: 52px;
+  padding: 5px 14px;
   border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: #fff;
-  color: #153f46;
-  font-size: 13px;
+  box-shadow: var(--shadow-xs);
+}
+.app-brand__mark img {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .app-header__actions {
@@ -60,10 +76,14 @@ body {
 
 .app-header__actions button {
   border: 0;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: #d6eeea;
+  font-weight: 600;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
 }
 
 .app-header__actions button:hover,

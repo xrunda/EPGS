@@ -1,7 +1,7 @@
 :root {
-  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-sans);
   color: #16343a;
-  background: #edf4f2;
+  background: var(--surface-app);
 }
 
 button,
@@ -17,7 +17,7 @@ button {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  color: #527177;
+  color: var(--ink-300);
   letter-spacing: 0.04em;
 }
 
@@ -34,9 +34,19 @@ button {
   justify-content: center;
   padding: clamp(48px, 8vw, 120px);
   color: #effbf8;
-  background: #126b66;
+  background: linear-gradient(155deg, var(--teal-800) 0%, var(--ink-900) 100%);
   position: relative;
   overflow: hidden;
+}
+
+.login-brand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(560px 420px at 8% 8%, rgba(255, 255, 255, 0.08), transparent 60%),
+    radial-gradient(420px 320px at 92% 92%, rgba(111, 193, 203, 0.14), transparent 65%);
+  pointer-events: none;
 }
 
 .login-brand::after {
@@ -51,27 +61,39 @@ button {
 }
 
 .login-brand__mark {
-  width: 54px;
-  height: 54px;
-  display: grid;
-  place-items: center;
+  position: relative;
+  display: block;
+  width: 300px;
+  height: 60px;
+  padding: 8px 16px;
   border: 1px solid rgb(255 255 255 / 50%);
   border-radius: 14px;
-  font-weight: 800;
-  letter-spacing: -0.05em;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.login-brand__mark img {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .login-brand p {
+  position: relative;
   margin: 28px 0 10px;
+  color: rgba(239, 251, 248, 0.72);
 }
 .login-brand h1 {
+  position: relative;
   max-width: 520px;
   margin: 0 0 20px;
   font-size: clamp(32px, 4vw, 54px);
+  font-weight: 800;
   line-height: 1.12;
   letter-spacing: -0.04em;
 }
 .login-brand > span:last-child {
+  position: relative;
   color: #b9ded8;
 }
 
@@ -85,7 +107,7 @@ button {
 }
 .login-kicker {
   margin: 0 0 8px;
-  color: #16847c;
+  color: var(--teal-600);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.18em;
@@ -93,13 +115,14 @@ button {
 .login-panel h2,
 .auth-modal h2 {
   margin: 0;
-  color: #15373b;
+  color: var(--ink-800);
   font-size: 30px;
+  font-weight: 800;
   letter-spacing: -0.03em;
 }
 .login-intro {
   margin: 12px 0 30px;
-  color: #6a7f83;
+  color: var(--ink-300);
 }
 .login-panel form,
 .auth-modal form {
@@ -118,19 +141,23 @@ button {
   width: 100%;
   box-sizing: border-box;
   padding: 13px 14px;
-  border: 1px solid #cddbd8;
+  border: 1px solid var(--border-default);
   border-radius: 9px;
   background: white;
-  color: #15373b;
+  color: var(--ink-800);
   outline: none;
   transition:
-    border-color 160ms ease,
-    transform 160ms ease;
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.login-panel input:hover,
+.auth-modal input:hover {
+  border-color: var(--ink-200);
 }
 .login-panel input:focus,
 .auth-modal input:focus {
-  border-color: #16847c;
-  outline: 3px solid rgb(22 132 124 / 15%);
+  border-color: var(--teal-600);
+  box-shadow: 0 0 0 3px rgb(22 132 124 / 15%);
 }
 .login-panel button,
 .auth-modal__actions button {
@@ -139,11 +166,16 @@ button {
   border-radius: 9px;
   padding: 0 18px;
   color: white;
-  background: #126b66;
+  background: linear-gradient(155deg, var(--teal-700) 0%, var(--teal-800) 100%);
   font-weight: 750;
+  box-shadow: var(--shadow-xs);
   transition:
-    transform 150ms ease,
-    background 150ms ease;
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.login-panel button:hover:not(:disabled),
+.auth-modal__actions button:hover:not(:disabled) {
+  box-shadow: var(--shadow-sm);
 }
 .login-panel button:active,
 .auth-modal__actions button:active {
@@ -156,7 +188,7 @@ button {
 }
 .login-help {
   margin-top: 22px;
-  color: #7b8f92;
+  color: var(--ink-200);
   font-size: 13px;
   text-align: center;
 }
@@ -165,14 +197,21 @@ button {
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 14px;
+  animation: auth-msg-in var(--dur-base) var(--ease-out);
+}
+@keyframes auth-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 .auth-error {
   color: #9c2f2f;
-  background: #fff0ef;
+  background: var(--red-wash);
 }
 .auth-success {
   color: #176158;
-  background: #e5f4ef;
+  background: var(--green-wash);
 }
 .auth-error--reserved {
   min-height: 20px;
@@ -189,13 +228,26 @@ button {
   place-items: center;
   padding: 24px;
   background: rgb(12 35 37 / 52%);
+  animation: auth-backdrop-in var(--dur-base) var(--ease-out);
+}
+@keyframes auth-backdrop-in {
+  from {
+    opacity: 0;
+  }
 }
 .auth-modal {
   width: min(100%, 480px);
   padding: 28px;
   border-radius: 16px;
   background: #fdfefe;
-  box-shadow: 0 28px 80px rgb(12 35 37 / 28%);
+  box-shadow: var(--shadow-lg);
+  animation: rules-modal-in var(--dur-slow) var(--ease-out);
+}
+@keyframes rules-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
 }
 .auth-modal__header {
   display: flex;
@@ -209,9 +261,16 @@ button {
   height: 36px;
   border: 0;
   border-radius: 8px;
-  color: #527177;
-  background: #edf4f2;
+  color: var(--ink-300);
+  background: var(--surface-app);
   font-size: 24px;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.auth-modal__close:hover {
+  background: #e2eceb;
+  color: var(--ink-800);
 }
 .auth-modal__actions {
   display: flex;
@@ -221,6 +280,7 @@ button {
 .auth-modal__actions .secondary {
   color: #36575b;
   background: #e7efed;
+  box-shadow: none;
 }
 
 @media (max-width: 760px) {
@@ -240,8 +300,8 @@ button {
     margin: 20px 0 6px;
   }
   .login-brand__mark {
-    width: 44px;
-    height: 44px;
+    width: 240px;
+    height: 48px;
   }
   .login-panel {
     padding: 36px 24px 48px;
@@ -264,5 +324,6 @@ button {
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }

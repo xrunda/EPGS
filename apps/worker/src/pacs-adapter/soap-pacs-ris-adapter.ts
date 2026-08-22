@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Agent, Dispatcher } from 'undici';
 import { FetchReportsParams, FetchReportsResult, PacsReportDto } from '@epgs/shared-types';
 import { mapWireReportToDto } from './http-pacs-ris-adapter';
 import { PacsRisAdapter } from './pacs-ris-adapter.interface';
@@ -26,6 +27,8 @@ export interface SoapPacsRisAdapterOptions {
   timeoutMs?: number;
   /** Injectable fetch implementation, for testing. Defaults to global fetch (Node 24 native). */
   fetchImpl?: typeof fetch;
+  /** Skips TLS certificate verification (for internal gateways using self-signed certs). */
+  tlsInsecure?: boolean;
 }
 
 /** Raised when the gateway is unreachable, times out, or returns a non-2xx HTTP status. */
@@ -278,6 +281,7 @@ export class SoapPacsRisAdapter implements PacsRisAdapter {
   private readonly keyName: string;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly dispatcher?: Dispatcher;
 
   constructor(options: SoapPacsRisAdapterOptions) {
     this.baseUrl = options.baseUrl;
@@ -286,6 +290,9 @@ export class SoapPacsRisAdapter implements PacsRisAdapter {
     this.keyName = options.keyName;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.dispatcher = options.tlsInsecure
+      ? new Agent({ connect: { rejectUnauthorized: false } })
+      : undefined;
   }
 
   async fetchReports(params: FetchReportsParams): Promise<FetchReportsResult> {
@@ -353,7 +360,8 @@ export class SoapPacsRisAdapter implements PacsRisAdapter {
         },
         body: envelope,
         signal: controller.signal,
-      });
+        ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),
+      } as RequestInit);
     } catch (err) {
       const isAbort = err instanceof Error && err.name === 'AbortError';
       const message = isAbort

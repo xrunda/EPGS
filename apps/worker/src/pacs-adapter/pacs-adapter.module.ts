@@ -36,12 +36,13 @@ const pacsRisAdapterProvider: Provider = {
       const password = config.get<string>('pacsSoapPassword');
       const keyName = config.get<string>('pacsSoapKeyName');
       const timeoutMs = config.get<number>('pacsSoapTimeoutMs');
+      const tlsInsecure = config.get<boolean>('pacsSoapTlsInsecure');
       if (!baseUrl || !username || !password || !keyName) {
         throw new Error(
           'PACS_ADAPTER_MODE=soap requires PACS_SOAP_BASE_URL, PACS_SOAP_USERNAME, PACS_SOAP_PASSWORD and PACS_SOAP_KEY_NAME to be set.',
         );
       }
-      return new SoapPacsRisAdapter({ baseUrl, username, password, keyName, timeoutMs });
+      return new SoapPacsRisAdapter({ baseUrl, username, password, keyName, timeoutMs, tlsInsecure });
     }
     if (mode === 'csv') {
       const filePath = config.get<string>('pacsMockCsvPath');

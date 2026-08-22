@@ -28,6 +28,14 @@ export interface WorkerConfig {
   /** Only used when pacsAdapterMode='soap'. The DHCWebInterface KeyName for endoscopy reports. */
   pacsSoapKeyName?: string;
   pacsSoapTimeoutMs: number;
+  /**
+   * Skips TLS certificate verification for the SOAP gateway call. Node's
+   * fetch (unlike `curl -k`) rejects self-signed/untrusted certs by default
+   * with an opaque "fetch failed" error - internal PACS gateways commonly
+   * use such certs, so this must be explicitly opted into per deployment
+   * rather than defaulted on.
+   */
+  pacsSoapTlsInsecure: boolean;
 }
 
 export default (): WorkerConfig => ({
@@ -52,4 +60,5 @@ export default (): WorkerConfig => ({
   pacsSoapPassword: process.env.PACS_SOAP_PASSWORD,
   pacsSoapKeyName: process.env.PACS_SOAP_KEY_NAME,
   pacsSoapTimeoutMs: parseInt(process.env.PACS_SOAP_TIMEOUT_MS ?? '15000', 10),
+  pacsSoapTlsInsecure: process.env.PACS_SOAP_TLS_INSECURE === 'true',
 });

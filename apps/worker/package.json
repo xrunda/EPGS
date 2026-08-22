@@ -17,6 +17,7 @@
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "sync:once": "ts-node --transpile-only -r tsconfig-paths/register src/sync/run-once.ts",
+    "reclassify:once": "ts-node --transpile-only -r tsconfig-paths/register src/sync/reclassify-once.ts",
     "mock:convert": "ts-node --transpile-only -r tsconfig-paths/register src/pacs-adapter/mock-csv-convert.ts"
   },
   "dependencies": {

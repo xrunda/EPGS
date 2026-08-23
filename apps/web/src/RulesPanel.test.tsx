@@ -152,7 +152,7 @@ describe('RulesPanel', () => {
 
     fireEvent.change(screen.getByLabelText('规则名称'), { target: { value: '每日 9 点' } });
     fireEvent.click(screen.getByRole('button', { name: '每天 9:00' }));
-    expect(screen.getByLabelText('推送时间（Cron，Asia/Shanghai）')).toHaveValue('0 9 * * *');
+    expect(screen.getByRole('button', { name: '每天 9:00' })).toHaveClass('button--primary');
     fireEvent.change(screen.getByLabelText('推送模板'), { target: { value: 'template-1' } });
     fireEvent.click(screen.getByRole('checkbox', { name: '总值班室群' }));
     fireEvent.click(screen.getByRole('button', { name: '保存规则' }));

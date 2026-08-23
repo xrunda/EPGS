@@ -249,11 +249,22 @@
   white-space: nowrap;
 }
 
+
+.notification-cron-field {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+  color: var(--ink-400);
+  font-size: 13px;
+  font-weight: 600;
+}
+.notification-cron-field__label {
+  color: var(--ink-400);
+}
 .notification-cron-presets {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: -8px 0 12px;
 }
 .notification-cron-presets .button {
   padding: 5px 11px;
@@ -262,7 +273,7 @@
 }
 
 .notification-channel-picker {
-  margin: 0 0 12px;
+  margin: 16px 0 0;
   padding: 10px 12px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
@@ -273,21 +284,31 @@
   font-size: 12px;
 }
 .notification-channel-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 6px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
   max-height: 168px;
   overflow-y: auto;
 }
 .notification-channel-option {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 7px;
+  max-width: 100%;
   font-size: 13px;
   cursor: pointer;
 }
 .notification-channel-option input {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
   accent-color: var(--teal-700);
+}
+.notification-channel-option span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .notification-option-error {
   margin: 0;

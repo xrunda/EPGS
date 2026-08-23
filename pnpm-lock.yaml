@@ -141,6 +141,9 @@ importers:
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
+      undici:
+        specifier: ^6.21.0
+        version: 6.28.0
 
   apps/web:
     dependencies:

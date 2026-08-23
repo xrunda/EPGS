@@ -30,6 +30,13 @@ export const envValidationSchema = Joi.object({
     .uri({ scheme: [/https?/] })
     .default('http://localhost:5173'),
 
+  // Issue #54: display name substituted for {{hospitalName}} in notification
+  // template rendering (see configuration.ts AppConfig.hospitalName doc).
+  // Optional with a sensible default - a deployment that runs the notification
+  // module for a different hospital should set it, but the app must never fail
+  // to boot over an absent branding value.
+  HOSPITAL_NAME: Joi.string().default('菏泽市中医医院'),
+
   // Issue #53: encryption key for NotificationChannel.webhookUrlCiphertext -
   // the first reversible secret this schema stores. Required, no default,
   // same fail-fast rationale as JWT_SECRET/DATABASE_URL above - encrypting

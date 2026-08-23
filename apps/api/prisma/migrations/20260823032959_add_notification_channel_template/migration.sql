@@ -21,7 +21,14 @@
 CREATE TYPE "NotificationMsgType" AS ENUM ('TEXT', 'NEWS');
 
 -- AlterEnum
-ALTER TYPE "AuditAction" ADD VALUE 'NOTIFICATION_TEST_SEND';
+--
+-- IF NOT EXISTS: rollback.sql deliberately does NOT remove this value -
+-- PostgreSQL has no ALTER TYPE ... DROP VALUE, so removing it would require
+-- a manual enum rebuild (see that script's header). The CI db-migrations job
+-- rolls this migration back and then re-applies it, so this statement runs
+-- against a database where the value may already exist - IF NOT EXISTS makes
+-- the re-apply idempotent rather than failing with duplicate_object.
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'NOTIFICATION_TEST_SEND';
 
 -- CreateTable
 CREATE TABLE "notification_channel" (

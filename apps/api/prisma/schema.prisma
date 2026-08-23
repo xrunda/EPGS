@@ -200,7 +200,7 @@ enum AuditAction {
 
 /// Message shape for a notification_template. Deliberately mirrors what the
 /// WeCom (企业微信) group-robot webhook accepts today: `TEXT` -> `msgtype:
-/// text`, `NEWS` -> `msgtype: news` (single-article image/title/summary/link
+/// markdown`, `NEWS` -> `msgtype: news` (single-article image/title/summary/link
 /// card). See docs/notification-design.md §2/§9 - richer types (WeCom
 /// textcard / template_card) require the self-built-app message API instead
 /// of the webhook, which is out of scope until the "企业可信IP" circular

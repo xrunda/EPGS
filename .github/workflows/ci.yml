@@ -210,9 +210,11 @@ jobs:
 
       - name: Roll back migration
         run: |
-          # Newest-first: issue #14's index rollback precedes the #13 -> #31 -> #3
-          # chain so the migration sequence is unwound in the same order it was
-          # applied (see docs/go-live.md §7.2 for the full runbook).
+          # Newest-first: #53's notification rollback precedes #14's index
+          # rollback, which precedes the #13 -> #31 -> #3 chain, so the
+          # migration sequence is unwound in the same order it was applied
+          # (see docs/go-live.md §7.2 for the full runbook).
+          psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260823032959_add_notification_channel_template/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821110858_add_monitor_record_patient_type_index/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821103732_add_auth_access_and_audit_log/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821093500_add_local_auth/rollback.sql
@@ -220,12 +222,11 @@ jobs:
         env:
           PGPASSWORD: epgs
 
-      # Issue #26: two migrations now exist, so clearing only migration-1's
-      # history row would leave migration-2 marked applied while its DDL was
-      # rolled back - the re-deploy below would then skip it and the drift
-      # gate would fail. Delete ALL migration history rows so the re-deploy
-      # re-applies both migrations (today this is a strict generalization:
-      # migration-1 was previously the only row).
+      # Issue #26: with multiple migrations now present, clearing only the
+      # earliest history row would leave later ones marked applied while
+      # their DDL was rolled back - the re-deploy below would then skip them
+      # and the drift gate would fail. Delete ALL migration history rows so
+      # the re-deploy re-applies every migration.
       - name: Clear migration history rows for rolled-back migration
         run: psql "$DATABASE_URL" -c "DELETE FROM \"_prisma_migrations\";"
         env:

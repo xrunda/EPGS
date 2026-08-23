@@ -46,7 +46,12 @@ export interface ExecuteRuleInput {
   trigger: PushTrigger;
   /** Shanghai YYYY-MM-DD summary window; defaults to today (Shanghai). */
   windowDate?: string;
-  /** Injectable clock (wins over nowProvider) for deterministic tests. */
+  /**
+   * Injectable clock (wins over nowProvider) for deterministic tests: anchors
+   * the summary window date AND startedAt. finishedAt always uses the real
+   * completion clock (this.nowProvider), never this anchor - otherwise a
+   * scheduled run would stamp finishedAt == startedAt.
+   */
   now?: Date;
   /** Department scope (empty = global), matching MonitorService.summary's contract. */
   scope?: string[];
@@ -168,7 +173,11 @@ export class NotificationRuleExecutor {
     await this.deps.store.completePushLog({
       pushLogId: pushLog.id,
       status,
-      finishedAt: input.now ?? this.nowProvider(),
+      // finishedAt is the REAL completion instant, never the injected clock
+      // anchor: the scheduler's tick passes a fixed `now` (used for startedAt +
+      // window date), and reusing it here would freeze finishedAt == startedAt
+      // even though the actual channel pushes take real time.
+      finishedAt: this.nowProvider(),
       errorSummary: status === 'SUCCESS' ? null : truncate(finalSummary, MAX_ERROR_SUMMARY),
     });
 

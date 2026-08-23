@@ -71,8 +71,13 @@ function makePush(outcome: () => Promise<Record<string, unknown>>): { pushToChan
 function build(
   store: ReturnType<typeof makeStore>,
   push: ReturnType<typeof makePush>,
+  nowProvider?: () => Date,
 ): NotificationRuleExecutor {
-  const deps: NotificationRuleExecutorDeps = { store: store as never, push: push as unknown as NotificationPushService };
+  const deps: NotificationRuleExecutorDeps = {
+    store: store as never,
+    push: push as unknown as NotificationPushService,
+    ...(nowProvider ? { nowProvider } : {}),
+  };
   return new NotificationRuleExecutor(deps);
 }
 
@@ -201,6 +206,25 @@ describe('NotificationRuleExecutor.execute', () => {
     const executor = build(store, push);
 
     await expect(executor.execute(input())).rejects.toThrow('db exploded');
+  });
+
+  it('stamps finishedAt with the real completion clock, not the injected now anchor', async () => {
+    // Regression: the worker's scheduler passes a fixed tick `now` (used for
+    // startedAt + window date). finishedAt must NOT reuse it - that froze
+    // finishedAt == startedAt even though the channel pushes take real time.
+    const completedAt = new Date('2026-08-23T01:00:02Z');
+    const store = makeStore();
+    const push = makePush(successOutcome());
+    const executor = build(store, push, () => completedAt);
+
+    await executor.execute(input());
+
+    expect(store.createPushLog).toHaveBeenCalledWith(
+      expect.objectContaining({ startedAt: NOW }),
+    );
+    expect(store.completePushLog).toHaveBeenCalledWith(
+      expect.objectContaining({ finishedAt: completedAt }),
+    );
   });
 
   it('injects windowDate into the push_log and each channel push', async () => {

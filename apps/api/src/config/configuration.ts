@@ -37,6 +37,14 @@ export interface AppConfig {
    * See NotificationSecretCipher - never persisted, never logged.
    */
   notificationSecretKey: string;
+  /**
+   * Display name of the hospital, substituted for the `{{hospitalName}}`
+   * placeholder when rendering notification templates (issue #54). Optional
+   * with the default `菏泽市中医医院` so template rendering works out of the
+   * box; override via HOSPITAL_NAME if the deployment is a different
+   * hospital.
+   */
+  hospitalName: string;
 }
 
 export default (): AppConfig => {
@@ -55,5 +63,6 @@ export default (): AppConfig => {
       ? process.env.COOKIE_SECURE === 'true'
       : nodeEnv === 'production',
     notificationSecretKey: process.env.NOTIFICATION_SECRET_KEY ?? '',
+    hospitalName: process.env.HOSPITAL_NAME ?? '菏泽市中医医院',
   };
 };

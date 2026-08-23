@@ -1,7 +1,12 @@
-# EPGS 消息推送模块设计（草案，尚未实现）
+# EPGS 消息推送模块设计
 
-> 状态：设计草案，未开 issue、未落代码。用于团队内部对齐范围与关键决策，
-> 作为后续拆分 issue 与开发的依据。字段/接口形状可能在评审后调整。
+> 状态：已按本设计拆分落地。
+> - issue #53：数据模型 + Webhook URL 加密（`NotificationChannel` /
+>   `NotificationTemplate` / `NotificationMsgType` / `NotificationSecretCipher`）。
+> - issue #54：§8 的全部 HTTP API 已实现并附 e2e 测试——接口契约以
+>   `docs/notification-api.md` 为准（本节的响应示例可能略旧），读取字段按
+>   §5 收敛为 `webhookUrlMasked`，`PUT` 的 `webhookUrl` 只写不回填。
+> - 尚未实现：定时/自动推送（§2 明确 V1 不做）。
 
 ## 1. 背景与目标
 
@@ -161,21 +166,30 @@ TOKEN` 是环境变量、从未落库）。现有基础设施没有可直接复�
 不是患者姓名等直接标识信息，但从审慎角度不必要地扩大 audit_log 的
 数据面）。
 
-## 8. 接口草案
+## 8. HTTP 接口（已实现，issue #54）
+
+已全部落地于 `apps/api/src/notifications/`，e2e 见
+`apps/api/test/notifications.e2e-spec.ts`。接口契约以
+`docs/notification-api.md` 为准；与本节草案的差异已在状态头与下方注明。
 
 参考 `docs/rules-api.md` 的既有惯例：统一错误格式、`RolesGuard` 鉴权、
-执行者以服务端登录账号为准（body 中 `actorId` 不可信）。
+执行者以服务端登录账号为准（body 中 `actorId` 已废弃、忽略）。
 
 | 接口                                             | 方法 | 权限          | 说明                       |
 | ------------------------------------------------ | ---- | ------------- | -------------------------- |
-| `/api/notification-channels`                     | GET  | 任意已登录     | 渠道列表，`webhookUrl` 脱敏 |
-| `/api/notification-channels`                     | POST | SYSTEM_ADMIN  | 新增渠道                    |
-| `/api/notification-channels/{id}`                | PUT  | SYSTEM_ADMIN  | 编辑渠道（含启停）          |
-| `/api/notification-templates`                    | GET  | 任意已登录     | 模板列表                    |
+| `/api/notification-channels`                     | GET  | 任意已登录     | 渠道列表（分页信封），只回 `webhookUrlMasked` |
+| `/api/notification-channels`                     | POST | SYSTEM_ADMIN  | 新增渠道（webhookUrl 加密存储） |
+| `/api/notification-channels/{id}`                | PUT  | SYSTEM_ADMIN  | 编辑渠道（含启停）；`webhookUrl` 只写不回填，缺失保留原密文 |
+| `/api/notification-templates`                    | GET  | 任意已登录     | 模板列表（分页信封，可按 msgType/启停过滤） |
 | `/api/notification-templates`                    | POST | SYSTEM_ADMIN  | 新增模板                    |
 | `/api/notification-templates/{id}`                | PUT  | SYSTEM_ADMIN  | 编辑模板（含启停）          |
 | `/api/notification-templates/variables`           | GET  | 任意已登录     | 可用占位符字典（见 §4）     |
 | `/api/notification-channels/{id}/test-send`       | POST | SYSTEM_ADMIN  | 用指定模板渲染当日数据并同步发送，见下 |
+
+实现与草案的差异：读取字段按 §5 收敛为 `webhookUrlMasked`（掩码
+`key=` 值前 4 字符 + `****`，解密失败回 `<unavailable>` 占位、不 500 列表）；
+`PUT` 的 `webhookUrl` 为**只写**字段——提交则替换并重新加密，缺失则保留
+原密文，响应永远只含 `webhookUrlMasked`，因此前端无需（也无法）回填明文。
 
 `POST /api/notification-channels/{id}/test-send` 请求体：
 
@@ -206,6 +220,23 @@ TOKEN` 是环境变量、从未落库）。现有基础设施没有可直接复�
   }
 }
 ```
+
+实现附加语义：
+
+- **HTTP 状态**：`200` = 企业微信已接收（`errcode==0`）；`502` = 企业微信
+  拒绝/网络失败，`NOTIFICATION_SEND_FAILED` 的 `details` 透传
+  `{wecomErrCode, wecomErrMsg}`。渠道/模板不存在或停用 → `404`/`400`
+  （`NOTIFICATION_CHANNEL_NOT_FOUND` / `NOTIFICATION_TEMPLATE_NOT_FOUND` /
+  `NOTIFICATION_CHANNEL_DISABLED` / `NOTIFICATION_TEMPLATE_DISABLED`），
+  此时未发起真实外呼，**不记** test-send 审计。
+- **审计（§7）**：仅真实外呼（成功或被企业微信拒绝）记
+  `NOTIFICATION_TEST_SEND`——成功 meta
+  `{channelId, templateId, result:'success', httpStatus:200}`；失败 meta
+  `{..., result:'failure', httpStatus:502, wecomErrCode, wecomErrMsg}`。
+  meta 一律**不含**渲染后的消息正文（§7 决定）。
+- **渲染口径**：数字来自 `MonitorService.summary`（§4），医院名来自
+  `HOSPITAL_NAME` 环境变量（可选，默认 `菏泽市中医医院`）。消息发送目标
+  为解密后的 webhook URL——key 明文只出现在出站请求里，不进日志/异常/审计。
 
 ## 9. 待确认事项（本设计不擅自决定）
 

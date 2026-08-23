@@ -9,3 +9,5 @@ process.env.NODE_ENV = process.env.NODE_ENV ?? 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'test-only-secret-at-least-32-characters';
 process.env.NOTIFICATION_SECRET_KEY =
   process.env.NOTIFICATION_SECRET_KEY ?? 'test-only-notification-key-at-least-32-chars';
+// Issue #54: optional - test rendering of {{hospitalName}} with a stable value.
+process.env.HOSPITAL_NAME = process.env.HOSPITAL_NAME ?? '菏泽市中医医院';

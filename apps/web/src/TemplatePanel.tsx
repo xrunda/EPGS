@@ -3,6 +3,7 @@ import type {
   CreateNotificationTemplateBody,
   NotificationMsgTypeDto,
   NotificationTemplateDto,
+  NotificationTemplatePresetDto,
   NotificationVariableDto,
   UpdateNotificationTemplateBody,
 } from '@epgs/shared-types';
@@ -10,6 +11,7 @@ import {
   createTemplate,
   formatTimestamp,
   friendlyError,
+  getNotificationTemplatePresets,
   getNotificationVariables,
   listTemplates,
   updateTemplate,
@@ -72,6 +74,9 @@ export function TemplatePanel({
   // 插入变量字典（验收点 #2：选项只来自 GET /api/notification-templates/variables，绝不硬编码）
   const [variables, setVariables] = useState<NotificationVariableDto[]>([]);
   const [variablesError, setVariablesError] = useState(false);
+  // 默认模板预设（来自 GET /api/notification-templates/presets，选择后填充正文，仍可继续编辑）
+  const [presets, setPresets] = useState<NotificationTemplatePresetDto[]>([]);
+  const [presetsError, setPresetsError] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
   const query = useMemo(
@@ -120,6 +125,23 @@ export function TemplatePanel({
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    getNotificationTemplatePresets()
+      .then((items) => {
+        if (active) {
+          setPresets(items);
+          setPresetsError(false);
+        }
+      })
+      .catch(() => {
+        if (active) setPresetsError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   function openCreate(): void {
     setEditing('new');
     setDraft(EMPTY_TEMPLATE);
@@ -156,6 +178,13 @@ export function TemplatePanel({
       setDirty(false);
       onDirtyChange(false);
     }
+  }
+
+  /** 选择默认模板：用预设正文替换当前内容（仍可手动编辑）；select 受控 value="" 选中后自动复位。 */
+  function applyPreset(id: string): void {
+    const preset = presets.find((item) => item.id === id);
+    if (!preset) return;
+    updateDraft('content', preset.content);
   }
 
   /** 在正文 textarea 光标处插入 {{key}}；失焦仍保留选区（浏览器行为）。 */
@@ -501,6 +530,27 @@ export function TemplatePanel({
                 </label>
               </>
             )}
+            <label>
+              选择默认模板
+              <select
+                value=""
+                onChange={(event) => applyPreset(event.target.value)}
+                aria-label="选择默认模板"
+              >
+                <option value="">选择默认模板…</option>
+                {presetsError ? (
+                  <option value="" disabled>
+                    默认模板加载失败；请刷新后重试
+                  </option>
+                ) : (
+                  presets.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
             <label>
               插入变量
               <select

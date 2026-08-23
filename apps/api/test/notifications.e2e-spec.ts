@@ -283,6 +283,17 @@ describe('Notification API (e2e, real Postgres)', () => {
     ]);
   });
 
+  itWithDb('preset content templates are exposed to any authenticated user', async () => {
+    const res = await adminAgent.get('/api/notification-templates/presets').expect(200);
+    expect(res.body).toHaveLength(3);
+    expect(res.body.map((p: any) => p.id)).toEqual(['red-alert', 'daily-summary', 'quick-alert']);
+    for (const preset of res.body) {
+      expect(typeof preset.name).toBe('string');
+      expect(preset.name.length).toBeGreaterThan(0);
+      expect(preset.content).toContain('{{');
+    }
+  });
+
   itWithDb('test-send renders LIVE summary counts and pushes the decrypted markdown payload', async () => {
     const channel = await createChannel();
     const template = await createTemplate({

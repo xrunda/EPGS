@@ -143,6 +143,16 @@ export interface NotificationVariableDto {
   example: string;
 }
 
+/** One preset content-template skeleton (`GET /api/notification-templates/presets`). */
+export interface NotificationTemplatePresetDto {
+  /** Stable preset id, e.g. `red-alert`. */
+  id: string;
+  /** Human-readable name shown in the config UI, e.g. `红色关注提醒`. */
+  name: string;
+  /** Message-body skeleton with {{placeholder}} tokens from the variables dictionary. */
+  content: string;
+}
+
 /** Body for `POST /api/notification-channels/{id}/test-send`. */
 export interface TestSendBody {
   templateId: string;

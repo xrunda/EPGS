@@ -203,4 +203,15 @@ describe('Notification controllers', () => {
       );
     });
   });
+
+  describe('template reads', () => {
+    it('forwards presets from the service, read-only with no audit row', async () => {
+      const preset = { id: 'red-alert', name: '红色关注提醒', content: '{{hospitalName}} {{reportDate}} 红色关注 {{redCount}} 例' };
+      service.getPresets = jest.fn(() => [preset]);
+
+      expect(templatesController.presets()).toEqual([preset]);
+      expect(service.getPresets).toHaveBeenCalledTimes(1);
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+  });
 });

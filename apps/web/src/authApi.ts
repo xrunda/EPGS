@@ -1,3 +1,5 @@
+import type { AppRoleDto } from '@epgs/shared-types';
+
 const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:3000';
 
@@ -5,6 +7,8 @@ export interface AuthUser {
   id: string;
   username: string;
   displayName: string;
+  /** 当前用户角色（来自 /api/auth/me，与后端 app_user_access 实时一致）。 */
+  roles: AppRoleDto[];
 }
 
 interface ApiErrorBody {
@@ -40,9 +44,13 @@ export async function getCurrentUser(): Promise<AuthUser> {
   return (await request<{ user: AuthUser }>('/api/auth/me')).user;
 }
 
-export async function login(username: string, password: string): Promise<AuthUser> {
+export async function login(
+  username: string,
+  password: string,
+): Promise<Omit<AuthUser, 'roles'>> {
+  // login 响应刻意保持最小形状（不含 roles）；roles 需登录后经 /api/auth/me 获取
   return (
-    await request<{ user: AuthUser }>('/api/auth/login', {
+    await request<{ user: Omit<AuthUser, 'roles'> }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     })

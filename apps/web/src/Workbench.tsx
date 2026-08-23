@@ -14,6 +14,8 @@ import './Workbench.css';
 interface WorkbenchProps {
   /** Opens the read-only rule-configuration modal (owned by App). */
   onOpenRules: () => void;
+  /** Opens the notification-configuration modal (owned by App). Optional for compat. */
+  onOpenNotifications?: () => void;
 }
 
 interface WorkbenchFilters {
@@ -174,7 +176,10 @@ function friendlyError(error: unknown): string {
   return '请求失败，请检查网络后重试。';
 }
 
-export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
+export function Workbench({
+  onOpenRules,
+  onOpenNotifications,
+}: WorkbenchProps): JSX.Element {
   const [items, setItems] = useState<MonitorExamDto[]>([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<MonitorSummaryDto | null>(null);
@@ -348,6 +353,11 @@ export function Workbench({ onOpenRules }: WorkbenchProps): JSX.Element {
           <button className="button button--primary" type="button" onClick={onOpenRules}>
             监测规则
           </button>
+          {onOpenNotifications && (
+            <button className="button" type="button" onClick={onOpenNotifications}>
+              消息推送
+            </button>
+          )}
         </div>
       </header>
 

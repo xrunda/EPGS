@@ -58,7 +58,6 @@ function jsonResponse(body: unknown, status = 200): Response {
 function renderPanel(
   overrides: Partial<{
     canManageNotifications: boolean;
-    onOpenLogs: (target: NotificationRuleDto) => void;
   }> = {},
 ) {
   return render(
@@ -66,7 +65,6 @@ function renderPanel(
       actorId="notify-admin"
       canManageNotifications={overrides.canManageNotifications ?? true}
       onDirtyChange={vi.fn()}
-      onOpenLogs={overrides.onOpenLogs ?? vi.fn()}
     />,
   );
 }
@@ -224,16 +222,6 @@ describe('RulesPanel', () => {
     expect(
       vi.mocked(fetch).mock.calls.some(([url, init]) => init?.method === 'POST' && String(url).includes('/run')),
     ).toBe(false);
-  });
-
-  it('opens the push log dialog for a rule', async () => {
-    const onOpenLogs = vi.fn();
-    renderPanel({ onOpenLogs });
-    await screen.findByText('每日 9 点');
-
-    fireEvent.click(screen.getByRole('button', { name: '日志' }));
-
-    expect(onOpenLogs).toHaveBeenCalledWith(rule);
   });
 
   it('hides all write actions in read-only mode', async () => {

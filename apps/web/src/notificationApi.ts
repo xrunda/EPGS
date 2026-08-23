@@ -237,15 +237,13 @@ export async function runRule(ruleId: string, windowDate?: string): Promise<RunN
   );
 }
 
-export async function listPushLogs(
-  ruleId: string,
-  query: ListPushLogsQuery,
-): Promise<PaginatedPushLogs> {
+/** 聚合推送日志（一级「日志」tab）：跨所有规则/模板，最新在前。 */
+export async function listAllPushLogs(query: ListPushLogsQuery): Promise<PaginatedPushLogs> {
   const params = new URLSearchParams();
   params.set('page', String(query.page ?? 1));
   params.set('pageSize', String(query.pageSize ?? 20));
   return parseResponse(
-    await fetch(`${API_BASE_URL}/api/notification-rules/${ruleId}/push-logs?${params.toString()}`, {
+    await fetch(`${API_BASE_URL}/api/notification-push-logs?${params.toString()}`, {
       credentials: 'include',
     }),
   );

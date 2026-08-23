@@ -4,6 +4,7 @@ import {
   PaginatedNotificationRules,
   NotificationRuleDto,
   PaginatedPushLogs,
+  PushLogDto,
   RunNotificationRuleResult,
 } from '@epgs/shared-types';
 import {
@@ -122,20 +123,41 @@ export class NotificationRulesService {
     await this.findRuleOrThrow(ruleId);
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
+    const { items, total } = await this.listPushLogsPage({ ruleId }, page, pageSize);
+    return { items, total, page, pageSize };
+  }
 
-    const where = { ruleId };
+  /**
+   * Aggregated log list across every rule/template (GET /api/notification-push-logs).
+   * Unlike the per-rule variant there is no rule existence check - the web UI's
+   * first-level「日志」tab wants all runs in one place, newest first.
+   */
+  async listAllPushLogs(query: ListPushLogsQueryDto): Promise<PaginatedPushLogs> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const { items, total } = await this.listPushLogsPage({}, page, pageSize);
+    return { items, total, page, pageSize };
+  }
+
+  private async listPushLogsPage(
+    where: Prisma.PushLogWhereInput,
+    page: number,
+    pageSize: number,
+  ): Promise<{ items: PushLogDto[]; total: number }> {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.pushLog.findMany({
         where,
         orderBy: [{ startedAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { deliveries: { include: { channel: true }, orderBy: { id: 'asc' } } },
+        include: {
+          deliveries: { include: { channel: true }, orderBy: { id: 'asc' } },
+          rule: { include: { template: true } },
+        },
       }),
       this.prisma.pushLog.count({ where }),
     ]);
-
-    return { items: items.map(toPushLogDto), total, page, pageSize };
+    return { items: items.map(toPushLogDto), total };
   }
 
   /**

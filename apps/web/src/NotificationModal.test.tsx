@@ -4,6 +4,7 @@ import type {
   NotificationChannelDto,
   NotificationRuleDto,
   NotificationTemplateDto,
+  PushLogDto,
 } from '@epgs/shared-types';
 import { NotificationModal } from './NotificationModal';
 
@@ -47,6 +48,30 @@ const rule: NotificationRuleDto = {
   updatedBy: 'admin',
 };
 
+const pushLog: PushLogDto = {
+  id: 'log-1',
+  ruleId: 'rule-1',
+  ruleName: '每日 9 点',
+  templateName: '红色关注提醒',
+  windowDate: '2026-08-23',
+  trigger: 'MANUAL',
+  status: 'SUCCESS',
+  errorSummary: null,
+  startedAt: '2026-08-23T01:00:00.000Z',
+  finishedAt: '2026-08-23T01:00:01.000Z',
+  deliveries: [
+    {
+      id: 'delivery-1',
+      channelId: 'channel-1',
+      channelName: '全体护士群',
+      status: 'SUCCESS',
+      wecomErrCode: null,
+      wecomErrMsg: null,
+      sentAt: '2026-08-23T01:00:01.000Z',
+    },
+  ],
+};
+
 function jsonResponse(body: unknown, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -83,8 +108,8 @@ describe('NotificationModal', () => {
         if (url.includes('/api/notification-channels')) {
           return jsonResponse({ items: [channel], total: 1, page: 1, pageSize: 20 });
         }
-        if (url.includes('/push-logs')) {
-          return jsonResponse({ items: [], total: 0, page: 1, pageSize: 20 });
+        if (url.includes('/api/notification-push-logs')) {
+          return jsonResponse({ items: [pushLog], total: 1, page: 1, pageSize: 20 });
         }
         if (url.includes('/api/notification-rules')) {
           return jsonResponse({ items: [rule], total: 1, page: 1, pageSize: 20 });
@@ -231,20 +256,20 @@ describe('NotificationModal', () => {
     ).toBe(true);
   });
 
-  it('opens the push log dialog and Escape closes only that layer, not the modal', async () => {
+  it('lazy-mounts the logs panel on the 日志 tab and shows aggregated rows', async () => {
     renderModal();
     await screen.findByText('全体护士群');
+    expect(
+      vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/notification-push-logs')),
+    ).toBe(false);
 
-    fireEvent.click(screen.getByRole('tab', { name: '规则' }));
-    await screen.findByText('每日 9 点');
-    fireEvent.click(screen.getByRole('button', { name: '日志' }));
+    fireEvent.click(screen.getByRole('tab', { name: '日志' }));
 
-    expect(await screen.findByRole('dialog', { name: '推送日志' })).toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: '消息推送配置' })).toBeInTheDocument();
-
-    fireEvent.keyDown(document, { key: 'Escape' });
-
-    expect(screen.queryByRole('dialog', { name: '推送日志' })).not.toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: '消息推送配置' })).toBeInTheDocument();
+    expect(screen.getByText('正在加载推送日志…')).toBeInTheDocument();
+    expect(await screen.findByText('每日 9 点')).toBeInTheDocument();
+    expect(screen.getByText('红色关注提醒')).toBeInTheDocument();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/notification-push-logs')),
+    ).toBe(true);
   });
 });

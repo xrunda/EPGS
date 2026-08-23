@@ -13,6 +13,7 @@ import { PrismaNotificationPushStore, MonitorSummaryProvider } from './notificat
 import { NotificationChannelsController } from './notification-channels.controller';
 import { NotificationTemplatesController } from './notification-templates.controller';
 import { NotificationRulesController } from './notification-rules.controller';
+import { NotificationPushLogsController } from './notification-push-logs.controller';
 import { AuditModule } from '../audit/audit.module';
 import { MonitorModule } from '../monitor/monitor.module';
 
@@ -38,6 +39,7 @@ import { MonitorModule } from '../monitor/monitor.module';
     NotificationChannelsController,
     NotificationTemplatesController,
     NotificationRulesController,
+    NotificationPushLogsController,
   ],
   providers: [
     NotificationsService,

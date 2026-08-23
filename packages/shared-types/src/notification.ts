@@ -275,6 +275,10 @@ export interface PushDeliveryDto {
 export interface PushLogDto {
   id: string;
   ruleId: string;
+  /** Denormalized rule name so an aggregated log list can label its rows. */
+  ruleName: string;
+  /** Denormalized template name reached through the rule's template binding. */
+  templateName: string;
   /** Shanghai YYYY-MM-DD summary window this run pushed. */
   windowDate: string;
   trigger: NotificationPushTriggerDto;
@@ -286,7 +290,7 @@ export interface PushLogDto {
   deliveries: PushDeliveryDto[];
 }
 
-/** Paginated response envelope for `GET /api/notification-rules/:id/push-logs`. */
+/** Paginated response envelope for a push-log list endpoint. */
 export interface PaginatedPushLogs {
   items: PushLogDto[];
   total: number;
@@ -294,7 +298,7 @@ export interface PaginatedPushLogs {
   pageSize: number;
 }
 
-/** Query params for `GET /api/notification-rules/:id/push-logs`. */
+/** Query params for a push-log list endpoint. */
 export interface ListPushLogsQuery {
   page?: number;
   pageSize?: number;

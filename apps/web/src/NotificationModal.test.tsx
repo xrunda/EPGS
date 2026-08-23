@@ -225,7 +225,7 @@ describe('NotificationModal', () => {
     expect(screen.getByText('正在加载规则…')).toBeInTheDocument();
     expect(await screen.findByText('每日 9 点')).toBeInTheDocument();
     const row = screen.getByRole('row', { name: /每日 9 点/ });
-    expect(within(row).getByText('0 9 * * *')).toBeInTheDocument();
+    expect(within(row).getByText('红色关注提醒')).toBeInTheDocument();
     expect(
       vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/notification-rules')),
     ).toBe(true);

@@ -6,8 +6,8 @@ import { TemplatePanel } from './TemplatePanel';
 const template: NotificationTemplateDto = {
   id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   name: '红色关注提醒',
-  msgType: 'NEWS',
-  titleTemplate: '红色关注提醒',
+  msgType: 'TEXT',
+  titleTemplate: null,
   contentTemplate: '{{redCount}} 例红色关注患者',
   coverImageUrl: null,
   linkUrl: null,
@@ -93,7 +93,7 @@ describe('TemplatePanel', () => {
     expect(screen.getByText('正在加载模板…')).toBeInTheDocument();
     expect(await screen.findByText('红色关注提醒')).toBeInTheDocument();
     const row = screen.getByRole('row', { name: /红色关注提醒/ });
-    expect(within(row).getByText('图文（NEWS）')).toBeInTheDocument();
+    expect(within(row).getByText('文本（TEXT）')).toBeInTheDocument();
     expect(within(row).getByText('启用')).toBeInTheDocument();
   });
 
@@ -101,7 +101,7 @@ describe('TemplatePanel', () => {
     renderPanel();
     await screen.findByText('红色关注提醒');
 
-    fireEvent.change(screen.getByLabelText('消息类型'), { target: { value: 'NEWS' } });
+    fireEvent.change(screen.getByLabelText('消息类型'), { target: { value: 'TEXT' } });
     fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'true' } });
     fireEvent.click(screen.getByRole('button', { name: '查询' }));
 
@@ -109,7 +109,7 @@ describe('TemplatePanel', () => {
       expect(
         vi.mocked(fetch).mock.calls.some(
           ([url]) =>
-            String(url).includes('msgType=NEWS') && String(url).includes('isEnabled=true'),
+            String(url).includes('msgType=TEXT') && String(url).includes('isEnabled=true'),
         ),
       ).toBe(true);
     });
@@ -138,69 +138,62 @@ describe('TemplatePanel', () => {
     expect(body).not.toHaveProperty('linkUrl');
   });
 
-  it('creates a NEWS template with title and explicit nulls for blank links', async () => {
+  it('offers only TEXT in the editor and marks NEWS as pending', async () => {
     renderPanel();
     await screen.findByText('红色关注提醒');
 
     fireEvent.click(screen.getByRole('button', { name: '新增模板' }));
-    fireEvent.change(screen.getByLabelText('模板名称'), { target: { value: '图文预警' } });
-    fireEvent.change(newTemplateEditor().getByLabelText('消息类型'), {
-      target: { value: 'NEWS' },
-    });
-    fireEvent.change(screen.getByLabelText('消息标题'), { target: { value: '红色预警' } });
-    fireEvent.change(screen.getByLabelText('消息正文模板'), { target: { value: '{{redCount}} 例红色关注' } });
+    const typeSelect = newTemplateEditor().getByLabelText('消息类型') as HTMLSelectElement;
+    const textOption = within(typeSelect).getByRole('option', {
+      name: '文本（TEXT）',
+    }) as HTMLOptionElement;
+    const newsOption = within(typeSelect).getByRole('option', {
+      name: '图文（NEWS）· 待开发',
+    }) as HTMLOptionElement;
+    expect(textOption.disabled).toBe(false);
+    expect(newsOption.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('模板名称'), { target: { value: '文本值班提醒' } });
+    fireEvent.change(screen.getByLabelText('消息正文模板'), { target: { value: '今晚值班：{{name}}' } });
     fireEvent.click(screen.getByRole('button', { name: '保存模板' }));
 
     expect(await screen.findByText('模板已新增')).toBeInTheDocument();
     const postCall = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'POST');
-    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
-      name: '图文预警',
-      msgType: 'NEWS',
-      titleTemplate: '红色预警',
-      contentTemplate: '{{redCount}} 例红色关注',
-      coverImageUrl: null,
-      linkUrl: null,
+    const body = JSON.parse(String(postCall?.[1]?.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      name: '文本值班提醒',
+      msgType: 'TEXT',
+      contentTemplate: '今晚值班：{{name}}',
       actorId: 'notify-admin',
     });
+    expect(body).not.toHaveProperty('titleTemplate');
+    expect(body).not.toHaveProperty('coverImageUrl');
+    expect(body).not.toHaveProperty('linkUrl');
   });
 
-  it('blocks a NEWS template without a title and sends no request', async () => {
-    renderPanel();
-    await screen.findByText('红色关注提醒');
-
-    fireEvent.click(screen.getByRole('button', { name: '新增模板' }));
-    fireEvent.change(screen.getByLabelText('模板名称'), { target: { value: '缺标题' } });
-    fireEvent.change(newTemplateEditor().getByLabelText('消息类型'), {
-      target: { value: 'NEWS' },
-    });
-    fireEvent.change(screen.getByLabelText('消息正文模板'), { target: { value: '有正文' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存模板' }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'NEWS 类型模板必须填写标题。',
-    );
-    expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
-  });
-
-  it('edits a template and submits the full NEWS body', async () => {
+  it('edits a TEXT template and submits a body without title or link fields', async () => {
     renderPanel();
     await screen.findByText('红色关注提醒');
 
     fireEvent.click(screen.getByRole('button', { name: '编辑' }));
     expect(screen.getByLabelText('模板名称')).toHaveValue('红色关注提醒');
-    expect(screen.getByLabelText('消息标题')).toHaveValue('红色关注提醒');
+    // NEWS 字段已隐藏（待开发），编辑表单只有文本字段
+    expect(screen.queryByLabelText('消息标题')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('消息正文模板'), { target: { value: '更新后的正文' } });
     fireEvent.click(screen.getByRole('button', { name: '保存模板' }));
 
     expect(await screen.findByText('模板已保存')).toBeInTheDocument();
     const putCall = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'PUT');
-    expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
+    const body = JSON.parse(String(putCall?.[1]?.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({
       name: '红色关注提醒',
-      msgType: 'NEWS',
-      titleTemplate: '红色关注提醒',
+      msgType: 'TEXT',
       contentTemplate: '更新后的正文',
       actorId: 'notify-admin',
     });
+    expect(body).not.toHaveProperty('titleTemplate');
+    expect(body).not.toHaveProperty('coverImageUrl');
+    expect(body).not.toHaveProperty('linkUrl');
   });
 
   it('inserts a variable token at the cursor using only server-provided options', async () => {

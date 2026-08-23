@@ -128,14 +128,12 @@ describe('RulesPanel', () => {
     vi.unstubAllGlobals();
   });
 
-  it('loads and displays rules with cron, template, channel count and status', async () => {
+  it('loads and displays rules with template, channel count and status', async () => {
     renderPanel();
 
     expect(screen.getByText('正在加载规则…')).toBeInTheDocument();
     expect(await screen.findByText('每日 9 点')).toBeInTheDocument();
     const row = screen.getByRole('row', { name: /每日 9 点/ });
-    expect(within(row).getByText('0 9 * * *')).toBeInTheDocument();
-    expect(within(row).getByText('Asia/Shanghai')).toBeInTheDocument();
     expect(within(row).getByText('日报')).toBeInTheDocument();
     expect(within(row).getByText('1')).toBeInTheDocument();
     expect(within(row).getByText('总值班室群')).toBeInTheDocument();

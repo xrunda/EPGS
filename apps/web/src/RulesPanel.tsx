@@ -443,7 +443,6 @@ export function RulesPanel({
               <thead>
                 <tr>
                   <th>名称</th>
-                  <th>Cron</th>
                   <th>模板</th>
                   <th>渠道数</th>
                   <th>状态</th>
@@ -456,10 +455,6 @@ export function RulesPanel({
                   <tr key={rule.id}>
                     <td>
                       <strong>{rule.name}</strong>
-                    </td>
-                    <td>
-                      <code className="notification-cron">{rule.cron}</code>
-                      <small>Asia/Shanghai</small>
                     </td>
                     <td>{rule.templateName}</td>
                     <td>

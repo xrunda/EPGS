@@ -234,21 +234,9 @@
 
 /* ---------------------------------------------------------------------------
    推送规则（issue: push rules）。
-   Cron 表达式（等宽 chip + 常用预设按钮组）、多渠道复选组、手动补推的逐渠道
-   结果反馈、推送日志弹窗与送达明细表。
+   常用预设按钮组、多渠道复选组、手动补推的逐渠道结果反馈、推送日志弹窗与
+   送达明细表。
 --------------------------------------------------------------------------- */
-
-.notification-cron {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: #f0f5f4;
-  color: var(--ink-700);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
 
 .notification-cron-field {
   display: grid;

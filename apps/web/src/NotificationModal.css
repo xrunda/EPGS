@@ -1,0 +1,233 @@
+/* 消息推送配置弹窗 chrome（issue #55）。
+   共享原语（.button / .icon-button / .feedback--* / .form-grid / .switch-row /
+   .panel-* / .rules-table / .rules-pagination / .rules-state / .rules-content /
+   .rule-editor / .status / .readonly-label / .table-actions）定义于 RulesModal.css，
+   经 App.tsx 引入 RulesModal 模块副作用全局生效——本文件只定义 .notification-* 命名空间，
+   不复定义任何共享类。 */
+
+.notification-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 31, 34, 0.58);
+  backdrop-filter: blur(3px);
+  animation: notification-backdrop-in var(--dur-base) var(--ease-out);
+}
+
+.notification-modal {
+  width: min(1240px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  outline: none;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-lg);
+  animation: notification-modal-in var(--dur-slow) var(--ease-out);
+}
+
+/* 发送测试子对话框（覆盖在主弹窗之上） */
+.notification-modal--compact {
+  width: min(640px, 100%);
+}
+
+/* 发送测试对话框正文（两个下拉 + 预览 + 操作区） */
+.notification-dialog-body {
+  display: grid;
+  gap: 14px;
+  padding: 24px 28px 28px;
+}
+.notification-dialog-body .panel-actions {
+  margin-top: 6px;
+}
+
+@keyframes notification-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes notification-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+.notification-modal__header,
+.notification-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notification-modal__header {
+  padding: 24px 28px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.notification-modal__header h2 {
+  margin: 2px 0 0;
+  color: var(--ink-800);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.notification-modal__eyebrow {
+  margin: 0;
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.notification-modal__notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 28px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--teal-600);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: #eaf4f5;
+  color: #315b62;
+  font-size: 13px;
+}
+.notification-modal__notice span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid #70a7b1;
+  border-radius: 50%;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.notification-modal__notice p {
+  margin: 0;
+}
+
+.notification-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.notification-tab {
+  padding: 13px 16px 11px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-300);
+  font-weight: 700;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.notification-tab:hover {
+  color: var(--ink-700);
+}
+.notification-tab--active {
+  border-bottom-color: var(--teal-600);
+  color: var(--ink-800);
+}
+
+.notification-filters {
+  display: grid;
+  grid-template-columns: 170px 170px auto;
+  gap: 14px;
+  align-items: end;
+  padding: 20px 28px;
+}
+.notification-filters__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notification-toolbar {
+  padding: 14px 28px 0;
+}
+.notification-toolbar p {
+  margin: 0;
+  color: var(--ink-300);
+  font-size: 13px;
+}
+.notification-toolbar strong {
+  color: var(--ink-800);
+}
+.notification-toolbar > div {
+  display: flex;
+  gap: 8px;
+}
+
+/* 发送测试：服务端渲染的预览块（只展示响应字段，不做客户端渲染） */
+.notification-preview {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: #fff;
+}
+.notification-preview__title {
+  margin: 0;
+  color: var(--ink-700);
+  font-size: 14px;
+  font-weight: 700;
+}
+.notification-preview__content {
+  margin: 0;
+  color: #40595d;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.notification-preview small {
+  color: #7b8e91;
+}
+
+@media (max-width: 900px) {
+  .notification-backdrop {
+    padding: 0;
+  }
+  .notification-modal {
+    width: 100%;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+  .notification-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .notification-modal__header,
+  .notification-filters,
+  .notification-toolbar,
+  .notification-tabs,
+  .notification-dialog-body {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .notification-modal__notice,
+  .feedback {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+  .notification-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-backdrop,
+  .notification-modal,
+  .feedback {
+    animation: none;
+  }
+}

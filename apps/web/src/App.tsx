@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AuthGate } from './AuthGate';
 import type { AuthUser } from './authApi';
+import { NotificationModal } from './NotificationModal';
 import { RulesModal } from './RulesModal';
 import { Workbench } from './Workbench';
 import hospitalLogo from './assets/hospital-logo.jpg';
@@ -19,6 +20,7 @@ function AuthenticatedApp({
   openChangePassword,
 }: AuthenticatedAppProps): JSX.Element {
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   return (
     <main className="app-shell">
@@ -43,8 +45,14 @@ function AuthenticatedApp({
           </button>
         </div>
       </header>
-      <Workbench onOpenRules={() => setRulesOpen(true)} />
+      <Workbench onOpenRules={() => setRulesOpen(true)} onOpenNotifications={() => setNotificationsOpen(true)} />
       <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} actorId={user.username} />
+      <NotificationModal
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+        canManageNotifications={user.roles.includes('SYSTEM_ADMIN')}
+        actorId={user.username}
+      />
     </main>
   );
 }

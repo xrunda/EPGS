@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthGate } from './AuthGate';
 
-const user = { id: 'user-1', username: 'doctor', displayName: '测试医生' };
+const user = { id: 'user-1', username: 'doctor', displayName: '测试医生', roles: ['VIEWER'] };
 
 function response(status: number, body: unknown) {
   return Promise.resolve({ ok: status >= 200 && status < 300, status, json: async () => body });
@@ -42,6 +42,8 @@ describe('AuthGate', () => {
     const fetchMock = vi
       .fn()
       .mockReturnValueOnce(response(401, { error: { code: 'AUTH_REQUIRED' } }))
+      .mockReturnValueOnce(response(200, { user }))
+      // 登录成功后 AuthGate 重拉 /api/auth/me 以取得 roles
       .mockReturnValueOnce(response(200, { user }));
     vi.stubGlobal('fetch', fetchMock);
     renderGate();
@@ -51,7 +53,7 @@ describe('AuthGate', () => {
     fireEvent.click(screen.getByRole('button', { name: '登录' }));
 
     expect(await screen.findByText('欢迎，测试医生')).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenLastCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/auth/login'),
       expect.objectContaining({
         method: 'POST',

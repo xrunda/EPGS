@@ -1,3 +1,4 @@
+import type { AccessUser } from '../access/access-user';
 import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
@@ -7,7 +8,11 @@ import { ChangePasswordDto, LoginDto } from './dto/auth.dto';
 import { Public } from './public.decorator';
 import { AUTH_COOKIE_OPTIONS, AuthCookieOptions, SessionUser } from './auth.types';
 
-type AuthenticatedRequest = Request & { user: SessionUser };
+type AuthenticatedRequest = Request & {
+  user: SessionUser;
+  /** Set by the global RolesGuard for every non-public route (including /me). */
+  accessUser?: AccessUser | null;
+};
 
 @ApiTags('auth')
 @Controller('api/auth')
@@ -28,9 +33,13 @@ export class AuthController {
   }
 
   @Get('me')
-  @ApiOperation({ summary: '返回当前登录用户的最小信息。' })
-  me(@Req() request: AuthenticatedRequest): { user: SessionUser } {
-    return { user: request.user };
+  @ApiOperation({ summary: '返回当前登录用户的最小信息与角色。' })
+  me(@Req() request: AuthenticatedRequest): {
+    user: SessionUser & { roles: AccessUser['roles'] };
+  } {
+    // roles 来自 RolesGuard 已解析的 app_user_access（每次请求实时查询），
+    // 无 access 行的账号返回空数组。login 响应刻意保持最小形状（不含 roles）。
+    return { user: { ...request.user, roles: request.accessUser?.roles ?? [] } };
   }
 
   @Post('logout')

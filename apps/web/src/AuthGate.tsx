@@ -72,7 +72,9 @@ export function AuthGate({ children }: AuthGateProps): JSX.Element {
     setLoginError('');
     setSuccessMessage('');
     try {
-      setUser(await login(String(form.get('username') ?? ''), String(form.get('password') ?? '')));
+      // login 响应不含 roles，登录成功后重新拉 /api/auth/me 拿到角色（供角色门控使用）
+      await login(String(form.get('username') ?? ''), String(form.get('password') ?? ''));
+      setUser(await getCurrentUser());
     } catch (error) {
       setLoginError(errorMessage(error, 'login'));
     } finally {

@@ -353,24 +353,7 @@
   color: #667779;
 }
 
-/* 推送日志子弹窗 */
-.notification-log-subtitle {
-  margin: 14px 28px 0;
-  color: var(--ink-300);
-  font-size: 13px;
-}
-.notification-log-wrap {
-  margin: 14px 28px 24px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: #fff;
-}
-.notification-log-wrap .rules-pagination {
-  border-top: 1px solid var(--border-subtle);
-}
-.notification-log-table {
-  min-width: 0;
-}
+/* 推送日志一级 tab（规则/模板/推送日期/触发/状态/时间/渠道明细展开） */
 .notification-log-detail-row td {
   background: var(--surface-sunken);
   padding: 12px 16px;

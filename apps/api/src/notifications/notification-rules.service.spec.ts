@@ -1,4 +1,3 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { NotificationRulesService } from './notification-rules.service';
 import { NotificationRuleNotFoundException } from './errors/notification-rule-not-found.exception';
 import { PrismaService } from '../prisma/prisma.service';
@@ -60,6 +59,12 @@ describe('NotificationRulesService', () => {
           channel: { id: 'channel-1', name: '总值班室群' },
         },
       ],
+      // The mapper denormalizes rule/template names for the aggregated view.
+      rule: {
+        id: 'rule-1',
+        name: '每日 9 点',
+        template: { id: 'template-1', name: '日报' },
+      },
       ...overrides,
     };
   }
@@ -273,6 +278,8 @@ describe('NotificationRulesService', () => {
           {
             id: 'log-1',
             ruleId: 'rule-1',
+            ruleName: '每日 9 点',
+            templateName: '日报',
             windowDate: '2026-08-23',
             trigger: 'MANUAL',
             status: 'SUCCESS',
@@ -303,6 +310,64 @@ describe('NotificationRulesService', () => {
 
       await expect(service.listPushLogs('missing', {})).rejects.toBeInstanceOf(NotificationRuleNotFoundException);
       expect(prisma.pushLog.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listAllPushLogs', () => {
+    it('returns logs across all rules without a rule existence check', async () => {
+      const page = await service.listAllPushLogs({});
+
+      // No findRuleOrThrow up front - the aggregated「日志」tab must not 404
+      // when a rule no longer matches; PushLog keeps a Restrict FK to the rule.
+      expect(prisma.notificationRule.findUnique).not.toHaveBeenCalled();
+      expect(prisma.pushLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {},
+          orderBy: [{ startedAt: 'desc' }],
+          include: {
+            deliveries: { include: { channel: true }, orderBy: { id: 'asc' } },
+            rule: { include: { template: true } },
+          },
+        }),
+      );
+      expect(page).toEqual({
+        items: [
+          {
+            id: 'log-1',
+            ruleId: 'rule-1',
+            ruleName: '每日 9 点',
+            templateName: '日报',
+            windowDate: '2026-08-23',
+            trigger: 'MANUAL',
+            status: 'SUCCESS',
+            errorSummary: null,
+            startedAt: '2026-08-23T01:00:00.000Z',
+            finishedAt: '2026-08-23T01:00:01.000Z',
+            deliveries: [
+              {
+                id: 'delivery-1',
+                channelId: 'channel-1',
+                channelName: '总值班室群',
+                status: 'SUCCESS',
+                wecomErrCode: null,
+                wecomErrMsg: null,
+                sentAt: '2026-08-23T01:00:01.000Z',
+              },
+            ],
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+    });
+
+    it('honours pagination and passes page/pageSize through', async () => {
+      await service.listAllPushLogs({ page: 3, pageSize: 50 });
+
+      expect(prisma.pushLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 100, take: 50 }),
+      );
     });
   });
 

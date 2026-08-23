@@ -14,7 +14,10 @@ type RuleRow = Prisma.NotificationRuleGetPayload<{
 }>;
 
 type PushLogRow = Prisma.PushLogGetPayload<{
-  include: { deliveries: { include: { channel: true } } };
+  include: {
+    deliveries: { include: { channel: true } };
+    rule: { include: { template: true } };
+  };
 }>;
 
 /**
@@ -50,6 +53,8 @@ export function toPushLogDto(log: PushLogRow): PushLogDto {
   return {
     id: log.id,
     ruleId: log.ruleId,
+    ruleName: log.rule?.name ?? '',
+    templateName: log.rule?.template?.name ?? '',
     windowDate: log.windowDate,
     trigger: log.trigger,
     status: log.status,

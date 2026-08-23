@@ -26,8 +26,6 @@ interface RulesPanelProps {
   canManageNotifications: boolean;
   /** 编辑器 dirty 状态上抛给父弹窗，门控切 tab 与关闭。 */
   onDirtyChange(dirty: boolean): void;
-  /** 打开「推送日志」子弹窗（父弹窗负责挂载，门控 Escape 不误关主弹窗）。 */
-  onOpenLogs(rule: NotificationRuleDto): void;
 }
 
 interface RuleFilters {
@@ -83,7 +81,6 @@ export function RulesPanel({
   actorId,
   canManageNotifications,
   onDirtyChange,
-  onOpenLogs,
 }: RulesPanelProps): JSX.Element {
   const [rules, setRules] = useState<NotificationRuleDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -487,9 +484,6 @@ export function RulesPanel({
                             onClick={() => void runRuleNow(rule)}
                           >
                             {runningId === rule.id ? '执行中…' : '立即执行一次'}
-                          </button>
-                          <button type="button" onClick={() => onOpenLogs(rule)}>
-                            日志
                           </button>
                         </div>
                       ) : (

@@ -32,10 +32,7 @@ interface TemplateFilters {
 interface TemplateDraft {
   name: string;
   msgType: NotificationMsgTypeDto;
-  title: string;
   content: string;
-  coverImageUrl: string;
-  linkUrl: string;
   isEnabled: boolean;
 }
 
@@ -43,10 +40,7 @@ const EMPTY_FILTERS: TemplateFilters = { msgType: '', enabled: '' };
 const EMPTY_TEMPLATE: TemplateDraft = {
   name: '',
   msgType: 'TEXT',
-  title: '',
   content: '',
-  coverImageUrl: '',
-  linkUrl: '',
   isEnabled: true,
 };
 const PAGE_SIZE = 20;
@@ -130,13 +124,11 @@ export function TemplatePanel({
 
   function openEdit(template: NotificationTemplateDto): void {
     setEditing(template);
+    // 前端只开放文本；NEWS 行的 title/cover/link 不在编辑器展示（待开发），提交时也不携带
     setDraft({
       name: template.name,
       msgType: template.msgType,
-      title: template.titleTemplate ?? '',
       content: template.contentTemplate,
-      coverImageUrl: template.coverImageUrl ?? '',
-      linkUrl: template.linkUrl ?? '',
       isEnabled: template.isEnabled,
     });
     setDirty(false);
@@ -183,31 +175,18 @@ export function TemplatePanel({
       setError('请输入消息正文模板。');
       return;
     }
-    if (draft.msgType === 'NEWS' && !draft.title.trim()) {
-      setError('NEWS 类型模板必须填写标题。');
-      return;
-    }
     setSaving(true);
     setError(null);
     try {
-      const base = {
-        name: draft.name.trim(),
-        msgType: draft.msgType,
-        isEnabled: draft.isEnabled,
-        actorId,
-      };
-      // 只为 NEWS 携带 title/cover/link；TEXT 绝不发这些键（forbidNonWhitelisted 仍允许缺省，
-      // 但避免无意义键）；空白 URL → null 显式清空
-      const newsFields = {
-        titleTemplate: draft.title.trim(),
-        coverImageUrl: draft.coverImageUrl.trim() || null,
-        linkUrl: draft.linkUrl.trim() || null,
-      };
+      // 前端只开放文本（NEWS 待开发，见下方下拉）；TEXT 模板不携带 title/cover/link 键。
+      // 历史经 API 创建的 NEWS 模板：msgType 原样提交，titleTemplate 不提交则服务端保留原值。
       if (editing === 'new') {
         const payload: CreateNotificationTemplateBody = {
-          ...base,
+          name: draft.name.trim(),
+          msgType: draft.msgType,
           contentTemplate: draft.content,
-          ...(draft.msgType === 'NEWS' ? newsFields : {}),
+          isEnabled: draft.isEnabled,
+          actorId,
         };
         const created = await createTemplate(payload);
         setTemplates((current) => [created, ...current]);
@@ -215,9 +194,11 @@ export function TemplatePanel({
         setNotice('模板已新增');
       } else if (editing) {
         const payload: UpdateNotificationTemplateBody = {
-          ...base,
+          name: draft.name.trim(),
+          msgType: draft.msgType,
           contentTemplate: draft.content,
-          ...(draft.msgType === 'NEWS' ? newsFields : {}),
+          isEnabled: draft.isEnabled,
+          actorId,
         };
         const updated = await updateTemplate(editing.id, payload);
         setTemplates((current) =>
@@ -274,7 +255,6 @@ export function TemplatePanel({
           >
             <option value="">全部类型</option>
             <option value="TEXT">文本</option>
-            <option value="NEWS">图文</option>
           </select>
         </label>
         <label>
@@ -465,42 +445,11 @@ export function TemplatePanel({
                 }
               >
                 <option value="TEXT">文本（TEXT）</option>
-                <option value="NEWS">图文（NEWS）</option>
+                <option value="NEWS" disabled>
+                  图文（NEWS）· 待开发
+                </option>
               </select>
             </label>
-            {draft.msgType === 'NEWS' && (
-              <>
-                <label>
-                  消息标题
-                  <input
-                    value={draft.title}
-                    onChange={(event) => updateDraft('title', event.target.value)}
-                    maxLength={200}
-                    placeholder="NEWS 类型必填"
-                  />
-                </label>
-                <label>
-                  封面图 URL（选填）
-                  <input
-                    value={draft.coverImageUrl}
-                    onChange={(event) => updateDraft('coverImageUrl', event.target.value)}
-                    placeholder="https://…"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </label>
-                <label>
-                  跳转链接（选填）
-                  <input
-                    value={draft.linkUrl}
-                    onChange={(event) => updateDraft('linkUrl', event.target.value)}
-                    placeholder="https://…"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </label>
-              </>
-            )}
             <label>
               插入变量
               <select

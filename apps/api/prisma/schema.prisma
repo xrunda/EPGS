@@ -577,7 +577,7 @@ model NotificationChannel {
   updatedBy String @map("updated_by") @db.VarChar(100)
 
   /// Reverse relations for notification push rules (issue: push rules).
-  ruleChannels NotificationRuleChannel[]
+  ruleChannels   NotificationRuleChannel[]
   pushDeliveries PushDelivery[]
 
   @@index([isEnabled])
@@ -673,8 +673,8 @@ model NotificationRule {
   cron String @db.VarChar(100)
 
   /// Which template produces the message body for every channel in this rule.
-  templateId String @map("template_id") @db.Uuid
-  template    NotificationTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  templateId String               @map("template_id") @db.Uuid
+  template   NotificationTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
 
   /// Soft enable/disable switch. Disabled rules are skipped by the worker
   /// tick but kept (and still manually runnable? No - see the run endpoint).
@@ -691,7 +691,7 @@ model NotificationRule {
   updatedBy String @map("updated_by") @db.VarChar(100)
 
   ruleChannels NotificationRuleChannel[]
-  pushLogs PushLog[]
+  pushLogs     PushLog[]
 
   @@index([isEnabled])
   @@index([templateId])
@@ -702,10 +702,10 @@ model NotificationRule {
 model NotificationRuleChannel {
   id String @id @default(uuid()) @db.Uuid
 
-  ruleId String          @map("rule_id") @db.Uuid
+  ruleId String           @map("rule_id") @db.Uuid
   rule   NotificationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
-  channelId String             @map("channel_id") @db.Uuid
+  channelId String              @map("channel_id") @db.Uuid
   channel   NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -735,7 +735,7 @@ model NotificationRuleChannel {
 model PushLog {
   id String @id @default(uuid()) @db.Uuid
 
-  ruleId String          @map("rule_id") @db.Uuid
+  ruleId String           @map("rule_id") @db.Uuid
   rule   NotificationRule @relation(fields: [ruleId], references: [id], onDelete: Restrict)
 
   /// Shanghai date (YYYY-MM-DD) of the summary window this run pushed.
@@ -752,7 +752,7 @@ model PushLog {
   /// or a channel no longer exists). Never contains patient data or URLs.
   errorSummary String? @map("error_summary") @db.Text
 
-  startedAt DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+  startedAt  DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
   finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
 
   deliveries PushDelivery[]
@@ -766,10 +766,10 @@ model PushLog {
 model PushDelivery {
   id String @id @default(uuid()) @db.Uuid
 
-  pushLogId String   @map("push_log_id") @db.Uuid
+  pushLogId String  @map("push_log_id") @db.Uuid
   pushLog   PushLog @relation(fields: [pushLogId], references: [id], onDelete: Cascade)
 
-  channelId String             @map("channel_id") @db.Uuid
+  channelId String              @map("channel_id") @db.Uuid
   channel   NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Restrict)
 
   status NotificationPushDeliveryStatus

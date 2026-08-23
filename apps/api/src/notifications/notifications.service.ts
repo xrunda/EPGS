@@ -3,6 +3,7 @@ import { NotificationMsgType, Prisma } from '@prisma/client';
 import {
   NotificationChannelDto,
   NotificationTemplateDto,
+  NotificationTemplatePresetDto,
   NotificationVariableDto,
   PaginatedNotificationChannels,
   PaginatedNotificationTemplates,
@@ -33,6 +34,32 @@ const TEMPLATE_VARIABLES: NotificationVariableDto[] = [
   { key: 'greenCount', label: '绿色关注数量', example: '12' },
   { key: 'unclassifiedCount', label: '未分类数量', example: '2' },
   { key: 'totalCount', label: '总记录数', example: '22' },
+];
+
+/**
+ * Preset content-template skeletons for the config UI (issue: template presets).
+ * Static starting points so an operator doesn't have to write the initial
+ * message body from scratch; the operator picks one and edits further. Tokens
+ * are {{placeholders}} from the fixed dictionary above. Served read-only by
+ * GET /api/notification-templates/presets.
+ */
+const TEMPLATE_PRESETS: NotificationTemplatePresetDto[] = [
+  {
+    id: 'red-alert',
+    name: '红色关注提醒',
+    content: '{{hospitalName}} {{reportDate}} 内镜重点患者：红色关注 {{redCount}} 例，请及时查看处理。',
+  },
+  {
+    id: 'daily-summary',
+    name: '每日关注摘要',
+    content:
+      '{{hospitalName}} {{reportDate}} 内镜关注汇总：红色 {{redCount}} 例，黄色 {{yellowCount}} 例，绿色 {{greenCount}} 例，未分类 {{unclassifiedCount}} 例，共 {{totalCount}} 例。',
+  },
+  {
+    id: 'quick-alert',
+    name: '简明关注提醒',
+    content: '{{hospitalName}} {{reportDate}} 红色 {{redCount}} 例',
+  },
 ];
 
 /**
@@ -203,11 +230,16 @@ export class NotificationsService {
     return toTemplateDto(updated);
   }
 
-  // ---- Variables ------------------------------------------------------
+  // ---- Variables / Presets -------------------------------------------
 
   /** The fixed placeholder dictionary (design §4). */
   getVariables(): NotificationVariableDto[] {
     return TEMPLATE_VARIABLES;
+  }
+
+  /** Preset content-template skeletons for the config UI (static starting points). */
+  getPresets(): NotificationTemplatePresetDto[] {
+    return TEMPLATE_PRESETS;
   }
 
   // ---- Helpers --------------------------------------------------------

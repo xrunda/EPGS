@@ -276,4 +276,17 @@ describe('NotificationsService', () => {
       ]);
     });
   });
+
+  describe('presets', () => {
+    it('returns the 3 preset content skeletons in stable order', () => {
+      const presets = service.getPresets();
+      expect(presets).toHaveLength(3);
+      expect(presets.map((p) => p.id)).toEqual(['red-alert', 'daily-summary', 'quick-alert']);
+      for (const preset of presets) {
+        expect(preset.name).toBeTruthy();
+        // Every preset is built only from {{placeholder}} tokens of the fixed dictionary.
+        expect(preset.content).toMatch(/\{\{[a-zA-Z]+\}\}/);
+      }
+    });
+  });
 });

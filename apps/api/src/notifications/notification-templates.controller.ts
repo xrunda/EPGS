@@ -4,6 +4,7 @@ import { Request } from 'express';
 import { AuditAction, AppRole } from '@prisma/client';
 import {
   NotificationTemplateDto,
+  NotificationTemplatePresetDto,
   NotificationVariableDto,
   PaginatedNotificationTemplates,
 } from '@epgs/shared-types';
@@ -30,6 +31,14 @@ export class NotificationTemplatesController {
     private readonly service: NotificationsService,
     private readonly audit: AuditService,
   ) {}
+
+  @Get('presets')
+  @ApiOperation({
+    summary: 'List preset content-template skeletons so operators do not start from a blank body (any authenticated user).',
+  })
+  presets(): NotificationTemplatePresetDto[] {
+    return this.service.getPresets();
+  }
 
   @Get('variables')
   @ApiOperation({

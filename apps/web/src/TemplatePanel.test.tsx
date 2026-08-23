@@ -23,6 +23,12 @@ const VARIABLES = [
   { key: 'examDate', label: '检查日期', example: '2026-08-20' },
 ];
 
+const PRESETS = [
+  { id: 'red-alert', name: '红色关注提醒', content: '{{hospitalName}} {{reportDate}} 红色关注 {{redCount}} 例，请及时查看处理。' },
+  { id: 'daily-summary', name: '每日关注摘要', content: '{{hospitalName}} {{reportDate}} 汇总：红 {{redCount}} 黄 {{yellowCount}} 绿 {{greenCount}}。' },
+  { id: 'quick-alert', name: '简明关注提醒', content: '{{hospitalName}} {{reportDate}} 红色 {{redCount}} 例' },
+];
+
 function jsonResponse(body: unknown, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -57,6 +63,9 @@ describe('TemplatePanel', () => {
       'fetch',
       vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (url.includes('/presets')) {
+          return jsonResponse(PRESETS);
+        }
         if (url.includes('/variables')) {
           return jsonResponse(VARIABLES);
         }
@@ -211,6 +220,28 @@ describe('TemplatePanel', () => {
     fireEvent.change(picker, { target: { value: 'redCount' } });
 
     expect(textarea.value).toBe('{{redCount}} 例红色关注患者{{redCount}}');
+  });
+
+  it('fills the body from a chosen preset and stays editable', async () => {
+    renderPanel();
+    await screen.findByText('红色关注提醒');
+
+    fireEvent.click(screen.getByRole('button', { name: '新增模板' }));
+    const presetPicker = screen.getByLabelText('选择默认模板');
+    expect(within(presetPicker).getByText('红色关注提醒')).toBeInTheDocument();
+    expect(within(presetPicker).getByText('每日关注摘要')).toBeInTheDocument();
+    expect(within(presetPicker).getByText('简明关注提醒')).toBeInTheDocument();
+
+    const textarea = screen.getByLabelText('消息正文模板') as HTMLTextAreaElement;
+    fireEvent.change(presetPicker, { target: { value: 'red-alert' } });
+    expect(textarea.value).toBe(
+      '{{hospitalName}} {{reportDate}} 红色关注 {{redCount}} 例，请及时查看处理。',
+    );
+    // 受控 value=""：选中后下拉复位，可再次选择
+    expect(presetPicker).toHaveValue('');
+
+    fireEvent.change(textarea, { target: { value: `${textarea.value}（我已补充说明）` } });
+    expect(textarea.value).toContain('（我已补充说明）');
   });
 
   it('toggles a template without an optimistic-lock version', async () => {

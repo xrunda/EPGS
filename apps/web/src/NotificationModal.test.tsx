@@ -59,6 +59,9 @@ describe('NotificationModal', () => {
         if (url.includes('/variables')) {
           return jsonResponse([]);
         }
+        if (url.includes('/presets')) {
+          return jsonResponse([]);
+        }
         if (url.includes('/api/notification-channels')) {
           return jsonResponse({ items: [channel], total: 1, page: 1, pageSize: 20 });
         }

@@ -6,6 +6,7 @@ import type {
   NotificationChannelDto,
   NotificationSendFailureDetails,
   NotificationTemplateDto,
+  NotificationTemplatePresetDto,
   NotificationVariableDto,
   PaginatedNotificationChannels,
   PaginatedNotificationTemplates,
@@ -168,6 +169,12 @@ export async function updateTemplate(
 export async function getNotificationVariables(): Promise<NotificationVariableDto[]> {
   return parseResponse(
     await fetch(`${API_BASE_URL}/api/notification-templates/variables`, { credentials: 'include' }),
+  );
+}
+
+export async function getNotificationTemplatePresets(): Promise<NotificationTemplatePresetDto[]> {
+  return parseResponse(
+    await fetch(`${API_BASE_URL}/api/notification-templates/presets`, { credentials: 'include' }),
   );
 }
 

@@ -7,3 +7,5 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://user:pass@localhost:5432/epgs';
 process.env.NODE_ENV = process.env.NODE_ENV ?? 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'test-only-secret-at-least-32-characters';
+process.env.NOTIFICATION_SECRET_KEY =
+  process.env.NOTIFICATION_SECRET_KEY ?? 'test-only-notification-key-at-least-32-chars';

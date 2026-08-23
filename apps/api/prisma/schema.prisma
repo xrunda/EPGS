@@ -180,9 +180,12 @@ enum AppRole {
   AUDITOR
 }
 
-/// One audited operation. LOGIN/CONFIG_CHANGE are reserved seams for issue
-/// #31 / future config-write endpoints and have no trigger point yet - do
-/// not add values without a migration + audit-contract review.
+/// One audited operation. LOGIN is a reserved seam for issue #31 and has no
+/// trigger point yet - do not add values without a migration + audit-contract
+/// review. CONFIG_CHANGE now has a real trigger point: notification channel/
+/// template writes (issue #54). NOTIFICATION_TEST_SEND (issue #52/#54) is a
+/// distinct action from CONFIG_CHANGE because a test-send is a real outbound
+/// push, not a configuration edit, and must be independently auditable.
 enum AuditAction {
   EXAM_LIST
   EXAM_DETAIL
@@ -192,6 +195,20 @@ enum AuditAction {
   CONFIG_CHANGE
   AUDIT_VIEW
   LOGIN
+  NOTIFICATION_TEST_SEND
+}
+
+/// Message shape for a notification_template. Deliberately mirrors what the
+/// WeCom (企业微信) group-robot webhook accepts today: `TEXT` -> `msgtype:
+/// markdown`, `NEWS` -> `msgtype: news` (single-article image/title/summary/link
+/// card). See docs/notification-design.md §2/§9 - richer types (WeCom
+/// textcard / template_card) require the self-built-app message API instead
+/// of the webhook, which is out of scope until the "企业可信IP" circular
+/// dependency described there is resolved. Do not add values without
+/// confirming the corresponding send-path implementation exists.
+enum NotificationMsgType {
+  TEXT
+  NEWS
 }
 
 // ---------------------------------------------------------------------------
@@ -481,4 +498,117 @@ model SyncJobLog {
   @@index([jobName, startedAt])
   @@index([status])
   @@map("sync_job_log")
+}
+
+// ---------------------------------------------------------------------------
+// notification_channel - WeCom (企业微信) group-robot webhook targets
+// (issue #52/#53)
+// ---------------------------------------------------------------------------
+
+/// One configured push destination: a WeCom group-robot webhook URL. See
+/// docs/notification-design.md §3/§5 for the full design rationale. Unlike
+/// MonitorRule, this is NOT versioned - a webhook URL edit does not need a
+/// historical trail of "which version sent which past message", because the
+/// channel only describes *where* to push, not report content. Soft-disable
+/// only (isEnabled), same pattern as MonitorRule, so a disabled channel can
+/// be re-enabled without re-entering the secret.
+///
+/// SENSITIVE: webhookUrl is the FIRST reversible secret this schema stores
+/// (app_user.passwordHash is a one-way Argon2id hash; JWT_SECRET/
+/// PACS_HTTP_SERVICE_TOKEN are env vars, never persisted). It is stored
+/// ciphertext-only via NotificationSecretCipher (AES-256-GCM, key from
+/// NOTIFICATION_SECRET_KEY env var - see apps/api/src/config). The API layer
+/// (issue #54) must never return plaintext in any response; only a masked
+/// preview is returned for display.
+model NotificationChannel {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Human-readable label shown in the config UI, e.g. "内镜中心红色关注群".
+  /// Not required to be unique - see docs/notification-design.md §9 open
+  /// question; duplicates are allowed at the schema level.
+  name String @db.VarChar(100)
+
+  /// AES-256-GCM ciphertext of the WeCom webhook URL, formatted as
+  /// "<base64 iv>:<base64 authTag>:<base64 ciphertext>" by
+  /// NotificationSecretCipher. Never decrypted for API responses - only for
+  /// the outbound HTTP call at send time. See data-dictionary.md (HIGH).
+  webhookUrlCiphertext String @map("webhook_url_ciphertext") @db.Text
+
+  /// Soft enable/disable switch. Disabled channels are excluded as
+  /// test-send targets but the row (and its audit history) is retained.
+  isEnabled Boolean @default(true) @map("is_enabled")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// Operator account (external identity) who created this channel. Not a
+  /// FK, same rationale as MonitorRule.createdBy.
+  createdBy String @map("created_by") @db.VarChar(100)
+
+  /// Operator account who last modified this channel.
+  updatedBy String @map("updated_by") @db.VarChar(100)
+
+  @@index([isEnabled])
+  @@map("notification_channel")
+}
+
+// ---------------------------------------------------------------------------
+// notification_template - push content templates (text/news) (issue #52/#53)
+// ---------------------------------------------------------------------------
+
+/// One reusable push content template. Rendering (placeholder substitution,
+/// e.g. {{redCount}}) happens at send time (issue #54) by reusing the same
+/// aggregation logic as GET /api/monitor/summary - this table stores only
+/// the template text with placeholders in it, never a rendered/sent message
+/// body, to avoid duplicating patient-derived data at rest. See
+/// docs/notification-design.md §4.
+model NotificationTemplate {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Human-readable label shown in the config UI, e.g. "红色关注日报".
+  name String @db.VarChar(100)
+
+  /// Which WeCom webhook message shape this renders to. See
+  /// NotificationMsgType doc comment for the TEXT/NEWS -> WeCom mapping.
+  msgType NotificationMsgType @map("msg_type")
+
+  /// Title template, used only when msgType = NEWS (WeCom news article
+  /// title). May contain {{placeholder}} tokens from the fixed variable
+  /// dictionary (issue #54's GET /api/notification-templates/variables).
+  titleTemplate String? @map("title_template") @db.VarChar(200)
+
+  /// Body template: full markdown-ish text when msgType = TEXT, or the
+  /// article summary/description when msgType = NEWS. May contain
+  /// {{placeholder}} tokens.
+  contentTemplate String @map("content_template") @db.Text
+
+  /// Static cover image URL for msgType = NEWS. V1 has no dynamic/
+  /// auto-generated cover image (see docs/notification-design.md §2/§9) -
+  /// this is always a fixed URL the operator supplies (e.g. a hospital/
+  /// department logo), never rendered per-send.
+  coverImageUrl String? @map("cover_image_url") @db.Text
+
+  /// Click-through URL for msgType = NEWS. Currently points at an address
+  /// that may not be reachable from WeCom clients until the hospital
+  /// intranet <-> WeCom network path is resolved (see docs/
+  /// notification-design.md §1) - stored as-is regardless, display-only
+  /// concern for the sender at send time.
+  linkUrl String? @map("link_url") @db.Text
+
+  /// Soft enable/disable switch. Disabled templates are excluded as
+  /// test-send options but the row is retained.
+  isEnabled Boolean @default(true) @map("is_enabled")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// Operator account (external identity) who created this template.
+  createdBy String @map("created_by") @db.VarChar(100)
+
+  /// Operator account who last modified this template.
+  updatedBy String @map("updated_by") @db.VarChar(100)
+
+  @@index([isEnabled])
+  @@index([msgType])
+  @@map("notification_template")
 }

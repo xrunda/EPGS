@@ -29,4 +29,13 @@ export const envValidationSchema = Joi.object({
   WEB_ORIGIN: Joi.string()
     .uri({ scheme: [/https?/] })
     .default('http://localhost:5173'),
+
+  // Issue #53: encryption key for NotificationChannel.webhookUrlCiphertext -
+  // the first reversible secret this schema stores. Required, no default,
+  // same fail-fast rationale as JWT_SECRET/DATABASE_URL above - encrypting
+  // webhook URLs with an implicit/empty key would be worse than refusing to
+  // start. Minimum length mirrors JWT_SECRET; NotificationSecretCipher
+  // derives a fixed 32-byte AES key from this value via SHA-256, so it does
+  // not need to be exactly 32 bytes itself.
+  NOTIFICATION_SECRET_KEY: Joi.string().min(32).required(),
 });

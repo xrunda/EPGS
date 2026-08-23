@@ -16,8 +16,11 @@
 export type AppRoleDto = 'VIEWER' | 'RULE_ADMIN' | 'SYSTEM_ADMIN' | 'AUDITOR';
 
 /**
- * One audited operation. LOGIN / CONFIG_CHANGE are reserved seams (issue #31
- * / future config-write endpoints) and currently have no trigger point.
+ * One audited operation. LOGIN is a reserved seam (issue #31) and currently
+ * has no trigger point. CONFIG_CHANGE is triggered by notification channel/
+ * template writes (issue #54). NOTIFICATION_TEST_SEND (issue #52/#53) is a
+ * distinct action from CONFIG_CHANGE - a test-send is a real outbound push,
+ * not a configuration edit, and must be independently auditable.
  */
 export type AuditActionDto =
   | 'EXAM_LIST'
@@ -27,7 +30,8 @@ export type AuditActionDto =
   | 'RULE_IMPORT'
   | 'CONFIG_CHANGE'
   | 'AUDIT_VIEW'
-  | 'LOGIN';
+  | 'LOGIN'
+  | 'NOTIFICATION_TEST_SEND';
 
 /** One row of `GET /api/audit`. */
 export interface AuditLogDto {

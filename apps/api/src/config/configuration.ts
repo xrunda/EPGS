@@ -32,6 +32,11 @@ export interface AppConfig {
    * request comes back 401 because the cookie never persisted.
    */
   cookieSecure: boolean;
+  /**
+   * Encryption key for NotificationChannel.webhookUrlCiphertext (issue #53).
+   * See NotificationSecretCipher - never persisted, never logged.
+   */
+  notificationSecretKey: string;
 }
 
 export default (): AppConfig => {
@@ -49,5 +54,6 @@ export default (): AppConfig => {
     cookieSecure: process.env.COOKIE_SECURE
       ? process.env.COOKIE_SECURE === 'true'
       : nodeEnv === 'production',
+    notificationSecretKey: process.env.NOTIFICATION_SECRET_KEY ?? '',
   };
 };

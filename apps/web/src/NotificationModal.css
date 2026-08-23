@@ -353,27 +353,7 @@
   color: #667779;
 }
 
-/* 推送日志一级 tab（规则/模板/推送日期/触发/状态/时间/渠道明细展开） */
-.notification-log-detail-row td {
-  background: var(--surface-sunken);
-  padding: 12px 16px;
-}
-.notification-delivery-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.notification-delivery-table th {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--ink-300);
-  font-size: 12px;
-  text-align: left;
-  white-space: nowrap;
-}
-.notification-delivery-table td {
-  padding: 8px 10px;
-  border-top: 1px solid var(--border-subtle);
-  color: #334b4f;
-  vertical-align: middle;
+/* 推送日志一级 tab：表内「渠道送达」列内联展示（复用 run-deliveries 徽标样式） */
+.notification-run-deliveries--flat {
+  margin: 0;
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import type { PushLogDto } from '@epgs/shared-types';
 import { PushLogsPanel } from './PushLogsPanel';
 
@@ -54,7 +54,7 @@ describe('PushLogsPanel', () => {
     vi.unstubAllGlobals();
   });
 
-  it('loads the aggregated log list and expands per-channel deliveries', async () => {
+  it('loads the aggregated log list with per-channel deliveries shown flat in columns', async () => {
     renderPanel();
 
     expect(screen.getByText('正在加载推送日志…')).toBeInTheDocument();
@@ -62,21 +62,18 @@ describe('PushLogsPanel', () => {
     expect(screen.getByText('日报')).toBeInTheDocument();
     expect(screen.getByText('2026-08-23')).toBeInTheDocument();
     expect(screen.getByText('手动')).toBeInTheDocument();
-    expect(screen.getByText('成功')).toBeInTheDocument();
     expect(screen.getByText(/条推送记录/)).toBeInTheDocument();
     expect(
       vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/notification-push-logs')),
     ).toBe(true);
 
-    // Delivery details are behind the toggle (channel names are not leaked up-front).
-    expect(screen.queryByText('总值班室群')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '渠道明细' }));
-
-    expect(screen.getByRole('button', { name: '收起明细' })).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('总值班室群')).toBeInTheDocument();
-    expect(screen.getByText('错误信息')).toBeInTheDocument();
-    expect(screen.getByText('-')).toBeInTheDocument();
+    // 渠道送达直接内联在列里，无需展开
+    const row = screen.getByRole('row', { name: /每日 9 点/ });
+    // 运行状态徽标 + 渠道送达徽标各一个「成功」
+    expect(within(row).getAllByText('成功')).toHaveLength(2);
+    expect(within(row).getByText('总值班室群')).toBeInTheDocument();
+    // 无错误时「错误信息」列显示占位符
+    expect(within(row).getByText('-')).toBeInTheDocument();
   });
 
   it('shows the empty state when no rule has ever run', async () => {
@@ -86,7 +83,7 @@ describe('PushLogsPanel', () => {
     expect(await screen.findByText('暂无推送记录')).toBeInTheDocument();
   });
 
-  it('renders SCHEDULED trigger and FAILED status labels', async () => {
+  it('renders SCHEDULED trigger, FAILED status, inline delivery error and run errorSummary', async () => {
     const failed = {
       ...pushLog,
       id: 'log-2',
@@ -94,6 +91,7 @@ describe('PushLogsPanel', () => {
       templateName: '红色关注提醒',
       trigger: 'SCHEDULED' as const,
       status: 'FAILED' as const,
+      errorSummary: '渠道投递失败：1/1 未送达',
       finishedAt: '2026-08-23T01:00:01.000Z',
       deliveries: [
         {
@@ -109,10 +107,13 @@ describe('PushLogsPanel', () => {
     renderPanel();
 
     expect(await screen.findByText('定时')).toBeInTheDocument();
-    expect(screen.getByText('失败')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '渠道明细' }));
-    expect(screen.getByText('invalid webhook key')).toBeInTheDocument();
+    const row = screen.getByRole('row', { name: /每日 18 点/ });
+    // 运行状态徽标 + 渠道送达徽标各一个「失败」
+    expect(within(row).getAllByText('失败')).toHaveLength(2);
+    // 渠道送达列内联错误
+    expect(within(row).getByText('invalid webhook key')).toBeInTheDocument();
+    // 错误信息列展示整轮汇总
+    expect(within(row).getByText('渠道投递失败：1/1 未送达')).toBeInTheDocument();
   });
 
   it('maps a server error to a friendly Chinese message', async () => {

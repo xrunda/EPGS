@@ -25,15 +25,13 @@ function statusLabel(status: NotificationPushStatusDto | null): string {
   }
 }
 
-/** 一级「日志」tab：聚合所有规则/模板的推送记录，可展开逐渠道送达明细。 */
+/** 一级「日志」tab：聚合所有规则/模板的推送记录，逐渠道送达明细直接摊平进表格列。 */
 export function PushLogsPanel(): JSX.Element {
   const [logs, setLogs] = useState<PushLogDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // 展开查看逐渠道送达明细的 push_log id
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,10 +52,6 @@ export function PushLogsPanel(): JSX.Element {
   }, [load]);
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  function toggleDetail(id: string): void {
-    setExpandedId((current) => (current === id ? null : id));
-  }
 
   return (
     <>
@@ -101,19 +95,15 @@ export function PushLogsPanel(): JSX.Element {
                   <th>推送日期</th>
                   <th>触发</th>
                   <th>状态</th>
+                  <th>渠道送达</th>
+                  <th>错误信息</th>
                   <th>开始时间</th>
                   <th>完成时间</th>
-                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {logs.map((log) => (
-                  <LogRow
-                    key={log.id}
-                    log={log}
-                    expanded={expandedId === log.id}
-                    onToggle={() => toggleDetail(log.id)}
-                  />
+                  <LogRow key={log.id} log={log} />
                 ))}
               </tbody>
             </table>
@@ -124,10 +114,7 @@ export function PushLogsPanel(): JSX.Element {
                 className="button"
                 type="button"
                 disabled={page <= 1}
-                onClick={() => {
-                  setPage((current) => Math.max(1, current - 1));
-                  setExpandedId(null);
-                }}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
               >
                 上一页
               </button>
@@ -138,10 +125,7 @@ export function PushLogsPanel(): JSX.Element {
                 className="button"
                 type="button"
                 disabled={page >= pageCount}
-                onClick={() => {
-                  setPage((current) => Math.min(pageCount, current + 1));
-                  setExpandedId(null);
-                }}
+                onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
               >
                 下一页
               </button>
@@ -153,94 +137,58 @@ export function PushLogsPanel(): JSX.Element {
   );
 }
 
-function LogRow({
-  log,
-  expanded,
-  onToggle,
-}: {
-  log: PushLogDto;
-  expanded: boolean;
-  onToggle(): void;
-}): JSX.Element {
+function LogRow({ log }: { log: PushLogDto }): JSX.Element {
   return (
-    <>
-      <tr>
-        <td>
-          <strong>{log.ruleName}</strong>
-        </td>
-        <td>{log.templateName}</td>
-        <td>
-          <strong>{log.windowDate}</strong>
-        </td>
-        <td>{triggerLabel(log.trigger)}</td>
-        <td>
-          <span
-            className={`notification-status ${
-              log.status === 'SUCCESS'
-                ? 'notification-status--ok'
-                : log.status === 'PARTIAL'
-                  ? 'notification-status--partial'
-                  : log.status === 'FAILED'
-                    ? 'notification-status--bad'
-                    : 'notification-status--pending'
-            }`}
-          >
-            {statusLabel(log.status)}
-          </span>
-        </td>
-        <td>{formatTimestamp(log.startedAt)}</td>
-        <td>{log.finishedAt ? formatTimestamp(log.finishedAt) : '-'}</td>
-        <td>
-          <button
-            className="text-button"
-            type="button"
-            onClick={onToggle}
-            aria-expanded={expanded}
-          >
-            {expanded ? '收起明细' : '渠道明细'}
-          </button>
-        </td>
-      </tr>
-      {expanded && (
-        <tr className="notification-log-detail-row">
-          <td colSpan={8}>
-            {log.deliveries.length === 0 ? (
-              <p className="notification-option-error">本次未产生逐渠道送达记录。</p>
-            ) : (
-              <table className="notification-delivery-table">
-                <thead>
-                  <tr>
-                    <th>渠道</th>
-                    <th>状态</th>
-                    <th>错误信息</th>
-                    <th>发送时间</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {log.deliveries.map((delivery) => (
-                    <tr key={delivery.id}>
-                      <td>{delivery.channelName}</td>
-                      <td>
-                        <span
-                          className={`notification-status ${
-                            delivery.status === 'SUCCESS'
-                              ? 'notification-status--ok'
-                              : 'notification-status--bad'
-                          }`}
-                        >
-                          {delivery.status === 'SUCCESS' ? '成功' : '失败'}
-                        </span>
-                      </td>
-                      <td>{delivery.wecomErrMsg ?? '-'}</td>
-                      <td>{delivery.sentAt ? formatTimestamp(delivery.sentAt) : '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </td>
-        </tr>
-      )}
-    </>
+    <tr>
+      <td>
+        <strong>{log.ruleName}</strong>
+      </td>
+      <td>{log.templateName}</td>
+      <td>
+        <strong>{log.windowDate}</strong>
+      </td>
+      <td>{triggerLabel(log.trigger)}</td>
+      <td>
+        <span
+          className={`notification-status ${
+            log.status === 'SUCCESS'
+              ? 'notification-status--ok'
+              : log.status === 'PARTIAL'
+                ? 'notification-status--partial'
+                : log.status === 'FAILED'
+                  ? 'notification-status--bad'
+                  : 'notification-status--pending'
+          }`}
+        >
+          {statusLabel(log.status)}
+        </span>
+      </td>
+      <td>
+        {log.deliveries.length === 0 ? (
+          '-'
+        ) : (
+          <ul className="notification-run-deliveries notification-run-deliveries--flat">
+            {log.deliveries.map((delivery) => (
+              <li key={delivery.id}>
+                <span
+                  className={`notification-status ${
+                    delivery.status === 'SUCCESS'
+                      ? 'notification-status--ok'
+                      : 'notification-status--bad'
+                  }`}
+                >
+                  {delivery.status === 'SUCCESS' ? '成功' : '失败'}
+                </span>
+                <span>{delivery.channelName}</span>
+                {delivery.wecomErrMsg && <small>{delivery.wecomErrMsg}</small>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </td>
+      <td>{log.errorSummary ?? '-'}</td>
+      <td>{formatTimestamp(log.startedAt)}</td>
+      <td>{log.finishedAt ? formatTimestamp(log.finishedAt) : '-'}</td>
+    </tr>
   );
 }

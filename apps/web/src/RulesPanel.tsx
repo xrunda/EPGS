@@ -48,6 +48,7 @@ const EMPTY_FILTERS: RuleFilters = { enabled: '' };
 const CRON_PRESETS: Array<{ label: string; cron: string }> = [
   { label: '每天 9:00', cron: '0 9 * * *' },
   { label: '每天 8:00', cron: '0 8 * * *' },
+  { label: '每天 18:00', cron: '0 18 * * *' },
   { label: '每周一 9:00', cron: '0 9 * * 1' },
   { label: '每 30 分钟', cron: '*/30 * * * *' },
 ];

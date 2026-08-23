@@ -78,6 +78,41 @@ if [ ! -f apps/api/.env ] || [ ! -f apps/worker/.env ] || [ ! -f apps/web/.env ]
   exit 1
 fi
 
+# 校验 apps/api/.env 的必需环境变量（对齐 src/config/env.validation.ts 的
+# Joi 规则）。缺了就 fail-fast，而不是等 API 启动时报
+# "Config validation error: ... is required" 才暴露——否则 start.sh 的
+# [7/7] 等待循环会干等 60 秒后以"api 未就绪"收场，排查成本高。
+check_required_api_env() {
+  local key="$1" min_len="$2" hint="$3"
+  local line val
+  line=$(grep -E "^${key}=" apps/api/.env | head -n 1 || true)
+  if [ -z "$line" ]; then
+    echo ""
+    echo "错误: apps/api/.env 缺少必需环境变量 ${key}。"
+    echo "      ${hint}"
+    exit 1
+  fi
+  val="${line#*=}"
+  # dotenv 允许值带双引号；剥掉首尾引号再统计长度
+  val="${val%\"}"; val="${val#\"}"
+  if [ "${#val}" -lt "$min_len" ]; then
+    echo ""
+    echo "错误: apps/api/.env 的 ${key} 长度不足（期望 ≥${min_len} 字符，当前 ${#val}）。"
+    echo "      ${hint}"
+    exit 1
+  fi
+  if [ "$val" = "replace-with-at-least-32-random-characters" ]; then
+    echo ""
+    echo "错误: apps/api/.env 的 ${key} 仍是 .env.example 的占位符，请换成随机生成的真实值。"
+    echo "      ${hint}"
+    exit 1
+  fi
+}
+
+# issue #53: Webhook 地址 AES-256-GCM 加密密钥，API 启动强制必填。
+check_required_api_env "NOTIFICATION_SECRET_KEY" 32 \
+  "加密企业微信 Webhook 地址的密钥（见 docs/notification-design.md §5）。生成方式: openssl rand -hex 24"
+
 echo ""
 echo "===== [1/7] 启动 Postgres (Docker) ====="
 if docker ps --filter "name=^epgs-postgres$" --filter "health=healthy" --format '{{.Names}}' \

@@ -43,14 +43,6 @@ interface RuleDraft {
 }
 
 const EMPTY_FILTERS: RuleFilters = { enabled: '' };
-const EMPTY_RULE: RuleDraft = {
-  name: '',
-  cron: '',
-  templateId: '',
-  channelIds: [],
-  isEnabled: true,
-};
-const PAGE_SIZE = 20;
 
 /** 常用推送时间预设（静态常量，不依赖接口；cron 为 5 段，Asia/Shanghai 求值）。 */
 const CRON_PRESETS: Array<{ label: string; cron: string }> = [
@@ -59,6 +51,15 @@ const CRON_PRESETS: Array<{ label: string; cron: string }> = [
   { label: '每周一 9:00', cron: '0 9 * * 1' },
   { label: '每 30 分钟', cron: '*/30 * * * *' },
 ];
+
+const EMPTY_RULE: RuleDraft = {
+  name: '',
+  cron: CRON_PRESETS[0].cron,
+  templateId: '',
+  channelIds: [],
+  isEnabled: true,
+};
+const PAGE_SIZE = 20;
 
 function pushStatusLabel(status: NotificationPushStatusDto | null): string {
   switch (status) {
@@ -558,28 +559,20 @@ export function RulesPanel({
                 placeholder="例如：每日 9 点推送到总值班室群"
               />
             </label>
-            <label>
-              推送时间（Cron，Asia/Shanghai）
-              <input
-                value={draft.cron}
-                onChange={(event) => updateDraft('cron', event.target.value)}
-                maxLength={100}
-                placeholder="0 9 * * *"
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-            <div className="notification-cron-presets" role="group" aria-label="常用推送时间">
-              {CRON_PRESETS.map((preset) => (
-                <button
-                  key={preset.cron}
-                  className={`button${draft.cron === preset.cron ? ' button--primary' : ''}`}
-                  type="button"
-                  onClick={() => updateDraft('cron', preset.cron)}
-                >
-                  {preset.label}
-                </button>
-              ))}
+            <div className="notification-cron-field">
+              <span className="notification-cron-field__label">推送时间（Asia/Shanghai）</span>
+              <div className="notification-cron-presets" role="group" aria-label="常用推送时间">
+                {CRON_PRESETS.map((preset) => (
+                  <button
+                    key={preset.cron}
+                    className={`button${draft.cron === preset.cron ? ' button--primary' : ''}`}
+                    type="button"
+                    onClick={() => updateDraft('cron', preset.cron)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <label>
               推送模板

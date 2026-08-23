@@ -1,6 +1,14 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
+
+/**
+ * Moved from apps/api (issue: push rules) so the worker's scheduled tick can
+ * decrypt webhook URLs with the exact same implementation as the api's
+ * test-send. The only change vs the api original: the constructor takes the
+ * secret STRING directly instead of a Nest ConfigService - both apps wire it
+ * via `new NotificationSecretCipher(config.get('notificationSecretKey')!)`,
+ * and the api's ConfigService dependency is gone so the package stays
+ * Nest-config-agnostic.
+ */
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH_BYTES = 12; // 96-bit nonce, the GCM-recommended size.
@@ -21,17 +29,15 @@ const IV_LENGTH_BYTES = 12; // 96-bit nonce, the GCM-recommended size.
  * The key comes from NOTIFICATION_SECRET_KEY (see env.validation.ts),
  * never persisted to the database, same operational tier as JWT_SECRET.
  */
-@Injectable()
 export class NotificationSecretCipher {
   private readonly key: Buffer;
 
-  constructor(configService: ConfigService) {
-    const secret = configService.get<string>('notificationSecretKey');
+  constructor(secret: string) {
     if (!secret) {
       // Should be unreachable in practice - env.validation.ts requires this
-      // var at startup - but fail loudly rather than encrypting with an
-      // empty/undefined key if the config wiring is ever bypassed (e.g. in
-      // a unit test that constructs ConfigService directly).
+      // var at startup in both apps - but fail loudly rather than encrypting
+      // with an empty/undefined key if the config wiring is ever bypassed
+      // (e.g. in a unit test that constructs the cipher directly).
       throw new Error('NOTIFICATION_SECRET_KEY is not configured');
     }
     // Derive a fixed 32-byte key from the configured secret via SHA-256

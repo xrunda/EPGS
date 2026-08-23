@@ -21,6 +21,9 @@ export type AppRoleDto = 'VIEWER' | 'RULE_ADMIN' | 'SYSTEM_ADMIN' | 'AUDITOR';
  * template writes (issue #54). NOTIFICATION_TEST_SEND (issue #52/#53) is a
  * distinct action from CONFIG_CHANGE - a test-send is a real outbound push,
  * not a configuration edit, and must be independently auditable.
+ * NOTIFICATION_RULE_RUN (issue: push rules) is a manual "run now" of a push
+ * rule - scheduled runs have no operator, so their audit trail IS the
+ * push_log rows and they never write audit_log.
  */
 export type AuditActionDto =
   | 'EXAM_LIST'
@@ -31,7 +34,8 @@ export type AuditActionDto =
   | 'CONFIG_CHANGE'
   | 'AUDIT_VIEW'
   | 'LOGIN'
-  | 'NOTIFICATION_TEST_SEND';
+  | 'NOTIFICATION_TEST_SEND'
+  | 'NOTIFICATION_RULE_RUN';
 
 /** One row of `GET /api/audit`. */
 export interface AuditLogDto {

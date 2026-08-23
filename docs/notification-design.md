@@ -6,7 +6,8 @@
 > - issue #54：§8 的全部 HTTP API 已实现并附 e2e 测试——接口契约以
 >   `docs/notification-api.md` 为准（本节的响应示例可能略旧），读取字段按
 >   §5 收敛为 `webhookUrlMasked`，`PUT` 的 `webhookUrl` 只写不回填。
-> - 尚未实现：定时/自动推送（§2 明确 V1 不做）。
+> - 定时/自动推送：V1 已实现（§2.1，本次 issue，含 `NotificationRule` /
+>   `PushLog` / worker 调度器，见 §3 与 `docs/notification-rules-api.md`）。
 > - **2026-08-23 范围修订**：配置页前端 V1 只开放文本（`TEXT`）消息类型，
 >   图文（`NEWS`）标为"待开发"（前端隐藏入口）。API 与发送能力（含
 >   Webhook news 发送）均保留，未来开放时只需放开前端入口。
@@ -43,21 +44,64 @@ markdown 与 news（图文）两种消息类型均已通过真实发送验证，
 
 **不做**（明确排除，避免范围蔓延）：
 
-- **不做定时/自动触发推送**。触发时机（每日几点、什么条件触发）属于
-  业务规则，尚未与业务方确认；且自动化一旦配置错误就是每天对医生造成
-  骚扰，风险与收益不对称。V1 只做"人工点按钮触发"，验证内容/渠道本身
-  是否有价值后，再评估是否要做定时任务。
+- **不做定时/自动触发推送**——**该决策已随业务方确认而反转（2026-08-23，
+  本次 issue）**：定时推送规则 V1 已实现，见 §2.1。原"先人工验证内容/渠道
+  再评估定时"的路径已完成验证，值班场景确认为"每天固定时刻把今日新报告
+  汇总推到指定群"。
 - **不做封面图自动生成**。`NEWS` 消息的封面图 V1 仅支持业务人员填写
   静态图片 URL（如医院/科室 logo）。按当日数据动态渲染统计图（此前
   手动验证用 HTML→PNG→图床的方式）技术链路更长（需要引入渲染依赖 +
   图片托管），列为 V2 候选，不在 V1 实现。
-- **不做"渠道组"或"渠道-模板绑定"实体**。发送测试时临时选择渠道与
-  模板的组合，不预先绑定。多数场景下这已经够用；若后续出现"每次都要
-  固定发给这几个群"的高频诉求，再补一层绑定关系，不在 V1 预判。
+- **不做"渠道组"或"渠道-模板绑定"实体**——**该决策已演进（2026-08-23）**：
+  发送测试仍临时选择组合；定时推送规则 V1 引入"规则 × 渠道 M:N"绑定
+  （一条规则勾选多个渠道，见 §2.1 与 §3 `notification_rule_channel`），
+  以规则为聚合单位，取代了原先设想的"渠道-模板二选一绑定"。发送测试的
+  临时组合行为保持不变。
 - **不做规则式的版本化**（对比 `MonitorRule` 的版本化+软停用模式）。
   Webhook 地址和模板内容修改后不需要追溯"历史某条消息用的是哪个版本"
   ——这与监测规则不同：规则版本化是为了让历史 `monitor_match` 可追溯
   判定依据，而推送配置纯粹是"当前往哪投、发什么"，改了就是改了。
+
+### 2.1 定时推送规则 V1（2026-08-23 落地）
+
+业务方确认：值班场景需要每天固定时刻把"今日新报告的重点患者汇总"自动
+推到指定的一个或多个企业微信群。在 §2"人工点按钮"基础上增加**规则化
+自动推送**，但保留手动补推兜底。
+
+**锁定决策**（与业务方逐项确认，本次 issue 实现）：
+
+1. **触发方式**：`apps/worker` 每分钟 tick，扫描启用规则，cron 到期且该
+   规则**今日（上海时区）未自动推过** → 执行。沿用既有"自重排
+   setTimeout"任务模式（对齐 `sync.service.ts`），非 `@Cron`。
+2. **今日新报告口径**：`monitor_record.examTime` 落在今天（上海时区）
+   `00:00:00+08:00 ≤ examTime < 次日 00:00:00+08:00` 的记录按
+   `currentLevel` 计数，渲染进模板变量（`redCount/yellowCount/greenCount/
+   totalCount`）。⚠️ 与 test-send 现在的**全量计数**（不带日期窗）不同，
+   test-send 行为不变。
+3. **推送时间自定义**：规则存完整 **5 字段 cron 表达式**，Asia/Shanghai
+   时区求值（不受服务器进程 TZ 影响）。
+4. **多渠道勾选**：一条规则勾选多个渠道（M:N，`notification_rule_channel`
+   关联表），逐渠道发送、独立记录成功/失败，聚合为
+   `SUCCESS`/`PARTIAL`/`FAILED`。
+5. **手动补推**：规则页「立即执行一次」，走与定时完全相同的执行路径，
+   **永远允许**（幂等只约束定时推送）；支持 `?windowDate=` 指定历史日期
+   补推（如网络故障后重推昨日汇总）。
+6. **幂等**：定时推送按 `(rule_id, window_date)` 部分唯一索引
+   （WHERE `trigger='SCHEDULED'`）+ 应用层守卫双重防重；同日第二次定时
+   触发直接跳过，不重复外呼。
+7. **架构**：完整发送链路抽到共享包 `@epgs/notification-push`（加载渠道/
+   模板 → 取汇总 → 装变量 → 渲染 → 解密 webhook → 发送），api 的
+   test-send 与 worker 定时调度共用同一实现；worker 自带汇总适配
+   （GROUP BY 计数），定时推送不依赖 api 存活。
+8. **事件推送（新红色即推）**：V2 候选，本次明确不做。
+
+**执行与审计**：手动补推落 `NOTIFICATION_RULE_RUN` 审计（有操作人）；
+定时推送**不写审计**——无操作人，`push_log` 即其审计轨迹。规则 CRUD 落
+`CONFIG_CHANGE`。
+
+**前端**：配置页新增「规则」标签页，支持规则增删改、启停、cron 常用预设
+（每天 9:00 等）、模板下拉、渠道多选、逐渠道执行结果反馈与推送日志弹窗
+（含每渠道的 `wecomErrMsg`）。
 
 ## 3. 数据模型
 
@@ -93,6 +137,66 @@ markdown 与 news（图文）两种消息类型均已通过真实发送验证，
 模板内容本身（标题/正文文案措辞）判定为 LOW——不含患者数据，只是文案
 结构；渲染后发送出去的**实际消息内容**（含当日统计数字）不落库，只在
 发送时临时生成，避免和 `monitor_record`/`monitor_match` 产生数据冗余。
+
+### `notification_rule` — 定时推送规则（定时推送 V1）
+
+| 字段          | 类型         | 敏感级别 | 说明                                             |
+| ------------- | ------------ | -------- | ------------------------------------------------ |
+| `id`          | UUID PK      | LOW      | 主键                                              |
+| `name`        | varchar(100) | LOW      | 规则名称（如"每日 9 点推送到总值班室群"）          |
+| `cron`        | varchar(100) | LOW      | **5 字段 cron 表达式**，Asia/Shanghai 求值（§2.1 决策 3） |
+| `templateId`  | UUID FK      | LOW      | 推送模板（`notification_template.id`，Restrict）  |
+| `isEnabled`   | boolean      | LOW      | 软启停；停用后定时扫描跳过，但可手动补推          |
+| `createdAt`/`updatedAt` | timestamptz | LOW | 审计时间戳                                    |
+| `createdBy`/`updatedBy` | varchar(100) | MEDIUM | 操作人账号                                  |
+
+索引：`@@index([isEnabled])`（worker 定时扫描按启用过滤）、
+`@@index([templateId])`。规则与渠道为 M:N，见下。不做版本化（理由同 §2
+渠道/模板：改了就是改了，历史推送以 `push_log` 为准）。
+
+### `notification_rule_channel` — 规则-渠道绑定（M:N）
+
+| 字段          | 类型         | 敏感级别 | 说明                                             |
+| ------------- | ------------ | -------- | ------------------------------------------------ |
+| `id`          | UUID PK      | LOW      | 主键                                              |
+| `ruleId`      | UUID FK      | LOW      | 规则 id（Cascade 删除）                           |
+| `channelId`   | UUID FK      | LOW      | 渠道 id（Cascade 删除）                           |
+| `createdAt`   | timestamptz  | LOW      | 绑定时间                                          |
+
+`@@unique([ruleId, channelId])` 防重复绑定。编辑规则时 `channelIds` 全量
+替换（先删后插），无需版本化。
+
+### `push_log` — 推送运行日志（审计轨迹）
+
+| 字段          | 类型         | 敏感级别 | 说明                                             |
+| ------------- | ------------ | -------- | ------------------------------------------------ |
+| `id`          | UUID PK      | LOW      | 主键                                              |
+| `ruleId`      | UUID FK      | LOW      | 规则 id（**Restrict**，保留审计轨迹，规则不可带日志删除） |
+| `windowDate`  | varchar(10)  | LOW      | 推送的上海日 `YYYY-MM-DD`（§2.1 决策 2 的口径日期）|
+| `trigger`     | enum         | LOW      | `SCHEDULED` \| `MANUAL`                            |
+| `status`      | enum         | LOW      | `SUCCESS` \| `PARTIAL` \| `FAILED`（完成后写）     |
+| `errorSummary`| text?        | LOW      | 聚合失败摘要（不含患者数据/URL）                   |
+| `startedAt`/`finishedAt` | timestamptz | LOW | 起止时间（finishedAt 完成后补写）            |
+
+索引：`@@index([ruleId, startedAt])`（日志查询）、`@@index([trigger])`。
+**幂等关键**：`uq_push_log_scheduled_dedup` 部分唯一索引
+（`rule_id, window_date` WHERE `trigger='SCHEDULED'`）——Prisma `@@unique`
+无法表达部分索引，该索引在 migration.sql 手写维护，`migrate dev` 可能提议
+DROP，需人工补回（见 §3 后注释与迁移头注释）。
+
+### `push_delivery` — 单渠道发送明细
+
+| 字段          | 类型         | 敏感级别 | 说明                                             |
+| ------------- | ------------ | -------- | ------------------------------------------------ |
+| `id`          | UUID PK      | LOW      | 主键                                              |
+| `pushLogId`   | UUID FK      | LOW      | 所属推送日志（Cascade 删除）                      |
+| `channelId`   | UUID FK      | LOW      | 渠道 id（**Restrict**；渠道停用/删除不影响历史明细，但删除渠道前需先处理日志） |
+| `status`      | enum         | LOW      | `SUCCESS` \| `FAILED`                              |
+| `wecomErrCode`| int?         | LOW      | 企业微信返回的 errcode（失败时）                   |
+| `wecomErrMsg` | varchar(255)?| LOW      | 企业微信错误文案；**绝不含 webhook URL/key**       |
+| `sentAt`      | timestamptz? | LOW      | 真实外呼时刻；未外呼（如停用拦截）为 null          |
+
+索引：`@@index([pushLogId])`、`@@index([channelId])`。
 
 ## 4. 占位符机制
 
@@ -254,9 +358,9 @@ TOKEN` 是环境变量、从未落库）。现有基础设施没有可直接复�
    可信 IP 配置，见 §1 背景），届时 `msgType` 枚举需要扩展，且发送
    逻辑需要区分 Webhook 与自建应用两种调用路径——本设计的 `msgType`
    已按可扩展枚举设计，但自建应用路径的实现不在 V1 范围。
-4. **定时自动推送何时启动**——见 §2，V1 故意不做，待业务方确认触发
-   时机后另开 issue，复用 `apps/worker` 现有"自重排 setTimeout"任务
-   模式（对齐 `sync.service.ts`），而非 `@Cron`。
+4. **定时自动推送何时启动**——✅ **已落地（2026-08-23，本次 issue）**，见
+   §2.1 与 §3。按原计划复用了 `apps/worker` 现有"自重排 setTimeout"任务
+   模式（`NotificationScheduler`，对齐 `sync.service.ts`），非 `@Cron`。
 5. **封面图自动生成何时启动**——见 §2，若确认要做，技术方案参考本次
    手动验证使用的路径（HTML 渲染→PNG→图片托管），但生产环境图片
    托管方式需要重新选型（当前验证使用的第三方图床服务不适合生产）。

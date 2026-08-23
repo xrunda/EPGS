@@ -36,6 +36,12 @@ export interface WorkerConfig {
    * rather than defaulted on.
    */
   pacsSoapTlsInsecure: boolean;
+  /** AES-256-GCM key for NotificationChannel.webhookUrl decryption (same value as apps/api). Never logged. */
+  notificationSecretKey: string;
+  /** Hospital name rendered into {{hospitalName}} in push bodies. */
+  hospitalName: string;
+  /** Push-rule scheduler tick cadence in seconds (10-300, default 60). */
+  notificationTickSeconds: number;
 }
 
 export default (): WorkerConfig => ({
@@ -61,4 +67,7 @@ export default (): WorkerConfig => ({
   pacsSoapKeyName: process.env.PACS_SOAP_KEY_NAME,
   pacsSoapTimeoutMs: parseInt(process.env.PACS_SOAP_TIMEOUT_MS ?? '15000', 10),
   pacsSoapTlsInsecure: process.env.PACS_SOAP_TLS_INSECURE === 'true',
+  notificationSecretKey: process.env.NOTIFICATION_SECRET_KEY ?? '',
+  hospitalName: process.env.HOSPITAL_NAME ?? '菏泽市中医医院',
+  notificationTickSeconds: parseInt(process.env.NOTIFICATION_TICK_SECONDS ?? '60', 10),
 });

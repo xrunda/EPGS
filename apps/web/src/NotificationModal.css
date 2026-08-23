@@ -231,3 +231,157 @@
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   推送规则（issue: push rules）。
+   Cron 表达式（等宽 chip + 常用预设按钮组）、多渠道复选组、手动补推的逐渠道
+   结果反馈、推送日志弹窗与送达明细表。
+--------------------------------------------------------------------------- */
+
+.notification-cron {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #f0f5f4;
+  color: var(--ink-700);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.notification-cron-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -8px 0 12px;
+}
+.notification-cron-presets .button {
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+}
+
+.notification-channel-picker {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+}
+.notification-channel-picker legend {
+  padding: 0 6px;
+  color: var(--ink-300);
+  font-size: 12px;
+}
+.notification-channel-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px 14px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.notification-channel-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.notification-channel-option input {
+  accent-color: var(--teal-700);
+}
+.notification-option-error {
+  margin: 0;
+  color: var(--ink-300);
+  font-size: 12px;
+}
+
+/* 手动补推结果反馈（SUCCESS 复用 feedback--success / FAILED 复用 feedback--error） */
+.notification-feedback--warning {
+  background: var(--yellow-wash);
+  color: var(--yellow-ink);
+}
+.notification-run-deliveries {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.notification-run-deliveries li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.notification-run-deliveries small {
+  color: var(--ink-300);
+}
+
+/* 推送状态徽标（日志表 + 送达明细 + 手动补推反馈共用） */
+.notification-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.notification-status--ok {
+  background: var(--green-tint);
+  color: var(--green-ink);
+}
+.notification-status--bad {
+  background: var(--red-tint);
+  color: var(--red-ink);
+}
+.notification-status--partial {
+  background: var(--yellow-tint);
+  color: var(--yellow-ink);
+}
+.notification-status--pending {
+  background: #e9eeee;
+  color: #667779;
+}
+
+/* 推送日志子弹窗 */
+.notification-log-subtitle {
+  margin: 14px 28px 0;
+  color: var(--ink-300);
+  font-size: 13px;
+}
+.notification-log-wrap {
+  margin: 14px 28px 24px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+.notification-log-wrap .rules-pagination {
+  border-top: 1px solid var(--border-subtle);
+}
+.notification-log-table {
+  min-width: 0;
+}
+.notification-log-detail-row td {
+  background: var(--surface-sunken);
+  padding: 12px 16px;
+}
+.notification-delivery-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.notification-delivery-table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--ink-300);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.notification-delivery-table td {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-subtle);
+  color: #334b4f;
+  vertical-align: middle;
+}

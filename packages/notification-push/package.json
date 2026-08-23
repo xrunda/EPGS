@@ -1,0 +1,29 @@
+{
+  "name": "@epgs/notification-push",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared WeCom notification push pipeline for EPGS (issue: push rules): summary → render → decrypt webhook → send, plus the multi-channel rule executor with push_log auditing. Consumed by apps/api (test-send + manual rule run) and apps/worker (scheduled rule tick).",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.6",
+    "cron": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.9.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.6.3",
+    "undici": "^6.21.0"
+  }
+}

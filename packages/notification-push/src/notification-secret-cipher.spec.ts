@@ -1,9 +1,7 @@
-import { ConfigService } from '@nestjs/config';
-import { NotificationSecretCipher } from './notification-secret-cipher.service';
+import { NotificationSecretCipher } from './notification-secret-cipher';
 
 function cipherWithKey(secret: string): NotificationSecretCipher {
-  const configService = { get: () => secret } as unknown as ConfigService;
-  return new NotificationSecretCipher(configService);
+  return new NotificationSecretCipher(secret);
 }
 
 describe('NotificationSecretCipher', () => {
@@ -57,9 +55,7 @@ describe('NotificationSecretCipher', () => {
   });
 
   it('throws at construction time when no secret is configured', () => {
-    const configService = { get: () => undefined } as unknown as ConfigService;
-
-    expect(() => new NotificationSecretCipher(configService)).toThrow(
+    expect(() => new NotificationSecretCipher('')).toThrow(
       'NOTIFICATION_SECRET_KEY is not configured',
     );
   });

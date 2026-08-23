@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { NotificationRuleDto } from '@epgs/shared-types';
 import { ChannelPanel } from './ChannelPanel';
 import { TemplatePanel } from './TemplatePanel';
+import { RulesPanel } from './RulesPanel';
 import { TestSendDialog } from './TestSendDialog';
+import { PushLogsDialog } from './PushLogsDialog';
 import './NotificationModal.css';
 
 interface NotificationModalProps {
@@ -12,7 +15,7 @@ interface NotificationModalProps {
   actorId?: string;
 }
 
-type ActiveTab = 'channels' | 'templates';
+type ActiveTab = 'channels' | 'templates' | 'rules';
 
 /** 发送测试对话框的预选（来自渠道/模板行的行内入口）。 */
 type TestSendSelection = { channelId?: string; templateId?: string };
@@ -20,6 +23,7 @@ type TestSendSelection = { channelId?: string; templateId?: string };
 const TABS: Array<{ key: ActiveTab; label: string }> = [
   { key: 'channels', label: '渠道' },
   { key: 'templates', label: '模板' },
+  { key: 'rules', label: '规则' },
 ];
 
 export function NotificationModal({
@@ -32,6 +36,8 @@ export function NotificationModal({
   // 抬升的 dirty：任一 panel 的编辑器未保存时门控切 tab 与关闭弹窗
   const [dirty, setDirty] = useState(false);
   const [testSend, setTestSend] = useState<TestSendSelection | null>(null);
+  // 规则「日志」子弹窗的目标规则（RulesPanel 行内入口抬升到此挂载，与 testSend 同层）
+  const [logsFor, setLogsFor] = useState<NotificationRuleDto | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -46,12 +52,12 @@ export function NotificationModal({
   useEffect(() => {
     if (!open) return undefined;
     const onKeyDown = (event: KeyboardEvent): void => {
-      // 发送测试子对话框打开时由它自己处理 Escape，避免一次按键关闭两层弹窗
-      if (event.key === 'Escape' && !testSend) requestClose();
+      // 发送测试/推送日志等子对话框打开时由它们自己处理 Escape，避免一次按键关闭两层弹窗
+      if (event.key === 'Escape' && !testSend && !logsFor) requestClose();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open, requestClose, testSend]);
+  }, [open, requestClose, testSend, logsFor]);
 
   if (!open) return null;
 
@@ -120,12 +126,19 @@ export function NotificationModal({
             onDirtyChange={setDirty}
             onOpenTestSend={setTestSend}
           />
-        ) : (
+        ) : activeTab === 'templates' ? (
           <TemplatePanel
             actorId={actorId}
             canManageNotifications={canManageNotifications}
             onDirtyChange={setDirty}
             onOpenTestSend={setTestSend}
+          />
+        ) : (
+          <RulesPanel
+            actorId={actorId}
+            canManageNotifications={canManageNotifications}
+            onDirtyChange={setDirty}
+            onOpenLogs={setLogsFor}
           />
         )}
       </section>
@@ -133,6 +146,7 @@ export function NotificationModal({
       {testSend && (
         <TestSendDialog open onClose={() => setTestSend(null)} preselect={testSend} />
       )}
+      {logsFor && <PushLogsDialog rule={logsFor} onClose={() => setLogsFor(null)} />}
     </div>
   );
 }

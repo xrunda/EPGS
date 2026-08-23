@@ -8,8 +8,8 @@ import {
   PaginatedNotificationChannels,
   PaginatedNotificationTemplates,
 } from '@epgs/shared-types';
+import { NotificationSecretCipher } from '@epgs/notification-push';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationSecretCipher } from './notification-secret-cipher.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { ListChannelsQueryDto } from './dto/list-channels.query.dto';

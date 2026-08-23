@@ -1,18 +1,26 @@
 import type {
   CreateNotificationChannelBody,
+  CreateNotificationRuleBody,
   CreateNotificationTemplateBody,
   ListNotificationChannelsQuery,
+  ListNotificationRulesQuery,
   ListNotificationTemplatesQuery,
+  ListPushLogsQuery,
   NotificationChannelDto,
+  NotificationRuleDto,
   NotificationSendFailureDetails,
   NotificationTemplateDto,
   NotificationTemplatePresetDto,
   NotificationVariableDto,
   PaginatedNotificationChannels,
+  PaginatedNotificationRules,
   PaginatedNotificationTemplates,
+  PaginatedPushLogs,
+  RunNotificationRuleResult,
   TestSendBody,
   TestSendResult,
   UpdateNotificationChannelBody,
+  UpdateNotificationRuleBody,
   UpdateNotificationTemplateBody,
 } from '@epgs/shared-types';
 
@@ -81,6 +89,10 @@ export function friendlyError(error: unknown): string {
         return error.details?.wecomErrMsg
           ? `企业微信发送失败：${error.details.wecomErrMsg}`
           : '企业微信发送失败，请检查机器人 Webhook 配置后重试。';
+      case 'NOTIFICATION_RULE_NOT_FOUND':
+        return '推送规则不存在或已被删除。';
+      case 'NOTIFICATION_RULE_NO_CHANNELS':
+        return '推送规则至少需要绑定一个渠道。';
     }
     return error.message;
   }
@@ -184,5 +196,57 @@ export async function testSend(channelId: string, body: TestSendBody): Promise<T
       `${API_BASE_URL}/api/notification-channels/${channelId}/test-send`,
       jsonRequest('POST', body),
     ),
+  );
+}
+
+// ---- 推送规则（issue: push rules）--------------------------------------------
+
+export async function listRules(
+  query: ListNotificationRulesQuery,
+): Promise<PaginatedNotificationRules> {
+  const params = new URLSearchParams();
+  if (query.isEnabled !== undefined) params.set('isEnabled', String(query.isEnabled));
+  params.set('page', String(query.page ?? 1));
+  params.set('pageSize', String(query.pageSize ?? 20));
+  return parseResponse(
+    await fetch(`${API_BASE_URL}/api/notification-rules?${params.toString()}`, {
+      credentials: 'include',
+    }),
+  );
+}
+
+export async function createRule(body: CreateNotificationRuleBody): Promise<NotificationRuleDto> {
+  return parseResponse(
+    await fetch(`${API_BASE_URL}/api/notification-rules`, jsonRequest('POST', body)),
+  );
+}
+
+export async function updateRule(
+  id: string,
+  body: UpdateNotificationRuleBody,
+): Promise<NotificationRuleDto> {
+  return parseResponse(
+    await fetch(`${API_BASE_URL}/api/notification-rules/${id}`, jsonRequest('PUT', body)),
+  );
+}
+
+export async function runRule(ruleId: string, windowDate?: string): Promise<RunNotificationRuleResult> {
+  const query = windowDate ? `?windowDate=${encodeURIComponent(windowDate)}` : '';
+  return parseResponse(
+    await fetch(`${API_BASE_URL}/api/notification-rules/${ruleId}/run${query}`, jsonRequest('POST', {})),
+  );
+}
+
+export async function listPushLogs(
+  ruleId: string,
+  query: ListPushLogsQuery,
+): Promise<PaginatedPushLogs> {
+  const params = new URLSearchParams();
+  params.set('page', String(query.page ?? 1));
+  params.set('pageSize', String(query.pageSize ?? 20));
+  return parseResponse(
+    await fetch(`${API_BASE_URL}/api/notification-rules/${ruleId}/push-logs?${params.toString()}`, {
+      credentials: 'include',
+    }),
   );
 }

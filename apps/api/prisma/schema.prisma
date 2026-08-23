@@ -196,6 +196,11 @@ enum AuditAction {
   AUDIT_VIEW
   LOGIN
   NOTIFICATION_TEST_SEND
+  /// Manual "run now" of a notification rule (issue: push rules). The
+  /// scheduled (SCHEDULED) path has no human operator and is audited by the
+  /// push_log table itself; only the manual trigger is a real outbound
+  /// action by a person that needs an audit_log entry.
+  NOTIFICATION_RULE_RUN
 }
 
 /// Message shape for a notification_template. Deliberately mirrors what the
@@ -209,6 +214,29 @@ enum AuditAction {
 enum NotificationMsgType {
   TEXT
   NEWS
+}
+
+/// Why a push_log row was created: the daily scheduler (SCHEDULED) or the
+/// manual "run now" button (MANUAL). Only SCHEDULED rows are subject to the
+/// per-rule-per-day idempotency index (see PushLog).
+enum NotificationPushTrigger {
+  SCHEDULED
+  MANUAL
+}
+
+/// Aggregate outcome of a push_log run across ALL of the rule's channels
+/// (SUCCESS = every delivery succeeded, PARTIAL = at least one succeeded and
+/// one failed, FAILED = every delivery failed).
+enum NotificationPushStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+/// Per-channel outcome of one delivery inside a push_log.
+enum NotificationPushDeliveryStatus {
+  SUCCESS
+  FAILED
 }
 
 // ---------------------------------------------------------------------------
@@ -548,6 +576,10 @@ model NotificationChannel {
   /// Operator account who last modified this channel.
   updatedBy String @map("updated_by") @db.VarChar(100)
 
+  /// Reverse relations for notification push rules (issue: push rules).
+  ruleChannels   NotificationRuleChannel[]
+  pushDeliveries PushDelivery[]
+
   @@index([isEnabled])
   @@map("notification_channel")
 }
@@ -608,7 +640,153 @@ model NotificationTemplate {
   /// Operator account who last modified this template.
   updatedBy String @map("updated_by") @db.VarChar(100)
 
+  /// Reverse relation for notification push rules (issue: push rules).
+  rules NotificationRule[]
+
   @@index([isEnabled])
   @@index([msgType])
   @@map("notification_template")
+}
+
+// ---------------------------------------------------------------------------
+// notification_rule / notification_rule_channel - push scheduling rules
+// ---------------------------------------------------------------------------
+
+/// A push scheduling rule (issue: push rules): "on <cron> (Asia/Shanghai),
+/// send the current-day summary built from <template> to every channel in
+/// <channels>." A rule is a pure configuration of WHEN + WHAT + WHERE; the
+/// run itself (summary snapshot, rendering, per-channel delivery, push_log)
+/// is executed by the shared @epgs/notification-push package from both
+/// apps/worker (SCHEDULED tick) and apps/api (MANUAL "run now").
+///
+/// The cron expression is evaluated against Asia/Shanghai explicitly (never
+/// the process TZ). See docs/notification-design.md for the trigger model.
+model NotificationRule {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Human-readable rule name shown in the config UI, e.g. "每日 9 点关注摘要".
+  name String @db.VarChar(100)
+
+  /// 5-field cron expression (minute-hour-day-month-dow), evaluated in
+  /// Asia/Shanghai. Validated with the shared package's
+  /// isValidCronExpression on write.
+  cron String @db.VarChar(100)
+
+  /// Which template produces the message body for every channel in this rule.
+  templateId String               @map("template_id") @db.Uuid
+  template   NotificationTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  /// Soft enable/disable switch. Disabled rules are skipped by the worker
+  /// tick but kept (and still manually runnable? No - see the run endpoint).
+  isEnabled Boolean @default(true) @map("is_enabled")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// Operator account (external identity) who created this rule. Not a FK,
+  /// same rationale as MonitorRule.createdBy.
+  createdBy String @map("created_by") @db.VarChar(100)
+
+  /// Operator account who last modified this rule.
+  updatedBy String @map("updated_by") @db.VarChar(100)
+
+  ruleChannels NotificationRuleChannel[]
+  pushLogs     PushLog[]
+
+  @@index([isEnabled])
+  @@index([templateId])
+  @@map("notification_rule")
+}
+
+/// Join table between NotificationRule and NotificationChannel (M:N).
+model NotificationRuleChannel {
+  id String @id @default(uuid()) @db.Uuid
+
+  ruleId String           @map("rule_id") @db.Uuid
+  rule   NotificationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  channelId String              @map("channel_id") @db.Uuid
+  channel   NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ruleId, channelId], name: "uq_notification_rule_channel_pair")
+  @@index([channelId])
+  @@map("notification_rule_channel")
+}
+
+// ---------------------------------------------------------------------------
+// push_log / push_delivery - audit trail of every rule run
+// ---------------------------------------------------------------------------
+
+/// One execution of a NotificationRule against a specific calendar window
+/// (`windowDate`, a Shanghai YYYY-MM-DD). A run fans out to one
+/// PushDelivery per rule channel. For SCHEDULED runs a rule may only run
+/// once per (rule, windowDate) - enforced by BOTH an application-layer guard
+/// and the partial unique index `uq_push_log_scheduled_dedup` created in
+/// migration add_notification_push_rules (Prisma `@@unique` cannot express a
+/// WHERE-clause partial index). NOTE: that index is hand-written in the
+/// migration and NOT expressible in this schema - if `prisma migrate dev`
+/// ever proposes dropping it, re-apply it by hand (see migration header).
+///
+/// No audit_log row is written for SCHEDULED runs (no human operator); this
+/// table IS their audit trail. Only the MANUAL "run now" also writes an
+/// audit_log entry (AuditAction.NOTIFICATION_RULE_RUN).
+model PushLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  ruleId String           @map("rule_id") @db.Uuid
+  rule   NotificationRule @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+
+  /// Shanghai date (YYYY-MM-DD) of the summary window this run pushed.
+  /// Equal to the run's report date for both SCHEDULED and MANUAL runs.
+  windowDate String @map("window_date") @db.VarChar(10)
+
+  trigger NotificationPushTrigger
+
+  /// Aggregate status; written by the executor AFTER all deliveries settle
+  /// (initially null while the run is in flight).
+  status NotificationPushStatus?
+
+  /// Free-text summary when the run ended FAILED/PARTIAL (e.g. the template
+  /// or a channel no longer exists). Never contains patient data or URLs.
+  errorSummary String? @map("error_summary") @db.Text
+
+  startedAt  DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  deliveries PushDelivery[]
+
+  @@index([ruleId, startedAt])
+  @@index([trigger])
+  @@map("push_log")
+}
+
+/// One channel's delivery outcome inside a PushLog run.
+model PushDelivery {
+  id String @id @default(uuid()) @db.Uuid
+
+  pushLogId String  @map("push_log_id") @db.Uuid
+  pushLog   PushLog @relation(fields: [pushLogId], references: [id], onDelete: Cascade)
+
+  channelId String              @map("channel_id") @db.Uuid
+  channel   NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Restrict)
+
+  status NotificationPushDeliveryStatus
+
+  /// WeCom `errcode` when the delivery failed at the WeCom layer (0 for
+  /// non-WeCom failures like a disabled channel). Null on success.
+  wecomErrCode Int? @map("wecom_err_code")
+
+  /// WeCom `errmsg` (or a short reason) when the delivery failed. Never the
+  /// webhook URL.
+  wecomErrMsg String? @map("wecom_err_msg") @db.VarChar(255)
+
+  /// UTC instant the message was handed to the WeCom webhook. Null when the
+  /// delivery failed before any outbound call.
+  sentAt DateTime? @map("sent_at") @db.Timestamptz(6)
+
+  @@index([pushLogId])
+  @@index([channelId])
+  @@map("push_delivery")
 }

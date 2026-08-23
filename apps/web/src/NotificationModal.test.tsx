@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { NotificationChannelDto, NotificationTemplateDto } from '@epgs/shared-types';
+import type {
+  NotificationChannelDto,
+  NotificationRuleDto,
+  NotificationTemplateDto,
+} from '@epgs/shared-types';
 import { NotificationModal } from './NotificationModal';
 
 const channel: NotificationChannelDto = {
@@ -25,6 +29,20 @@ const template: NotificationTemplateDto = {
   isEnabled: true,
   createdAt: '2026-08-21T00:00:00.000Z',
   updatedAt: '2026-08-21T00:00:00.000Z',
+  createdBy: 'admin',
+  updatedBy: 'admin',
+};
+
+const rule: NotificationRuleDto = {
+  id: 'rule-1',
+  name: '每日 9 点',
+  cron: '0 9 * * *',
+  templateId: 'template-1',
+  templateName: '红色关注提醒',
+  channels: [{ id: 'rc-1', channelId: 'channel-1', name: '全体护士群' }],
+  isEnabled: true,
+  createdAt: '2026-08-23T00:00:00.000Z',
+  updatedAt: '2026-08-23T00:00:00.000Z',
   createdBy: 'admin',
   updatedBy: 'admin',
 };
@@ -64,6 +82,12 @@ describe('NotificationModal', () => {
         }
         if (url.includes('/api/notification-channels')) {
           return jsonResponse({ items: [channel], total: 1, page: 1, pageSize: 20 });
+        }
+        if (url.includes('/push-logs')) {
+          return jsonResponse({ items: [], total: 0, page: 1, pageSize: 20 });
+        }
+        if (url.includes('/api/notification-rules')) {
+          return jsonResponse({ items: [rule], total: 1, page: 1, pageSize: 20 });
         }
         if (url.includes('/api/notification-templates')) {
           return jsonResponse({ items: [template], total: 1, page: 1, pageSize: 20 });
@@ -186,6 +210,41 @@ describe('NotificationModal', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(screen.queryByRole('dialog', { name: '发送测试消息' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '消息推送配置' })).toBeInTheDocument();
+  });
+
+  it('lazy-mounts the rules panel on the 规则 tab and shows rule rows', async () => {
+    renderModal();
+    await screen.findByText('全体护士群');
+    expect(
+      vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/notification-rules')),
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole('tab', { name: '规则' }));
+
+    expect(screen.getByText('正在加载规则…')).toBeInTheDocument();
+    expect(await screen.findByText('每日 9 点')).toBeInTheDocument();
+    const row = screen.getByRole('row', { name: /每日 9 点/ });
+    expect(within(row).getByText('0 9 * * *')).toBeInTheDocument();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/notification-rules')),
+    ).toBe(true);
+  });
+
+  it('opens the push log dialog and Escape closes only that layer, not the modal', async () => {
+    renderModal();
+    await screen.findByText('全体护士群');
+
+    fireEvent.click(screen.getByRole('tab', { name: '规则' }));
+    await screen.findByText('每日 9 点');
+    fireEvent.click(screen.getByRole('button', { name: '日志' }));
+
+    expect(await screen.findByRole('dialog', { name: '推送日志' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '消息推送配置' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: '推送日志' })).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: '消息推送配置' })).toBeInTheDocument();
   });
 });

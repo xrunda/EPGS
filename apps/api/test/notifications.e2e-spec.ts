@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { GlobalExceptionFilter } from '../src/common/filters/global-exception.filter';
 import { hash, argon2id } from 'argon2';
-import { WecomWebhookSender, WecomWebhookError } from '../src/notifications/wecom-webhook-sender';
+import { WecomWebhookSender, WecomWebhookError, NotificationRuleExecutor } from '@epgs/notification-push';
 
 /**
  * Full-stack e2e test for issue #54's notification channel/template APIs +
@@ -99,6 +99,34 @@ describe('Notification API (e2e, real Postgres)', () => {
       });
     }
 
+    // Push-rule fixture: 3 records with examTime inside the 2026-08-23
+    // Shanghai window [00:00+08, 24:00+08) and 1 just OUTSIDE it (00:00+08 the
+    // next day). Summary for that window => RED 1 / YELLOW 1 / GREEN 1 / total
+    // 3; the outside record proves the `lt` boundary excludes the next day's
+    // first instant. The suite passes an explicit ?windowDate= so it never
+    // depends on the real wall clock.
+    const RULE_WINDOW_EXAM_TIMES: Array<{ level: string; examTime: Date }> = [
+      { level: 'RED', examTime: new Date('2026-08-23T01:00:00Z') }, // 09:00 +08 (in)
+      { level: 'YELLOW', examTime: new Date('2026-08-22T16:00:00Z') }, // 00:00 +08, gte (in)
+      { level: 'GREEN', examTime: new Date('2026-08-23T15:59:00Z') }, // 23:59 +08 (in)
+      { level: 'GREEN', examTime: new Date('2026-08-23T16:00:00Z') }, // 00:00 +08 next day (out)
+    ];
+    for (const [index, row] of RULE_WINDOW_EXAM_TIMES.entries()) {
+      await prisma.monitorRecord.create({
+        data: {
+          sourceRecordId: `NOTIF-RULE-${index}`,
+          reportId: `NOTIF-RULE-${index}`,
+          reportVersion: 1,
+          sourceUpdatedAt: new Date('2026-08-23T01:00:00Z'),
+          patientName: '规则推送患者',
+          department: '骨科',
+          examItem: '电子胃镜检查',
+          currentLevel: row.level as never,
+          examTime: row.examTime,
+        },
+      });
+    }
+
     fakeSender = { send: jest.fn(async () => ({ errcode: 0, errmsg: 'ok' })) };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -149,6 +177,13 @@ describe('Notification API (e2e, real Postgres)', () => {
   afterAll(async () => {
     if (dbAvailable) {
       await prisma.auditLog.deleteMany({});
+      // FK order: push_delivery -> push_log -> rule_channel -> rule, all
+      // before channels/templates (rule->template and delivery->channel are
+      // Restrict; leaving a rule would block the template delete below).
+      await prisma.pushDelivery.deleteMany({});
+      await prisma.pushLog.deleteMany({});
+      await prisma.notificationRuleChannel.deleteMany({});
+      await prisma.notificationRule.deleteMany({});
       await prisma.notificationChannel.deleteMany({});
       await prisma.notificationTemplate.deleteMany({});
       await prisma.monitorMatch.deleteMany({});
@@ -167,6 +202,12 @@ describe('Notification API (e2e, real Postgres)', () => {
   beforeEach(async () => {
     if (!dbAvailable) return;
     fakeSender.send.mockClear();
+    // Same FK order as afterAll - a rule bound to a channel from a prior test
+    // would otherwise block the channel/template delete (Restrict).
+    await prisma.pushDelivery.deleteMany({});
+    await prisma.pushLog.deleteMany({});
+    await prisma.notificationRuleChannel.deleteMany({});
+    await prisma.notificationRule.deleteMany({});
     await prisma.notificationChannel.deleteMany({});
     await prisma.notificationTemplate.deleteMany({});
   });
@@ -399,5 +440,183 @@ describe('Notification API (e2e, real Postgres)', () => {
     await viewerAgent.get('/api/notification-channels').expect(200);
     await viewerAgent.get('/api/notification-templates').expect(200);
     await viewerAgent.get('/api/notification-templates/variables').expect(200);
+  });
+
+  // ---- push rules (issue: push rules) -------------------------------------
+
+  const RULE_WINDOW = '2026-08-23';
+
+  async function createRule(body: Record<string, unknown>): Promise<any> {
+    const res = await adminAgent.post('/api/notification-rules').send(body).expect(201);
+    return res.body;
+  }
+
+  itWithDb('rule lifecycle: create -> bindings -> list/get -> update replaces channels, bad cron rejected', async () => {
+    const channel = await createChannel();
+    const template = await createTemplate({
+      name: '日报',
+      msgType: 'TEXT',
+      contentTemplate: '{{reportDate}} 共{{totalCount}}例',
+    });
+
+    const rule = await createRule({
+      name: '每日 9 点',
+      cron: '0 9 * * *',
+      templateId: template.id,
+      channelIds: [channel.id],
+      isEnabled: true,
+    });
+    expect(rule).toMatchObject({
+      name: '每日 9 点',
+      cron: '0 9 * * *',
+      templateId: template.id,
+      templateName: '日报',
+      isEnabled: true,
+    });
+    expect(rule.channels).toEqual([{ id: expect.any(String), channelId: channel.id, name: '总值班室群' }]);
+
+    const list = await adminAgent.get('/api/notification-rules').expect(200);
+    expect(list.body).toMatchObject({ page: 1, pageSize: 20, total: 1 });
+    expect(list.body.items[0].channels).toEqual(rule.channels);
+
+    const fetched = await adminAgent.get(`/api/notification-rules/${rule.id}`).expect(200);
+    expect(fetched.body.name).toBe('每日 9 点');
+
+    // Channel bindings replace as a whole.
+    const channel2 = await createChannel(
+      '护理部群',
+      'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=second-secret',
+    );
+    const updated = await adminAgent
+      .put(`/api/notification-rules/${rule.id}`)
+      .send({ name: '每日 8 点', channelIds: [channel2.id] })
+      .expect(200);
+    expect(updated.body.name).toBe('每日 8 点');
+    expect(updated.body.channels).toEqual([{ id: expect.any(String), channelId: channel2.id, name: '护理部群' }]);
+
+    // An invalid cron is rejected by the DTO (shared validator) before any write.
+    const badCron = await adminAgent
+      .post('/api/notification-rules')
+      .send({ name: 'x', cron: 'not a cron', templateId: template.id, channelIds: [channel2.id] })
+      .expect(400);
+    expect(badCron.body.error.code).toBe('BAD_REQUEST');
+    expect(badCron.body.error.message).toContain('cron');
+
+    // Empty channel selection is rejected too.
+    await adminAgent
+      .post('/api/notification-rules')
+      .send({ name: 'x', cron: '0 9 * * *', templateId: template.id, channelIds: [] })
+      .expect(400);
+  });
+
+  itWithDb('manual run pushes the TODAY-NEW-REPORT window summary into a PushLog + delivery and audits it', async () => {
+    const channel = await createChannel(
+      '总值班室群',
+      'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e2e-rule-secret',
+    );
+    const template = await createTemplate({
+      name: '日报',
+      msgType: 'TEXT',
+      contentTemplate: '{{reportDate}} {{hospitalName}} 红{{redCount}} 黄{{yellowCount}} 绿{{greenCount}} 共{{totalCount}}',
+    });
+    const rule = await createRule({
+      name: '每日 9 点',
+      cron: '0 9 * * *',
+      templateId: template.id,
+      channelIds: [channel.id],
+    });
+
+    const res = await adminAgent
+      .post(`/api/notification-rules/${rule.id}/run`)
+      .query({ windowDate: RULE_WINDOW })
+      .expect(200);
+    expect(res.body).toMatchObject({ alreadyPushed: false, status: 'SUCCESS' });
+    expect(res.body.deliveries).toHaveLength(1);
+    expect(res.body.deliveries[0]).toMatchObject({
+      channelId: channel.id,
+      channelName: '总值班室群',
+      status: 'SUCCESS',
+      wecomErrCode: null,
+      wecomErrMsg: null,
+    });
+
+    // PushLog is the audit trail for a run.
+    const log = await prisma.pushLog.findUnique({ where: { id: res.body.pushLogId } });
+    expect(log).toMatchObject({
+      ruleId: rule.id,
+      windowDate: RULE_WINDOW,
+      trigger: 'MANUAL',
+      status: 'SUCCESS',
+    });
+    expect(log?.errorSummary).toBeNull();
+
+    const delivery = await prisma.pushDelivery.findFirst({ where: { pushLogId: res.body.pushLogId } });
+    expect(delivery).toMatchObject({ channelId: channel.id, status: 'SUCCESS', wecomErrCode: null, wecomErrMsg: null });
+    expect(delivery?.sentAt).not.toBeNull();
+
+    // The sender got the decrypted URL + the window-summary render. The 4th
+    // record (examTime 00:00+08 NEXT day) is excluded by the lt boundary.
+    expect(fakeSender.send).toHaveBeenCalledTimes(1);
+    const [url, message] = fakeSender.send.mock.calls[0];
+    expect(url).toContain('e2e-rule-secret');
+    expect(message.renderedContent).toBe('2026-08-23 菏泽市中医医院 红1 黄1 绿1 共3');
+
+    // Audit: the manual run records NOTIFICATION_RULE_RUN with the outcome.
+    const auditRow = await prisma.auditLog.findFirst({
+      where: { action: 'NOTIFICATION_RULE_RUN' as never },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(auditRow).not.toBeNull();
+    expect((auditRow as any).meta).toMatchObject({
+      result: 'executed',
+      status: 'SUCCESS',
+      pushLogId: res.body.pushLogId,
+    });
+  });
+
+  itWithDb('SCHEDULED executor dedupes a second run of the same window via the partial unique index', async () => {
+    const channel = await createChannel();
+    const template = await createTemplate({ name: '日报', msgType: 'TEXT', contentTemplate: '{{totalCount}}' });
+    const rule = await createRule({
+      name: '每日 9 点',
+      cron: '0 9 * * *',
+      templateId: template.id,
+      channelIds: [channel.id],
+    });
+
+    const executor = app.get(NotificationRuleExecutor);
+    const now = new Date('2026-08-23T01:00:00Z'); // 09:00 Shanghai - the cron minute.
+    const first = await executor.execute({ ruleId: rule.id, trigger: 'SCHEDULED', windowDate: RULE_WINDOW, now });
+    expect(first).toMatchObject({ alreadyPushed: false, status: 'SUCCESS' });
+
+    const second = await executor.execute({ ruleId: rule.id, trigger: 'SCHEDULED', windowDate: RULE_WINDOW, now });
+    expect(second).toMatchObject({ alreadyPushed: true, status: null, deliveries: [] });
+
+    // One PushLog row for the window regardless of how many ticks raced.
+    const logCount = await prisma.pushLog.count({ where: { ruleId: rule.id, windowDate: RULE_WINDOW } });
+    expect(logCount).toBe(1);
+    expect(fakeSender.send).toHaveBeenCalledTimes(1);
+  });
+
+  itWithDb('viewer is forbidden from rule writes/runs but can read rules and push logs', async () => {
+    const channel = await createChannel();
+    const template = await createTemplate({ name: '日报', msgType: 'TEXT', contentTemplate: 'x' });
+    const rule = await createRule({
+      name: '每日 9 点',
+      cron: '0 9 * * *',
+      templateId: template.id,
+      channelIds: [channel.id],
+    });
+
+    await viewerAgent
+      .post('/api/notification-rules')
+      .send({ name: 'x', cron: '0 9 * * *', templateId: template.id, channelIds: [channel.id] })
+      .expect(403);
+    await viewerAgent.put(`/api/notification-rules/${rule.id}`).send({ name: 'x' }).expect(403);
+    await viewerAgent.post(`/api/notification-rules/${rule.id}/run`).send({}).expect(403);
+
+    await viewerAgent.get('/api/notification-rules').expect(200);
+    await viewerAgent.get(`/api/notification-rules/${rule.id}`).expect(200);
+    await viewerAgent.get(`/api/notification-rules/${rule.id}/push-logs`).expect(200);
   });
 });

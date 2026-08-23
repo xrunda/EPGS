@@ -238,18 +238,6 @@
    结果反馈、推送日志弹窗与送达明细表。
 --------------------------------------------------------------------------- */
 
-.notification-cron {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: #f0f5f4;
-  color: var(--ink-700);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-
 .notification-cron-field {
   display: grid;
   gap: 7px;

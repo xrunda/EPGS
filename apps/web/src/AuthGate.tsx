@@ -131,7 +131,7 @@ export function AuthGate({ children }: AuthGateProps): JSX.Element {
           <span className="login-brand__mark">
             <img src={hospitalLogo} alt="菏泽市中医医院" />
           </span>
-          <p>菏泽市肿瘤中医医院</p>
+          <p>菏泽市中医医院</p>
           <h1>内镜重点患者监测系统</h1>
           <span>院内数据展示 · 授权访问</span>
         </section>

@@ -25,7 +25,7 @@ function AuthenticatedApp({
       <header className="app-header">
         <div className="app-brand">
           <span className="app-brand__mark">
-            <img src={hospitalLogo} alt="菏泽市肿瘤中医医院" />
+            <img src={hospitalLogo} alt="菏泽市中医医院" />
           </span>
         </div>
         <div className="app-header__actions">

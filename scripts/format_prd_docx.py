@@ -120,7 +120,7 @@ def format_document(input_path: Path, output_path: Path):
         section.different_first_page_header_footer = True
 
         header_p = section.header.paragraphs[0]
-        header_p.text = "菏泽市肿瘤中医医院  |  产品需求文档（PRD）"
+        header_p.text = "菏泽市中医医院  |  产品需求文档（PRD）"
         header_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         header_p.paragraph_format.space_after = Pt(2)
         for run in header_p.runs:

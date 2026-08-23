@@ -79,7 +79,7 @@ describe('App', () => {
   it('renders the authenticated monitor workbench', async () => {
     render(<App />);
 
-    expect(await screen.findByAltText('菏泽市肿瘤中医医院')).toBeInTheDocument();
+    expect(await screen.findByAltText('菏泽市中医医院')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
     expect(screen.getByLabelText('当前用户')).toHaveTextContent('测试医生');
     expect(screen.getByText('暂无同步记录')).toBeInTheDocument();

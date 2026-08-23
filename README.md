@@ -1,6 +1,6 @@
 # EPGS — 内镜重点患者监测系统
 
-Endoscopy Key-Patient Monitoring System for 菏泽市肿瘤中医医院 (Heze Cancer Hospital of
+Endoscopy Key-Patient Monitoring System for 菏泽市中医医院 (Heze Hospital of
 Traditional Chinese Medicine, Endoscopy Center).
 
 This repository currently contains the **engineering skeleton** only (issue #1). No

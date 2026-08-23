@@ -17,11 +17,13 @@
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "sync:once": "ts-node --transpile-only -r tsconfig-paths/register src/sync/run-once.ts",
+    "push:once": "ts-node --transpile-only -r tsconfig-paths/register src/notification-push/run-once.ts",
     "reclassify:once": "ts-node --transpile-only -r tsconfig-paths/register src/sync/reclassify-once.ts",
     "mock:convert": "ts-node --transpile-only -r tsconfig-paths/register src/pacs-adapter/mock-csv-convert.ts"
   },
   "dependencies": {
     "@epgs/matching-engine": "workspace:*",
+    "@epgs/notification-push": "workspace:*",
     "@epgs/shared-types": "workspace:*",
     "@nestjs/common": "^10.4.6",
     "@nestjs/config": "^3.3.0",

@@ -100,4 +100,15 @@ export const envValidationSchema = Joi.object({
     otherwise: Joi.forbidden(),
   }),
   PACS_SOAP_TIMEOUT_MS: Joi.number().integer().min(1).default(15000),
+
+  // Push-rule scheduling (issue: push rules). The worker decrypts
+  // NotificationChannel.webhookUrl at push time, so it needs the SAME
+  // NOTIFICATION_SECRET_KEY as apps/api (they share the database and the
+  // ciphertexts were created by the api). HOSPITAL_NAME appears in rendered
+  // {{hospitalName}} push bodies. NOTIFICATION_TICK_SECONDS is the per-tick
+  // cadence: 5-field minute-granularity cron requires a tick <= 60s to not
+  // skip a minute (default 60).
+  NOTIFICATION_SECRET_KEY: Joi.string().min(32).required(),
+  HOSPITAL_NAME: Joi.string().default('菏泽市中医医院'),
+  NOTIFICATION_TICK_SECONDS: Joi.number().integer().min(10).max(300).default(60),
 });

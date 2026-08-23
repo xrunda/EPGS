@@ -27,6 +27,7 @@
     "seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "dependencies": {
+    "@epgs/notification-push": "workspace:*",
     "@epgs/shared-types": "workspace:*",
     "@nestjs/common": "^10.4.6",
     "@nestjs/config": "^3.3.0",

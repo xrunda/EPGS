@@ -1,5 +1,4 @@
 import { MockAgent, fetch as undiciFetch, Interceptable } from 'undici';
-import { NotificationMsgType } from '@prisma/client';
 import {
   WecomWebhookError,
   WecomWebhookSender,
@@ -13,7 +12,9 @@ import {
  * injected through the sender's `fetchImpl` option (bound with
  * `{ dispatcher: mockAgent }`), because nock does not intercept Node's native
  * fetch dispatcher and setGlobalDispatcher does not affect globalThis.fetch
- * under this repo's Jest + ts-jest setup.
+ * under this repo's Jest + ts-jest setup. Migrated from apps/api with the
+ * shared pipeline (issue: push rules) - only the `NotificationMsgType`
+ * enum import became the package-local `PushMsgType` string union.
  */
 const ORIGIN = 'https://qyapi.weixin.qq.com';
 const WEBHOOK_PATH = '/cgi-bin/webhook/send?key=test-key-123';
@@ -29,7 +30,7 @@ function mockFetch(): typeof fetch {
 
 function textMessage(overrides: Partial<WecomOutboundMessage> = {}): WecomOutboundMessage {
   return {
-    msgType: NotificationMsgType.TEXT,
+    msgType: 'TEXT',
     renderedTitle: '',
     renderedContent: '{{reportDate}} 红色关注 3 例',
     coverImageUrl: null,
@@ -40,7 +41,7 @@ function textMessage(overrides: Partial<WecomOutboundMessage> = {}): WecomOutbou
 
 function newsMessage(overrides: Partial<WecomOutboundMessage> = {}): WecomOutboundMessage {
   return {
-    msgType: NotificationMsgType.NEWS,
+    msgType: 'NEWS',
     renderedTitle: '红色预警',
     renderedContent: '今日红色关注 3 例，请及时处理。',
     coverImageUrl: 'https://cdn.example.com/banner.png',

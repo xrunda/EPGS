@@ -6,6 +6,7 @@ import { HealthModule } from './health/health.module';
 import { SyncModule } from './sync/sync.module';
 import { PacsAdapterModule } from './pacs-adapter/pacs-adapter.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { NotificationPushModule } from './notification-push/notification-push.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { PrismaModule } from './prisma/prisma.module';
     HealthModule,
     SyncModule,
     PacsAdapterModule,
+    NotificationPushModule,
   ],
 })
 export class AppModule {}

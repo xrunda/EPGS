@@ -174,3 +174,139 @@ export interface NotificationSendFailureDetails {
   wecomErrCode: number;
   wecomErrMsg: string;
 }
+
+// ---------------------------------------------------------------------------
+// Push rules + push logs (issue: push rules). These mirror apps/api's Prisma
+// `NotificationRule` / `PushLog` / `PushDelivery` models at the wire level;
+// the authoritative field documentation lives in schema.prisma and
+// docs/notification-design.md §10 (the push-rules addendum).
+// ---------------------------------------------------------------------------
+
+/** Why a push_log row was created. Mirrors Prisma's NotificationPushTrigger enum. */
+export type NotificationPushTriggerDto = 'SCHEDULED' | 'MANUAL';
+
+/** Aggregate run status across all of a rule's channels. Mirrors NotificationPushStatus. */
+export type NotificationPushStatusDto = 'SUCCESS' | 'PARTIAL' | 'FAILED';
+
+/** Per-channel delivery outcome. Mirrors NotificationPushDeliveryStatus. */
+export type NotificationPushDeliveryStatusDto = 'SUCCESS' | 'FAILED';
+
+/** One channel bound to a rule (denormalized id + name for list display). */
+export interface NotificationRuleChannelDto {
+  id: string;
+  channelId: string;
+  /** Human-readable channel name, e.g. "内镜中心红色关注群". */
+  name: string;
+}
+
+/** One notification_rule row as returned by the API. */
+export interface NotificationRuleDto {
+  id: string;
+  name: string;
+  /** 5-field cron expression (minute-hour-day-month-dow), Asia/Shanghai. */
+  cron: string;
+  templateId: string;
+  /** Template name denormalized for list display. */
+  templateName: string;
+  /** Channels bound to this rule, in binding order. */
+  channels: NotificationRuleChannelDto[];
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+}
+
+/** Paginated response envelope for `GET /api/notification-rules`. */
+export interface PaginatedNotificationRules {
+  items: NotificationRuleDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Query params for `GET /api/notification-rules`. */
+export interface ListNotificationRulesQuery {
+  isEnabled?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+/** Body for `POST /api/notification-rules`. */
+export interface CreateNotificationRuleBody {
+  name: string;
+  /** 5-field cron expression (minute-hour-day-month-dow), evaluated in Asia/Shanghai. */
+  cron: string;
+  templateId: string;
+  /** At least one channel is required (service-enforced, code NOTIFICATION_RULE_NO_CHANNELS). */
+  channelIds: string[];
+  isEnabled?: boolean;
+  /** Deprecated since issue #13 - the authenticated username is authoritative. */
+  actorId?: string;
+}
+
+/** Body for `PUT /api/notification-rules/{id}`. All fields optional; channelIds replaces the whole binding set. */
+export interface UpdateNotificationRuleBody {
+  name?: string;
+  cron?: string;
+  templateId?: string;
+  channelIds?: string[];
+  isEnabled?: boolean;
+  /** Deprecated since issue #13 - the authenticated username is authoritative. */
+  actorId?: string;
+}
+
+/** One delivery row inside a push_log. */
+export interface PushDeliveryDto {
+  id: string;
+  channelId: string;
+  /** Channel name denormalized for display (may reference a since-deleted channel). */
+  channelName: string;
+  status: NotificationPushDeliveryStatusDto;
+  /** WeCom errcode on a WeCom-layer failure; null otherwise. */
+  wecomErrCode: number | null;
+  /** WeCom errmsg (or short reason) on failure; never a webhook URL. */
+  wecomErrMsg: string | null;
+  /** UTC instant handed to the WeCom webhook; null when no outbound call happened. */
+  sentAt: string | null;
+}
+
+/** One push_log row as returned by the API, with its deliveries. */
+export interface PushLogDto {
+  id: string;
+  ruleId: string;
+  /** Shanghai YYYY-MM-DD summary window this run pushed. */
+  windowDate: string;
+  trigger: NotificationPushTriggerDto;
+  /** Aggregate outcome; null only while the run is in flight. */
+  status: NotificationPushStatusDto | null;
+  errorSummary: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  deliveries: PushDeliveryDto[];
+}
+
+/** Paginated response envelope for `GET /api/notification-rules/:id/push-logs`. */
+export interface PaginatedPushLogs {
+  items: PushLogDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Query params for `GET /api/notification-rules/:id/push-logs`. */
+export interface ListPushLogsQuery {
+  page?: number;
+  pageSize?: number;
+}
+
+/** Success response for `POST /api/notification-rules/:id/run` (manual "run now"). */
+export interface RunNotificationRuleResult {
+  /** True when the run was deduped because today's SCHEDULED push already ran. */
+  alreadyPushed: boolean;
+  /** Id of the push_log row for this run; null when alreadyPushed. */
+  pushLogId: string | null;
+  /** Aggregate outcome; null when alreadyPushed. */
+  status: NotificationPushStatusDto | null;
+  deliveries: PushDeliveryDto[];
+}

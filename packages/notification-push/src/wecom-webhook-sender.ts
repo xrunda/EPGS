@@ -1,5 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { NotificationMsgType } from '@prisma/client';
+import { PushMsgType } from './types';
+
+/**
+ * Moved VERBATIM from apps/api (issue: push rules) - only the message-shape
+ * enum import changed (PushMsgType instead of @prisma/client's
+ * NotificationMsgType) so the package stays DB-agnostic. The api test-send
+ * and the worker scheduler share this single implementation.
+ */
 
 /** Default per-request timeout when no timeoutMs is supplied. */
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -19,7 +26,7 @@ export interface WecomWebhookSenderOptions {
  *   NEWS -> { msgtype: 'news', news: { articles: [{ title, description, url, picurl }] } }
  */
 export interface WecomOutboundMessage {
-  msgType: NotificationMsgType;
+  msgType: PushMsgType;
   /** Rendered title; '' for TEXT (ignored by the markdown shape). */
   renderedTitle: string;
   /** Rendered content after {{placeholder}} substitution. */

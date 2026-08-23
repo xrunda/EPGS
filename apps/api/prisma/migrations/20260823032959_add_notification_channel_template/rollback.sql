@@ -1,0 +1,54 @@
+-- Rollback for add_notification_channel_template (issue #52/#53).
+--
+-- The table/enum-creation half of the forward migration is freely
+-- reversible with plain DROP statements. The AuditAction change is NOT:
+-- PostgreSQL has no `ALTER TYPE ... DROP VALUE`, so removing
+-- 'NOTIFICATION_TEST_SEND' from AuditAction requires rebuilding the enum
+-- type (create a new type without the value, repoint every column that
+-- uses it, drop the old type, rename the new one into place). This is only
+-- safe if NO audit_log row currently has action = 'NOTIFICATION_TEST_SEND'
+-- - if any exist, decide whether to delete those rows (losing audit
+-- history) or keep the enum value and skip this rollback.
+--
+-- Steps:
+--   1. Drop the two new tables (safe: they carry no data other rows
+--      reference, per the @@map names in schema.prisma).
+--   2. Drop the NotificationMsgType enum (safe: no longer referenced once
+--      notification_template is gone).
+--   3. Rebuild AuditAction without NOTIFICATION_TEST_SEND, but ONLY run
+--      this block after confirming no audit_log row uses that value:
+--
+--        SELECT count(*) FROM audit_log WHERE action = 'NOTIFICATION_TEST_SEND';
+--        -- must return 0 before proceeding
+--
+--      If it returns 0, run:
+--
+--        ALTER TYPE "AuditAction" RENAME TO "AuditAction_old";
+--        CREATE TYPE "AuditAction" AS ENUM (
+--          'EXAM_LIST', 'EXAM_DETAIL', 'RULE_CREATE', 'RULE_UPDATE',
+--          'RULE_IMPORT', 'CONFIG_CHANGE', 'AUDIT_VIEW', 'LOGIN'
+--        );
+--        ALTER TABLE "audit_log"
+--          ALTER COLUMN "actor_role" DROP DEFAULT,
+--          ALTER COLUMN "action" TYPE "AuditAction"
+--            USING ("action"::text::"AuditAction"),
+--          ALTER COLUMN "actor_role" TYPE "AppRole"
+--            USING ("actor_role"::text::"AppRole");
+--        DROP TYPE "AuditAction_old";
+--
+--      (the actor_role round-trip above is defensive boilerplate some
+--      Postgres versions require when any column on the table references
+--      an enum being swapped out; verify against the target Postgres
+--      version before running in production.)
+--
+-- Step 3 is deliberately NOT executed unconditionally by this script -
+-- run the count check first and decide manually, per this repo's existing
+-- rollback convention of documenting rather than blindly automating
+-- destructive/irreversible steps (see the 20260821073851 rollback header).
+
+DROP TABLE IF EXISTS "notification_channel";
+DROP TABLE IF EXISTS "notification_template";
+DROP TYPE IF EXISTS "NotificationMsgType";
+
+-- AuditAction enum rebuild (step 3 above) intentionally left as a manual,
+-- reviewed operation - see the comment block above for the exact SQL.

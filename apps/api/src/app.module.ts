@@ -11,6 +11,7 @@ import { SystemModule } from './system/system.module';
 import { AuthModule } from './auth/auth.module';
 import { AccessModule } from './access/access.module';
 import { AuditModule } from './audit/audit.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AuditModule } from './audit/audit.module';
     AuditModule,
     HealthModule,
     MonitorModule,
+    NotificationsModule,
     RulesModule,
     SystemModule,
   ],

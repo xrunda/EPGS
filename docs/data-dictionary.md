@@ -32,6 +32,7 @@
 | `MatchField`    | `FINDINGS` `IMPRESSION` `REPORT_TEXT` `STUDY_DESCRIPTION` `OTHER` | 命中/规则作用的报告字段，具体解释权在 issue #5 匹配引擎。                   |
 | `MatchMode`     | `EXACT` `CONTAINS` `REGEX`                                        | 关键词匹配方式。                                                            |
 | `SyncJobStatus` | `RUNNING` `SUCCEEDED` `FAILED` `PARTIAL`                          | 同步任务运行结果。                                                          |
+| `NotificationMsgType` | `TEXT` `NEWS`                                               | 推送消息类型（issue #52/#53），对应企业微信 Webhook 的 markdown/news 两种消息形状。 |
 
 ## app_user — 本地登录账号
 
@@ -75,7 +76,7 @@
 | `id`            | UUID PK               | LOW      | 审计行主键                                                                                                       |
 | `actorUsername` | varchar(100) nullable | MEDIUM   | 操作者登录账号；无授权记录时为 null                                                                              |
 | `actorRole`     | `AppRole`             | MEDIUM   | 操作者的主角色（用于审计展示）                                                                                   |
-| `action`        | `AuditAction`         | LOW      | `EXAM_LIST` `EXAM_DETAIL` `RULE_CREATE` `RULE_UPDATE` `RULE_IMPORT` `AUDIT_VIEW`（`LOGIN`/`CONFIG_CHANGE` 预留） |
+| `action`        | `AuditAction`         | LOW      | `EXAM_LIST` `EXAM_DETAIL` `RULE_CREATE` `RULE_UPDATE` `RULE_IMPORT` `AUDIT_VIEW` `NOTIFICATION_TEST_SEND`（issue #52/#53，推送测试发送留痕）（`LOGIN`/`CONFIG_CHANGE` 预留，其中 `CONFIG_CHANGE` 已由 issue #54 的渠道/模板写入接口触发） |
 | `resourceType`  | varchar(100)          | LOW      | 资源类型：`monitor_record` / `monitor_rule` / `audit_log`                                                        |
 | `resourceId`    | UUID nullable         | LOW      | 具体资源 id（列表类操作为 null）                                                                                 |
 | `department`    | varchar(100) nullable | MEDIUM   | 操作涉及的科室上下文                                                                                             |
@@ -187,6 +188,57 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
 
 保留策略：建议保留 ≥ 6 个月用于运维审计，具体周期待运维/信息科确认。
 
+## notification_channel — 消息推送渠道（issue #52/#53）
+
+企业微信群机器人 Webhook 配置。完整设计见
+[`docs/notification-design.md`](notification-design.md)。**不做版本化**
+（对比 `monitor_rule`）——Webhook 地址改了不需要追溯"历史某条消息用的
+是哪个版本"，改了就是改了；只做软启停（`isEnabled`），停用后不可作为
+发送目标但记录保留。
+
+> **本库首个可逆敏感凭证**：`webhookUrlCiphertext` 是本库第一个需要
+> "存了还要能读出明文"的字段。对比 `app_user.passwordHash`
+> 是 Argon2id 单向哈希（永远不需要还原成明文密码），`JWT_SECRET`/
+> `PACS_HTTP_SERVICE_TOKEN` 是环境变量、从未落库——Webhook URL 必须能
+> 在发送消息时还原成明文才能调用企业微信接口，因此新增了应用层对称
+> 加密（`NotificationSecretCipher`，AES-256-GCM），密钥来自
+> `NOTIFICATION_SECRET_KEY` 环境变量，不落库。
+
+| 字段                     | 类型         | 敏感级别 | 说明                                                            |
+| ------------------------ | ------------ | -------- | --------------------------------------------------------------- |
+| `id`                     | UUID PK      | LOW      | 主键                                                             |
+| `name`                   | varchar(100) | LOW      | 渠道名称（业务可读标识，如"内镜中心红色关注群"）；不要求唯一     |
+| `webhookUrlCiphertext`   | text         | **HIGH** | AES-256-GCM 密文（`<iv>:<authTag>:<ciphertext>` base64 三段式）；API 响应**只返回掩码，绝不返回明文** |
+| `isEnabled`              | boolean      | LOW      | 软启停；停用后不可作为发送目标，历史记录保留                     |
+| `createdAt`/`updatedAt`  | timestamptz  | LOW      | 审计时间戳                                                       |
+| `createdBy`/`updatedBy`  | varchar(100) | MEDIUM   | 操作人账号（外部身份，非本库外键）                               |
+
+保留策略：作为配置审计数据永久保留，体量小，不做过期清理（同
+`monitor_rule` 的保留策略）。
+
+## notification_template — 消息推送模板（issue #52/#53）
+
+推送内容模板（文字或图文），支持 `{{placeholder}}` 占位符，渲染发生在
+发送时（issue #54），取值口径复用 `GET /api/monitor/summary`
+的既有统计逻辑。**本表只存模板文本本身，不存渲染后的消息正文**——
+渲染结果含当日统计数字组合，属于易变的派生数据，不落库以避免与
+`monitor_record`/`monitor_match` 产生数据冗余。
+
+| 字段               | 类型          | 敏感级别 | 说明                                                          |
+| ------------------ | ------------- | -------- | ------------------------------------------------------------- |
+| `id`                | UUID PK       | LOW      | 主键                                                           |
+| `name`              | varchar(100)  | LOW      | 模板名称（如"红色关注日报"）                                  |
+| `msgType`           | NotificationMsgType | LOW | `TEXT`（对应企业微信 markdown 消息）或 `NEWS`（图文卡片）      |
+| `titleTemplate`     | varchar(200)? | LOW      | 标题模板，仅 `NEWS` 使用                                       |
+| `contentTemplate`   | text          | LOW      | 正文/摘要模板，含 `{{占位符}}`                                 |
+| `coverImageUrl`     | text?         | LOW      | 封面图静态地址，仅 `NEWS` 使用；V1 无动态生成能力              |
+| `linkUrl`           | text?         | LOW      | 点击跳转地址，仅 `NEWS` 使用；当前医院内网未与企业微信互通，暂不可达 |
+| `isEnabled`         | boolean       | LOW      | 软启停                                                         |
+| `createdAt`/`updatedAt` | timestamptz | LOW    | 审计时间戳                                                     |
+| `createdBy`/`updatedBy` | varchar(100) | MEDIUM | 操作人账号                                                  |
+
+保留策略：同 `notification_channel`，永久保留、体量小。
+
 ## 索引设计对照工作台常用筛选
 
 | 筛选维度                     | 索引                                                                                                     |
@@ -208,6 +260,7 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
   - `apps/api/prisma/migrations/20260821093500_add_local_auth/migration.sql`（issue #31 增加本地账号）
   - `apps/api/prisma/migrations/20260821103732_add_auth_access_and_audit_log/migration.sql`（issue #13 增加 `app_user_access`/`audit_log` 与 `AppRole`/`AuditAction` 枚举）
   - `apps/api/prisma/migrations/20260821110858_add_monitor_record_patient_type_index/migration.sql`（issue #14 为 `patient_type_code` 常用筛选补建 btree 索引）
+  - `apps/api/prisma/migrations/20260823032959_add_notification_channel_template/migration.sql`（issue #52/#53 增加 `notification_channel`/`notification_template` 与 `NotificationMsgType` 枚举，并为既有 `AuditAction` 枚举追加 `NOTIFICATION_TEST_SEND` 值）
 - 回滚脚本（Prisma Migrate 本身没有内建 down-migration 机制，回滚脚本需手动执行，
   详见脚本头部注释）：
   - `20260821040339_init_monitoring_schema/rollback.sql`
@@ -215,6 +268,7 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
   - `20260821093500_add_local_auth/rollback.sql`
   - `20260821103732_add_auth_access_and_audit_log/rollback.sql`（删除全部角色授权与审计日志）
   - `20260821110858_add_monitor_record_patient_type_index/rollback.sql`（删除 `patient_type_code` 索引，issue #14）
+  - `20260823032959_add_notification_channel_template/rollback.sql`（删除两张新表与 `NotificationMsgType` 枚举可直接执行；`AuditAction` 追加值**不可**用 `DROP TYPE` 简单回滚——PostgreSQL 无 `ALTER TYPE ... DROP VALUE`，脚本头部注释给出了需要人工确认 `audit_log` 无该值记录后再执行的枚举重建 SQL，不自动执行）
 - **生产数据确认门（issue #26）**：`remove_closed_loop_readonly` 迁移开头包含
   PL/pgSQL 数据门禁——若 `monitor_action` 仍存在任何数据，或任意
   `monitor_record.handling_status <> 'PENDING'`，迁移会抛出异常并中止。

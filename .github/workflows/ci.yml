@@ -17,6 +17,7 @@ jobs:
       DATABASE_URL: postgresql://epgs:epgs@localhost:5432/epgs
       NODE_ENV: test
       JWT_SECRET: ci-only-secret-at-least-32-characters
+      NOTIFICATION_SECRET_KEY: ci-only-notification-key-at-least-32-chars
 
     steps:
       - name: Checkout
@@ -76,6 +77,7 @@ jobs:
       DATABASE_URL: postgresql://epgs:epgs@localhost:5432/epgs
       NODE_ENV: test
       JWT_SECRET: ci-only-secret-at-least-32-characters
+      NOTIFICATION_SECRET_KEY: ci-only-notification-key-at-least-32-chars
 
     steps:
       - name: Checkout

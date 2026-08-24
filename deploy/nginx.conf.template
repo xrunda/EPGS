@@ -1,0 +1,59 @@
+# EPGS 单端口反向代理配置。
+#
+# 背景：跨安全域（网闸）部署下，网闸按"任务号"把内网地址映射到 DMZ 的单个
+# IP:端口，无法同时映射 web(5173)/api(3000)/worker(3001) 三个独立端口。
+# 之前前端把 api 地址写死进构建产物（VITE_API_BASE_URL），导致换一个入口
+# 地址访问时，浏览器仍然尝试直连 DMZ 的物理 IP，被网闸拦截。
+#
+# 现在前端所有请求改为相对路径（相对当前页面的 origin），由这个 Nginx 把
+# 同一个对外端口上的请求分流到 web 静态文件 / api 进程，浏览器和网闸都只需
+# 认识"当前访问的这一个地址"，不需要知道 api 的真实 IP:端口。
+#
+# 用法：将 __LISTEN_PORT__ 替换为对外监听端口（默认 5173，与网闸现有映射
+# 保持一致，避免改动网闸规则），__WEB_ROOT__ 替换为 `pnpm --filter web build`
+# 产物目录（apps/web/dist 的绝对路径），__PID_FILE__ 替换为本次运行用的
+# pid 文件路径。start.sh 会自动完成替换、`nginx -t` 校验后再 (re)启动。
+#
+# 独立完整配置（不依赖系统 /etc/nginx/nginx.conf），靠 `nginx -c` 直接加载。
+
+pid __PID_FILE__;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+
+    server {
+        listen __LISTEN_PORT__;
+        server_name _;
+
+        # api 的 REST 接口，本身自带 /api 前缀。proxy_pass 目标不带路径，
+        # 保留请求的完整 URI（含 /api 前缀）原样转发给 api，不做前缀剥离。
+        location /api/ {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            # 登录 cookie 依赖同源转发，不改写 Host/Cookie。
+        }
+
+        # api 的健康检查端点，运维/监控探测用。/api/docs (Swagger) 已经
+        # 落在上面的 /api/ 块里，不需要单独配置。
+        location = /health {
+            proxy_pass http://127.0.0.1:3000/health;
+            proxy_set_header Host $host;
+        }
+
+        # web 静态产物（vite build 输出）。SPA 路由 fallback 到 index.html。
+        location / {
+            root __WEB_ROOT__;
+            try_files $uri $uri/ /index.html;
+        }
+    }
+}

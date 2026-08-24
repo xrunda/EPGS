@@ -1,7 +1,10 @@
 import type { AppRoleDto } from '@epgs/shared-types';
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:3000';
+// Relative to the current origin (not a build-time absolute URL): behind a
+// reverse proxy / NAT / 网闸 mapping, the browser may reach this app through
+// an address that differs from the api's own IP, so the request must go to
+// "wherever this page was loaded from" rather than a baked-in host.
+const API_BASE_URL = '';
 
 export interface AuthUser {
   id: string;

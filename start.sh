@@ -1,16 +1,28 @@
 #!/usr/bin/env bash
-# EPGS 堡垒机启动脚本 (10.10.10.91) - git 工作流版本
+# EPGS 堡垒机启动脚本 - git 工作流版本
 #
 # 用法:
 #   bash start.sh          先 git pull 拉最新代码，再重启全部服务
 #   bash start.sh nopull    跳过 git pull，仅重启（用于 .env 手动改完后快速重启）
-#   bash start.sh stop      仅停止 api/worker/web（不动 Postgres 容器）
+#   bash start.sh stop      仅停止 api/worker，并 reload nginx（不动 Postgres 容器）
 #
 # 前置条件:
-#   - node/pnpm/docker 已装好 (node -v / pnpm -v / docker -v 确认)
-#   - apps/api/.env、apps/worker/.env、apps/web/.env 已手动创建好
+#   - node/pnpm/docker/nginx 已装好 (node -v / pnpm -v / docker -v / nginx -v 确认)
+#   - apps/api/.env、apps/worker/.env 已手动创建好
 #     (.env 从不进 git，git pull 不会自动生成它们 - 首次部署需要手动
 #     创建，参考本仓库 README 或直接问维护者要一份现成的)
+#
+# 架构说明（跨安全域/网闸部署）:
+#   web/api/worker 曾各自监听独立端口 (5173/3000/3001)，前端把 api 地址
+#   写死进构建产物 (VITE_API_BASE_URL)。这在网闸环境下会炸：网闸按
+#   "任务号" 把内网地址映射到 DMZ 的单个 IP:端口，无法同时映射三个独立
+#   端口，而写死的 api 地址在换一个访问入口后仍然指向原始物理 IP，被
+#   网闸拦截，导致登录卡顿/鉴权失败（见 docs/ 部署故障记录）。
+#
+#   现在改为单端口反向代理：web 构建成静态文件，由 Nginx 和 api 一起
+#   挂在同一个对外端口 (LISTEN_PORT，默认 5173) 上，前端请求全部走相对
+#   路径。网闸只需要映射这一个端口，浏览器/网闸都不需要知道 api 的真实
+#   IP:端口。见 deploy/nginx.conf.template。
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -20,10 +32,15 @@ LOG_DIR="$REPO_ROOT/.run-logs"
 PID_FILE="$REPO_ROOT/.run-pids"
 mkdir -p "$LOG_DIR"
 
-BASTION_IP="10.10.10.91"
+# 对外监听端口：网闸/NAT 映射的那一个端口。默认沿用旧的 5173，避免要求
+# 运维同步改动现有网闸规则；如环境不同，用 LISTEN_PORT=xxxx bash start.sh 覆盖。
+LISTEN_PORT="${LISTEN_PORT:-5173}"
+WEB_DIST="$REPO_ROOT/apps/web/dist"
+NGINX_CONF="$REPO_ROOT/.run-nginx.conf"
+NGINX_PID_FILE="$REPO_ROOT/.run-nginx.pid"
 
 stop_all() {
-  echo "===== 停止已运行的 api/worker/web ====="
+  echo "===== 停止已运行的 api/worker ====="
   if [ -f "$PID_FILE" ]; then
     while read -r pid; do
       if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
@@ -33,7 +50,7 @@ stop_all() {
     done < "$PID_FILE"
     rm -f "$PID_FILE"
   fi
-  for port in 3000 3001 5173; do
+  for port in 3000 3001; do
     # lsof isn't installed on every host this runs on, and `nest start
     # --watch` spawns a `dist/main` child that survives its parent being
     # killed (reparented to PID 1) still holding the port - so this must
@@ -59,6 +76,9 @@ stop_all() {
 
 if [ "${1:-}" = "stop" ]; then
   stop_all
+  if [ -f "$NGINX_CONF" ]; then
+    sudo nginx -s stop -c "$NGINX_CONF" 2>/dev/null || true
+  fi
   echo "已停止。"
   exit 0
 fi
@@ -67,7 +87,7 @@ stop_all
 
 if [ "${1:-}" != "nopull" ]; then
   echo ""
-  echo "===== [0/7] git pull 最新代码 ====="
+  echo "===== [0/8] git pull 最新代码 ====="
   git pull origin main
 fi
 
@@ -80,8 +100,8 @@ fi
 
 # 校验 apps/api/.env 的必需环境变量（对齐 src/config/env.validation.ts 的
 # Joi 规则）。缺了就 fail-fast，而不是等 API 启动时报
-# "Config validation error: ... is required" 才暴露——否则 start.sh 的
-# [7/7] 等待循环会干等 60 秒后以"api 未就绪"收场，排查成本高。
+# "Config validation error: ... is required" 才暴露——否则等待循环会干
+# 等 60 秒后以"api 未就绪"收场，排查成本高。
 check_required_api_env() {
   local key="$1" min_len="$2" hint="$3"
   local line val
@@ -114,7 +134,7 @@ check_required_api_env "NOTIFICATION_SECRET_KEY" 32 \
   "加密企业微信 Webhook 地址的密钥（见 docs/notification-design.md §5）。生成方式: openssl rand -hex 24"
 
 echo ""
-echo "===== [1/7] 启动 Postgres (Docker) ====="
+echo "===== [1/8] 启动 Postgres (Docker) ====="
 if docker ps --filter "name=^epgs-postgres$" --filter "health=healthy" --format '{{.Names}}' \
     | grep -q epgs-postgres; then
   echo "epgs-postgres 容器已在运行且健康，跳过重建。"
@@ -139,14 +159,13 @@ for i in $(seq 1 30); do
 done
 
 echo ""
-echo "===== [2/7] 校正 .env 中的地址（首次部署才需要改；已配好则跳过）====="
-if ! grep -q "^WEB_ORIGIN=http://$BASTION_IP" apps/api/.env; then
-  sed -i "s#^WEB_ORIGIN=.*#WEB_ORIGIN=http://$BASTION_IP:5173#" apps/api/.env
-  echo "apps/api/.env  WEB_ORIGIN -> http://$BASTION_IP:5173"
-fi
-if ! grep -q "^VITE_API_BASE_URL=http://$BASTION_IP" apps/web/.env; then
-  sed -i "s#^VITE_API_BASE_URL=.*#VITE_API_BASE_URL=http://$BASTION_IP:3000#" apps/web/.env
-  echo "apps/web/.env  VITE_API_BASE_URL -> http://$BASTION_IP:3000"
+echo "===== [2/8] 校正 .env（首次部署才需要改；已配好则跳过）====="
+# WEB_ORIGIN 只用于 CORS：Nginx 反代后浏览器请求 api 是同源的，正常情况下
+# 不会触发 CORS 检查；这里仍然设成对外访问地址，作为运维绕过 Nginx 直连
+# api:3000 调试时的兜底，而不是让登录路径依赖它。
+if ! grep -q "^WEB_ORIGIN=http://localhost:$LISTEN_PORT" apps/api/.env; then
+  sed -i "s#^WEB_ORIGIN=.*#WEB_ORIGIN=http://localhost:$LISTEN_PORT#" apps/api/.env
+  echo "apps/api/.env  WEB_ORIGIN -> http://localhost:$LISTEN_PORT"
 fi
 sed -i 's/^NODE_ENV=.*/NODE_ENV=production/' apps/api/.env apps/worker/.env
 if ! grep -q "^PACS_ADAPTER_MODE=soap" apps/worker/.env; then
@@ -155,19 +174,23 @@ if ! grep -q "^PACS_ADAPTER_MODE=soap" apps/worker/.env; then
 fi
 
 echo ""
-echo "===== [3/7] 安装依赖 (pnpm install) ====="
+echo "===== [3/8] 安装依赖 (pnpm install) ====="
 pnpm install --frozen-lockfile
 
 echo ""
-echo "===== [4/7] 构建 shared-types / matching-engine ====="
+echo "===== [4/8] 构建 shared-types / matching-engine ====="
 pnpm run build:libs
 
 echo ""
-echo "===== [5/7] 数据库迁移 (prisma migrate deploy) ====="
+echo "===== [5/8] 数据库迁移 (prisma migrate deploy) ====="
 pnpm --filter api exec prisma migrate deploy
 
 echo ""
-echo "===== [6/7] 后台启动 api / worker / web ====="
+echo "===== [6/8] 构建 web 静态文件 ====="
+pnpm --filter web run build
+
+echo ""
+echo "===== [7/8] 后台启动 api / worker，生成并 reload nginx ====="
 : > "$PID_FILE"
 
 nohup pnpm --filter api run start:dev > "$LOG_DIR/api.log" 2>&1 &
@@ -176,11 +199,20 @@ echo $! >> "$PID_FILE"
 nohup env PORT=3001 pnpm --filter worker run start:dev > "$LOG_DIR/worker.log" 2>&1 &
 echo $! >> "$PID_FILE"
 
-nohup env VITE_DEV_HOST=0.0.0.0 pnpm --filter web run dev > "$LOG_DIR/web.log" 2>&1 &
-echo $! >> "$PID_FILE"
+sed -e "s#__LISTEN_PORT__#$LISTEN_PORT#" -e "s#__WEB_ROOT__#$WEB_DIST#" \
+  -e "s#__PID_FILE__#$NGINX_PID_FILE#" \
+  deploy/nginx.conf.template > "$NGINX_CONF"
+if ! command -v nginx >/dev/null 2>&1; then
+  echo "错误: 未找到 nginx，请先安装 (如 apt/yum install nginx)。"
+  exit 1
+fi
+sudo nginx -t -c "$NGINX_CONF"
+sudo nginx -s stop -c "$NGINX_CONF" 2>/dev/null || true
+sudo nginx -c "$NGINX_CONF"
+echo "nginx 已启动，监听 :$LISTEN_PORT，配置见 $NGINX_CONF"
 
 echo ""
-echo "===== [7/7] 等待服务就绪 ====="
+echo "===== [8/8] 等待服务就绪 ====="
 for i in $(seq 1 60); do
   api_up=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/health" || true)
   worker_up=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3001/health" || true)
@@ -192,17 +224,16 @@ done
 
 echo ""
 echo "===== 启动完成 ====="
-echo "api:    http://$BASTION_IP:3000/health"
-echo "worker: http://$BASTION_IP:3001/health"
-echo "web:    http://$BASTION_IP:5173"
+echo "web+api (经 nginx 单端口对外):  http://<本机地址或网闸映射地址>:$LISTEN_PORT"
+echo "worker 健康检查 (仅本机):        http://localhost:3001/health"
 echo ""
 echo "日志目录: $LOG_DIR"
 echo "停止服务: bash start.sh stop"
 echo "仅重启(不pull): bash start.sh nopull"
+echo "更换对外端口: LISTEN_PORT=8080 bash start.sh nopull"
 echo ""
 curl -s "http://localhost:3000/health" || echo "(api 未就绪，查看 $LOG_DIR/api.log)"
 echo ""
 curl -s "http://localhost:3001/health" || echo "(worker 未就绪，查看 $LOG_DIR/worker.log)"
 echo ""
-ss -tlnp | grep 5173 || echo "(web 端口未监听，查看 $LOG_DIR/web.log)"
-
+ss -tlnp | grep ":$LISTEN_PORT" || echo "(nginx 端口未监听，检查 nginx -c $NGINX_CONF 的输出)"

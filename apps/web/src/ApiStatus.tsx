@@ -6,11 +6,8 @@ type ConnectivityState =
   | { kind: 'connected'; health: HealthStatus }
   | { kind: 'error'; message: string };
 
-// Vite exposes only env vars prefixed with VITE_ to client code by design -
-// this is not a config leak, it's the same "env vars only, no hardcoded
-// secrets" convention used by apps/api and apps/worker.
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:3000';
+// Relative to the current origin - see apps/web/src/authApi.ts for why.
+const API_BASE_URL = '';
 
 /**
  * Placeholder connectivity check: calls apps/api's GET /health and shows

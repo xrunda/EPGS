@@ -8,8 +8,8 @@ import type {
   SyncStatusDto,
 } from '@epgs/shared-types';
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:3000';
+// Relative to the current origin - see apps/web/src/authApi.ts for why.
+const API_BASE_URL = '';
 
 interface ErrorEnvelope {
   error?: { code?: string; message?: string };

@@ -22,7 +22,7 @@ export interface WecomWebhookSenderOptions {
 /**
  * Rendered message handed to the sender. `msgType` picks the WeCom payload
  * shape (design §6):
- *   TEXT -> { msgtype: 'markdown', markdown: { content } }
+ *   TEXT -> { msgtype: 'text', text: { content } }
  *   NEWS -> { msgtype: 'news', news: { articles: [{ title, description, url, picurl }] } }
  */
 export interface WecomOutboundMessage {
@@ -131,10 +131,17 @@ export class WecomWebhookSender {
   }
 }
 
-/** Maps a rendered message to the WeCom webhook JSON payload (design §6). */
+/**
+ * Maps a rendered message to the WeCom webhook JSON payload (design §6).
+ * TEXT uses `msgtype: 'text'` rather than `markdown`: verified against a
+ * live webhook that when a group is bridged into personal WeChat's
+ * "企业会话", `markdown` messages render as "暂不支持此消息类型" there while
+ * `text` and `news` both render their content correctly (in both the WeCom
+ * client and personal WeChat).
+ */
 export function toWecomPayload(message: WecomOutboundMessage): Record<string, unknown> {
   if (message.msgType === 'TEXT') {
-    return { msgtype: 'markdown', markdown: { content: message.renderedContent } };
+    return { msgtype: 'text', text: { content: message.renderedContent } };
   }
   return {
     msgtype: 'news',

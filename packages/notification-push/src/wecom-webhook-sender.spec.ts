@@ -60,10 +60,10 @@ afterEach(async () => {
 });
 
 describe('toWecomPayload', () => {
-  it('maps TEXT to the markdown shape (design §6)', () => {
+  it('maps TEXT to the text shape (design §6)', () => {
     expect(toWecomPayload(textMessage())).toEqual({
-      msgtype: 'markdown',
-      markdown: { content: '{{reportDate}} 红色关注 3 例' },
+      msgtype: 'text',
+      text: { content: '{{reportDate}} 红色关注 3 例' },
     });
   });
 

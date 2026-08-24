@@ -110,7 +110,7 @@ export class PrismaNotificationPushStore implements NotificationPushStore {
  * Adapts the workbench's MonitorService.summary as the shared pipeline's
  * summary provider, so a push message carries EXACTLY the counts the 监控看板
  * shows for the same department scope (issue: push rules). `date` present =
- * "今日新报告" window; absent = full inventory (test-send behavior, unchanged).
+ * "今日新报告" window; absent = full inventory.
  */
 @Injectable()
 export class MonitorSummaryProvider implements NotificationSummaryProvider {

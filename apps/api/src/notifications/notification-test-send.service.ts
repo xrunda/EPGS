@@ -22,12 +22,9 @@ import { NotificationSendException } from './errors/notification-send.exception'
  * Since issue: push rules, this is a thin api-side wrapper over the shared
  * NotificationPushService pipeline - the SAME pipeline a scheduled rule run
  * uses - so a test message is byte-for-byte what a real push would produce.
- * The only behavioral contract change-free mapping done here: translate the
- * shared package's framework-agnostic domain errors back to the api's
- * existing Nest exceptions (error codes/status codes unchanged), and map the
- * api's `date` (report date) without a `windowDate`, which the shared
- * pipeline interprets as "count the full inventory" - exactly the
- * pre-refactor test-send behavior.
+ * `windowDate` is passed equal to `date` (today, Shanghai) so the counts are
+ * "today's new reports" - the same window a SCHEDULED rule run uses (see
+ * NotificationRuleExecutor.execute) - rather than the full inventory.
  *
  * SECURITY (design §5/§7): the decrypted webhook URL exists only for the
  * sender call and never appears in logs/exceptions; the rendered body never
@@ -43,10 +40,12 @@ export class NotificationTestSendService {
    */
   async send(channelId: string, templateId: string, scope?: string[]): Promise<TestSendResult> {
     try {
+      const today = formatShanghaiDate(new Date());
       const outcome = await this.push.pushToChannel({
         channelId,
         templateId,
-        date: formatShanghaiDate(new Date()),
+        date: today,
+        windowDate: today,
         scope,
       });
       return {

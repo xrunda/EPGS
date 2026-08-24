@@ -39,13 +39,14 @@ describe('NotificationTestSendService', () => {
   });
 
   describe('send', () => {
-    it('delegates to the shared pipeline with today (Shanghai) as the report date and no window', async () => {
+    it('delegates to the shared pipeline with today (Shanghai) as both the report date and the window date', async () => {
       const result = await service.send('channel-1', 'template-1', ['骨科']);
 
       expect(push.pushToChannel).toHaveBeenCalledWith({
         channelId: 'channel-1',
         templateId: 'template-1',
         date: formatShanghaiDate(new Date()),
+        windowDate: formatShanghaiDate(new Date()),
         scope: ['骨科'],
       });
       expect(result).toEqual({

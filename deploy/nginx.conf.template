@@ -23,7 +23,26 @@ events {
 }
 
 http {
-    include       mime.types;
+    # 不用 `include mime.types;` - 它是相对路径，实际相对于 nginx 编译时的
+    # --conf-path 前缀解析（如 /etc/nginx、/usr/local/nginx/conf），而不是
+    # 相对于这份独立配置文件所在目录，不同发行版/安装方式下路径不一致，
+    # 曾在堡垒机上报 "open() mime.types failed"。改为内联声明本应用实际
+    # 用到的类型，配置完全自包含，不依赖宿主机的 nginx 安装布局。
+    types {
+        text/html                             html htm;
+        text/css                              css;
+        application/javascript                js mjs;
+        application/json                      json;
+        image/svg+xml                         svg svgz;
+        image/png                             png;
+        image/jpeg                            jpg jpeg;
+        image/gif                             gif;
+        image/x-icon                          ico;
+        image/webp                            webp;
+        font/woff                             woff;
+        font/woff2                            woff2;
+        font/ttf                              ttf;
+    }
     default_type  application/octet-stream;
     sendfile      on;
 

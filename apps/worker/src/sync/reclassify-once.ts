@@ -105,7 +105,7 @@ async function main(): Promise<void> {
                 currentLevel: matchResult.level,
                 firstMatchedAt:
                   matchResult.matchedRules.length > 0
-                    ? (record.firstMatchedAt ?? matchedAt())
+                    ? (record.firstMatchedAt ?? new Date())
                     : record.firstMatchedAt,
                 lastMatchedAt:
                   matchResult.matchedRules.length > 0 ? new Date() : record.lastMatchedAt,

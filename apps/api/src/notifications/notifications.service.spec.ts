@@ -262,9 +262,9 @@ describe('NotificationsService', () => {
   });
 
   describe('variables', () => {
-    it('returns the 7 fixed placeholder entries', () => {
+    it('returns the 9 fixed placeholder entries', () => {
       const variables = service.getVariables();
-      expect(variables).toHaveLength(7);
+      expect(variables).toHaveLength(9);
       expect(variables.map((v) => v.key)).toEqual([
         'reportDate',
         'hospitalName',
@@ -273,6 +273,8 @@ describe('NotificationsService', () => {
         'greenCount',
         'unclassifiedCount',
         'totalCount',
+        'redKeywords',
+        'yellowKeywords',
       ]);
     });
   });

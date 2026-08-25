@@ -35,7 +35,15 @@ function makeTemplate(overrides: Partial<PushTemplate> = {}): PushTemplate {
 }
 
 function makeSummary(overrides: Partial<PushSummary> = {}): PushSummary {
-  return { total: 7, red: 2, yellow: 1, green: 3, unclassified: 1, ...overrides };
+  return {
+    total: 7,
+    red: 2,
+    yellow: 1,
+    green: 3,
+    unclassified: 1,
+    keywordHits: [],
+    ...overrides,
+  };
 }
 
 function makeDeps() {

@@ -34,6 +34,8 @@ const TEMPLATE_VARIABLES: NotificationVariableDto[] = [
   { key: 'greenCount', label: '绿色关注数量', example: '12' },
   { key: 'unclassifiedCount', label: '未分类数量', example: '2' },
   { key: 'totalCount', label: '总记录数', example: '22' },
+  { key: 'redKeywords', label: '红色命中词（TOP5）', example: '恶性肿瘤 ×1、穿孔 ×1' },
+  { key: 'yellowKeywords', label: '黄色命中词（TOP3）', example: '肿物 ×2、溃疡 ×1' },
 ];
 
 /**
@@ -53,7 +55,10 @@ const TEMPLATE_PRESETS: NotificationTemplatePresetDto[] = [
     id: 'daily-summary',
     name: '每日关注摘要',
     content:
-      '{{hospitalName}} {{reportDate}} 内镜关注汇总：红色 {{redCount}} 例，黄色 {{yellowCount}} 例，绿色 {{greenCount}} 例，未分类 {{unclassifiedCount}} 例，共 {{totalCount}} 例。',
+      '{{reportDate}} {{hospitalName}} 内镜关注汇总\n' +
+      '红 {{redCount}} 例｜黄 {{yellowCount}} 例｜绿 {{greenCount}} 例｜未分级 {{unclassifiedCount}} 例｜共 {{totalCount}} 例\n' +
+      '红色命中：{{redKeywords}}\n' +
+      '黄色命中：{{yellowKeywords}}',
   },
   {
     id: 'quick-alert',

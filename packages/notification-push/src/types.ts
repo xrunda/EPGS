@@ -18,11 +18,29 @@ export type PushStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED';
 /** Per-channel delivery outcome. Mirrors NotificationPushDeliveryStatus. */
 export type PushDeliveryStatus = 'SUCCESS' | 'FAILED';
 
+/** Level enum mirrored from Prisma's MonitorLevel (the package is @prisma/client-free). */
+export type PushLevel = 'RED' | 'YELLOW' | 'GREEN' | 'UNCLASSIFIED';
+
+/**
+ * One "命中次数" aggregation row backing the {{redKeywords}}/{{yellowKeywords}}
+ * template variables (issue #69): how many monitor_match rows carried a given
+ * keyword at a given level within the day window. Counts MATCHES, not records
+ * - a record hitting two keywords contributes one count to each. `level` is
+ * the snapshot stored on the match row at match time.
+ */
+export interface KeywordHit {
+  keyword: string;
+  level: PushLevel;
+  count: number;
+}
+
 /**
  * Level counts backing the {{...}} template variables. Shape mirrors what
  * GET /api/monitor/summary returns so both adapters can map 1:1 (the api
  * adapts MonitorService.summary directly; the worker computes the same
- * buckets with its own GROUP BY over monitor_record).
+ * buckets with its own GROUP BY over monitor_record). `keywordHits` is the
+ * raw per-keyword aggregation (issue #69) - render.ts turns it into the
+ * TOP-N formatted strings for the template.
  */
 export interface PushSummary {
   total: number;
@@ -30,6 +48,7 @@ export interface PushSummary {
   yellow: number;
   green: number;
   unclassified: number;
+  keywordHits: KeywordHit[];
 }
 
 /** A channel row as loaded by the store. */

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, NotificationChannel, NotificationTemplate, PushLog } from '@prisma/client';
 import {
+  KeywordHit,
   NotificationPushStore,
   NotificationSummaryProvider,
   PushChannel,
@@ -8,6 +9,7 @@ import {
   PushRule,
   PushSummary,
   PushTemplate,
+  resolveShanghaiDayRange,
   CreatePushLogInput,
   CreatePushDeliveryInput,
   CompletePushLogInput,
@@ -114,12 +116,54 @@ export class PrismaNotificationPushStore implements NotificationPushStore {
  */
 @Injectable()
 export class MonitorSummaryProvider implements NotificationSummaryProvider {
-  constructor(private readonly monitor: MonitorService) {}
+  constructor(
+    private readonly monitor: MonitorService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async get(input: { date?: string; scope?: string[] }): Promise<PushSummary> {
-    return input.date
-      ? this.monitor.summary({ examDateFrom: input.date, examDateTo: input.date }, { scope: input.scope })
-      : this.monitor.summary({}, { scope: input.scope });
+    const summary = input.date
+      ? await this.monitor.summary({ examDateFrom: input.date, examDateTo: input.date }, { scope: input.scope })
+      : await this.monitor.summary({}, { scope: input.scope });
+
+    // Issue #69: keyword hits in the same window as the counts, honoring the
+    // same department scope MonitorService.summary applies. Counts MATCHES
+    // (monitor_match rows), not records - a record matching two keywords
+    // contributes one hit to each. Matches referencing a since-superseded or
+    // disabled rule version are excluded (active classification only).
+    const range = input.date !== undefined ? resolveShanghaiDayRange(input.date) : undefined;
+    const keywordHits = await this.aggregateKeywordHits(range, input.scope);
+
+    return {
+      total: summary.total,
+      red: summary.red,
+      yellow: summary.yellow,
+      green: summary.green,
+      unclassified: summary.unclassified,
+      keywordHits,
+    };
+  }
+
+  private async aggregateKeywordHits(
+    range: { gte: Date; lt: Date } | undefined,
+    scope: string[] | undefined,
+  ): Promise<KeywordHit[]> {
+    const rows = await this.prisma.monitorMatch.groupBy({
+      by: ['keyword', 'level'],
+      where: {
+        record: {
+          ...(range ? { examTime: range } : {}),
+          ...(scope && scope.length > 0 ? { department: { in: scope } } : {}),
+        },
+        rule: { isEnabled: true },
+      },
+      _count: { _all: true },
+    });
+    return rows.map((row) => ({
+      keyword: row.keyword,
+      level: row.level,
+      count: row._count._all,
+    }));
   }
 }
 

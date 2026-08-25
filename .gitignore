@@ -9,6 +9,7 @@ build/
 
 # Env files
 .env
+.env.bak
 .env.local
 .env.*.local
 !.env.example

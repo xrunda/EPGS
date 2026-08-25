@@ -160,6 +160,12 @@ done
 
 echo ""
 echo "===== [2/8] 校正 .env（首次部署才需要改；已配好则跳过）====="
+# 修改前先备份一份 .env，防止意外覆盖后无法恢复（.env.bak 已加入 .gitignore，
+# 不会被误提交；需要回滚时 cp .env.bak .env 即可）。
+for env_file in apps/api/.env apps/worker/.env; do
+  cp -f "$env_file" "$env_file.bak"
+done
+
 # WEB_ORIGIN 只用于 CORS：Nginx 反代后浏览器请求 api 是同源的，正常情况下
 # 不会触发 CORS 检查；这里仍然设成对外访问地址，作为运维绕过 Nginx 直连
 # api:3000 调试时的兜底，而不是让登录路径依赖它。
@@ -167,7 +173,28 @@ if ! grep -q "^WEB_ORIGIN=http://localhost:$LISTEN_PORT" apps/api/.env; then
   sed -i "s#^WEB_ORIGIN=.*#WEB_ORIGIN=http://localhost:$LISTEN_PORT#" apps/api/.env
   echo "apps/api/.env  WEB_ORIGIN -> http://localhost:$LISTEN_PORT"
 fi
-sed -i 's/^NODE_ENV=.*/NODE_ENV=production/' apps/api/.env apps/worker/.env
+# NODE_ENV 只在缺失或值为空时才写入 production；已正确配置则保持原样，
+# 避免每次启动静默覆盖人工设置（例如临时改为 development 调试）。
+for env_file in apps/api/.env apps/worker/.env; do
+  current=$(grep -E "^NODE_ENV=" "$env_file" | head -n 1 || true)
+  if [ -z "$current" ]; then
+    # 文件末尾若没有换行先补一个，避免拼到上一行
+    [ -n "$(tail -c 1 "$env_file")" ] && printf '\n' >> "$env_file"
+    printf 'NODE_ENV=production\n' >> "$env_file"
+    echo "$env_file  NODE_ENV -> production（原配置缺失，已新增）"
+    continue
+  fi
+  value=${current#NODE_ENV=}
+  # 去掉可能存在的引号（如 NODE_ENV="production" / NODE_ENV='production'）
+  value=${value%\"}; value=${value#\"}
+  value=${value%\'}; value=${value#\'}
+  if [ -z "$value" ]; then
+    sed -i 's/^NODE_ENV=.*/NODE_ENV=production/' "$env_file"
+    echo "$env_file  NODE_ENV -> production（原值空，已修正）"
+  else
+    echo "$env_file  NODE_ENV 已配置 ($value)，保持原样"
+  fi
+done
 if ! grep -q "^PACS_ADAPTER_MODE=soap" apps/worker/.env; then
   echo "警告: apps/worker/.env 的 PACS_ADAPTER_MODE 不是 soap - 请手动确认"
   echo "      PACS_SOAP_BASE_URL/USERNAME/PASSWORD/KEY_NAME 是否已正确配置。"

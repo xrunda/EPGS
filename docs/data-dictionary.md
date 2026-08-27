@@ -32,7 +32,7 @@
 | `MatchField`    | `FINDINGS` `IMPRESSION` `REPORT_TEXT` `STUDY_DESCRIPTION` `OTHER` | 命中/规则作用的报告字段，具体解释权在 issue #5 匹配引擎。                   |
 | `MatchMode`     | `EXACT` `CONTAINS` `REGEX`                                        | 关键词匹配方式。                                                            |
 | `SyncJobStatus` | `RUNNING` `SUCCEEDED` `FAILED` `PARTIAL`                          | 同步任务运行结果。                                                          |
-| `NotificationMsgType` | `TEXT` `NEWS`                                               | 推送消息类型（issue #52/#53），对应企业微信 Webhook 的 markdown/news 两种消息形状。 |
+| `NotificationMsgType` | `TEXT` `NEWS`                                               | 推送消息类型（issue #52/#53），对应企业微信 Webhook 的 text/news 两种消息形状。 |
 
 ## app_user — 本地登录账号
 
@@ -228,7 +228,7 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
 | ------------------ | ------------- | -------- | ------------------------------------------------------------- |
 | `id`                | UUID PK       | LOW      | 主键                                                           |
 | `name`              | varchar(100)  | LOW      | 模板名称（如"红色关注日报"）                                  |
-| `msgType`           | NotificationMsgType | LOW | `TEXT`（对应企业微信 markdown 消息）或 `NEWS`（图文卡片）      |
+| `msgType`           | NotificationMsgType | LOW | `TEXT`（对应企业微信 text 消息）或 `NEWS`（图文卡片）      |
 | `titleTemplate`     | varchar(200)? | LOW      | 标题模板，仅 `NEWS` 使用                                       |
 | `contentTemplate`   | text          | LOW      | 正文/摘要模板，含 `{{占位符}}`                                 |
 | `coverImageUrl`     | text?         | LOW      | 封面图静态地址，仅 `NEWS` 使用；V1 无动态生成能力              |

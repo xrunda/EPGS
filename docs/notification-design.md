@@ -23,7 +23,8 @@
 IP"白名单，配置该白名单又要求先绑定已备案域名/可信域名，形成循环依赖，
 不适合当前无公网域名的内网部署场景。**群机器人 Webhook**
 （`https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...`）不受此限制，
-markdown 与 news（图文）两种消息类型均已通过真实发送验证，是当前唯一
+text 与 news（图文）两种消息类型均已通过真实发送验证（`markdown` 在
+个人微信企业会话不渲染，见 docs/deployment.md §2.5），是当前唯一
 可行的推送方式。本设计基于 Webhook 机制。
 
 医院内网与企业微信之间目前**不互通**（无出站白名单、无专线/VPN）——
@@ -125,7 +126,7 @@ markdown 与 news（图文）两种消息类型均已通过真实发送验证，
 | ------------------ | ------------ | -------- | ----------------------------------------------------- |
 | `id`               | UUID PK      | LOW      | 主键                                                    |
 | `name`             | varchar(100) | LOW      | 模板名称（如"红色关注日报"）                            |
-| `msgType`          | enum         | LOW      | `TEXT` \| `NEWS`（对应企业微信 Webhook 的 markdown/news） |
+| `msgType`          | enum         | LOW      | `TEXT` \| `NEWS`（对应企业微信 Webhook 的 text/news） |
 | `titleTemplate`    | varchar(200)?| LOW      | 标题模板（`NEWS` 必填；`TEXT` 不使用）                  |
 | `contentTemplate`  | text         | LOW      | 正文/摘要模板，含占位符（见 §4）                        |
 | `coverImageUrl`    | text?        | LOW      | 封面图静态地址（`NEWS` 时使用；V1 无动态生成，见 §2）   |

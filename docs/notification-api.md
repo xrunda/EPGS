@@ -278,7 +278,7 @@ wecomErrMsg}`。meta 一律不含渲染正文；Webhook 地址/key 只出现在�
   - `apps/api/src/notifications/notification-test-send.service.spec.ts`——
     TEXT/NEWS 渲染、summary 复用、disabled/not-found 分支、WeCom 错误包装。
   - `apps/api/src/notifications/wecom-webhook-sender.spec.ts`——两种载荷形状
-    （TEXT→markdown、NEWS→news）、POST 目标、`errcode≠0`、HTTP 错误、非
+    （TEXT→text、NEWS→news）、POST 目标、`errcode≠0`、HTTP 错误、非
     JSON、超时；断言异常消息不含 key。
   - `apps/api/src/notifications/notifications.controller.spec.ts`——写操作
     `CONFIG_CHANGE` 审计、test-send 成败审计 + rethrow、404 不审计、
@@ -289,7 +289,7 @@ wecomErrMsg}`。meta 一律不含渲染正文；Webhook 地址/key 只出现在�
   test-send 成功（渲染数字与 `GET /api/monitor/summary` 一致）+ 502 +
   disabled/404、`VIEWER`/`RULE_ADMIN` 写 `403`。`WecomWebhookSender` 被
   fake 替换，测试不触碰真实网络；fake 记录载荷以断言解密后的 URL 与渲染
-  markdown 形状。该文件在检测不到可用 Postgres 时每个用例直接判定通过
+  text/news 形状。该文件在检测不到可用 Postgres 时每个用例直接判定通过
   （no-op），不会导致无数据库 CI 任务失败；CI 中真正执行在 `.github/
   workflows/ci.yml` 的 `db-migrations` job。
 

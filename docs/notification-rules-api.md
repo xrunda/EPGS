@@ -113,7 +113,7 @@
 | ------------- | -------- | ---- | ----------------------------------------------------------- |
 | `name`        | string≤100 | 是 | 规则名称                                                    |
 | `cron`        | string≤100 | 是 | **5 字段** cron 表达式（分 时 日 月 周），**Asia/Shanghai** 求值 |
-| `templateId`  | UUID     | 是   | 推送模板 id（`msgType` 决定 TEXT markdown / NEWS news 发送）|
+| `templateId`  | UUID     | 是   | 推送模板 id（`msgType` 决定 TEXT text / NEWS news 发送）|
 | `channelIds`  | UUID[]≥1 | 是   | 绑定的渠道 id 列表；一条规则推送到每个选中渠道（M:N）        |
 | `isEnabled`   | boolean  | 否   | 默认 `true`；`false` 时定时扫描跳过，但可手动补推            |
 | `actorId`     | string   | 否   | 已废弃，被忽略（兼容旧 DTO）                                |

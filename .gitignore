@@ -53,3 +53,4 @@ Doc/
 # hospital's DHC/Ensemble EnsWebService) - never stage.
 tmp.md
 /tmp.*.md
+cmd.md

@@ -42,13 +42,21 @@ interface RuleDraft {
 
 const EMPTY_FILTERS: RuleFilters = { enabled: '' };
 
-/** 常用推送时间预设（静态常量，不依赖接口；cron 为 5 段，Asia/Shanghai 求值）。 */
+/**
+ * 常用推送时间预设（静态常量，不依赖接口；cron 为 5 段，Asia/Shanghai 求值）。
+ *
+ * 仅收录"每天/每周最多一次"的低频预设：SCHEDULED 推送的幂等去重键是
+ * (rule_id, windowDate) 天粒度（见 rule-executor.ts + DB 部分唯一索引
+ * uq_push_log_scheduled_dedup），一天只允许成功写入一条 push_log。曾经的
+ * "每 30 分钟"预设与此冲突——当天第一次触发后，同一天内的所有后续触发都会
+ * 被判定为"今日已推送"而跳过，实际效果是一天只真正推送一次（且是第一次
+ * 命中的那次，而非用户预期的高频循环），因此移除，不再提供分钟级预设。
+ */
 const CRON_PRESETS: Array<{ label: string; cron: string }> = [
   { label: '每天 9:00', cron: '0 9 * * *' },
   { label: '每天 8:00', cron: '0 8 * * *' },
   { label: '每天 18:00', cron: '0 18 * * *' },
   { label: '每周一 9:00', cron: '0 9 * * 1' },
-  { label: '每 30 分钟', cron: '*/30 * * * *' },
 ];
 
 const EMPTY_RULE: RuleDraft = {

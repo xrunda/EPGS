@@ -45,6 +45,13 @@ export interface AppConfig {
    * hospital.
    */
   hospitalName: string;
+  /**
+   * Push assistant (issue #70): how old assistant_heartbeat.lastSeenAt may
+   * get (seconds) before the api reports the assistant as 失联. Default 90
+   * (3× the worker's heartbeat cadence). Exposed to the web in the status
+   * payload as staleAfterMs.
+   */
+  assistantStaleSeconds: number;
 }
 
 export default (): AppConfig => {
@@ -64,5 +71,6 @@ export default (): AppConfig => {
       : nodeEnv === 'production',
     notificationSecretKey: process.env.NOTIFICATION_SECRET_KEY ?? '',
     hospitalName: process.env.HOSPITAL_NAME ?? '菏泽市中医医院',
+    assistantStaleSeconds: parseInt(process.env.ASSISTANT_STALE_SECONDS ?? '90', 10),
   };
 };

@@ -45,4 +45,13 @@ export const envValidationSchema = Joi.object({
   // derives a fixed 32-byte AES key from this value via SHA-256, so it does
   // not need to be exactly 32 bytes itself.
   NOTIFICATION_SECRET_KEY: Joi.string().min(32).required(),
+
+  // Push assistant (issue #70). The worker publishes its liveness through the
+  // assistant_heartbeat row (the api cannot probe the worker process behind
+  // the 网闸). ASSISTANT_STALE_SECONDS is how old that row's lastSeenAt may
+  // get before the assistant is judged 失联 - default 90 = 3× the worker's
+  // ASSISTANT_HEARTBEAT_SECONDS (30), so one dropped heartbeat is tolerated.
+  // Keep it operationally in sync with the worker value; a mismatch only
+  // shifts how quickly 失联 is declared, not correctness.
+  ASSISTANT_STALE_SECONDS: Joi.number().integer().min(60).max(300).default(90),
 });

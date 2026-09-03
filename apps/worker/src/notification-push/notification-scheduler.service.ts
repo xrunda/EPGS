@@ -7,6 +7,7 @@ import {
   PUSH_CRON_TIMEZONE,
 } from '@epgs/notification-push';
 import { WorkerNotificationPushStore } from './worker-notification-push-store';
+import { AssistantEventsService } from '../assistant/assistant-events.service';
 
 /**
  * Scheduled push-rule tick (issue: push rules, user decision #1).
@@ -40,6 +41,7 @@ export class NotificationScheduler implements OnModuleInit {
     private readonly config: ConfigService,
     private readonly store: WorkerNotificationPushStore,
     private readonly executor: NotificationRuleExecutor,
+    private readonly assistantEvents: AssistantEventsService,
   ) {}
 
   onModuleInit(): void {
@@ -94,6 +96,7 @@ export class NotificationScheduler implements OnModuleInit {
         if (!isCronDueAt(rule.cron, current)) continue;
 
         this.logger.log(`push rule "${rule.name}" due for ${today}; executing`);
+        const runStartedAt = Date.now();
         const result = await this.executor.execute({
           ruleId: rule.id,
           trigger: 'SCHEDULED',
@@ -108,6 +111,22 @@ export class NotificationScheduler implements OnModuleInit {
         this.logger.log(
           `push rule "${rule.name}" finished: status=${result.status} channels=${result.deliveries.length}`,
         );
+
+        // Push assistant feed (issue #70): a PUSH_DONE event the panel's
+        // "刚完成" hero + "执行过程" bar read. The executor exposes render +
+        // deliver as the phases it can measure; a full sync→match→render→send
+        // breakdown is not available here (sync/match run elsewhere), so
+        // `stages` carries only the whole-run wall clock as a single deliver
+        // segment - the web renders whatever segments it gets.
+        const elapsedMs = Date.now() - runStartedAt;
+        await this.assistantEvents.record({
+          type: 'PUSH_DONE',
+          ruleName: rule.name,
+          status: result.status ?? 'FAILED',
+          groupCount: result.deliveries.filter((d) => d.status === 'SUCCESS').length,
+          elapsedMs,
+          stages: [{ name: 'deliver', elapsedMs }],
+        });
       }
       return executed;
     } finally {

@@ -111,4 +111,17 @@ export const envValidationSchema = Joi.object({
   NOTIFICATION_SECRET_KEY: Joi.string().min(32).required(),
   HOSPITAL_NAME: Joi.string().default('菏泽市中医医院'),
   NOTIFICATION_TICK_SECONDS: Joi.number().integer().min(10).max(300).default(60),
+
+  // Push assistant (issue #70). The worker is headless behind the 网闸, so
+  // its liveness is published through a DB heartbeat row rather than an HTTP
+  // probe. ASSISTANT_HEARTBEAT_SECONDS is how often the worker's dedicated
+  // heartbeat loop rewrites assistant_heartbeat.lastSeenAt + nextTriggerAt
+  // (default 30, INDEPENDENT of NOTIFICATION_TICK_SECONDS - it is not tied to
+  // the push tick). The api's ASSISTANT_STALE_SECONDS (its own env) should be
+  // ~3× this so one dropped write does not flip the assistant to 失联.
+  ASSISTANT_HEARTBEAT_SECONDS: Joi.number().integer().min(10).max(120).default(30),
+  // How long assistant_event rows are kept. The heartbeat loop sweeps rows
+  // older than this every ~20 ticks. 7 days covers the panel's look-back and
+  // the "连续运行天数" display without unbounded growth.
+  ASSISTANT_EVENT_RETENTION_DAYS: Joi.number().integer().min(1).max(90).default(7),
 });

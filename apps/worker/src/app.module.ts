@@ -7,6 +7,7 @@ import { SyncModule } from './sync/sync.module';
 import { PacsAdapterModule } from './pacs-adapter/pacs-adapter.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { NotificationPushModule } from './notification-push/notification-push.module';
+import { AssistantModule } from './assistant/assistant.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { NotificationPushModule } from './notification-push/notification-push.mo
     SyncModule,
     PacsAdapterModule,
     NotificationPushModule,
+    AssistantModule,
   ],
 })
 export class AppModule {}

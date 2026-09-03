@@ -5,6 +5,7 @@ import { SyncService } from './sync.service';
 import { PACS_RIS_ADAPTER } from '../pacs-adapter/pacs-ris-adapter.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemClock } from './clock';
+import { AssistantEventsService } from '../assistant/assistant-events.service';
 
 /**
  * Unit tests for SyncService's orchestration behavior (scheduling,
@@ -61,6 +62,10 @@ describe('SyncService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PACS_RIS_ADAPTER, useValue: adapter },
         SystemClock,
+        {
+          provide: AssistantEventsService,
+          useValue: { recordSyncMatches: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
   }

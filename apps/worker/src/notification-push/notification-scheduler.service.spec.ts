@@ -4,6 +4,7 @@ import { formatShanghaiDate } from '@epgs/notification-push';
 import { NotificationScheduler } from './notification-scheduler.service';
 import { WorkerNotificationPushStore } from './worker-notification-push-store';
 import { NotificationRuleExecutor } from '@epgs/notification-push';
+import { AssistantEventsService } from '../assistant/assistant-events.service';
 
 /**
  * Unit tests for NotificationScheduler's orchestration (tick cadence,
@@ -63,6 +64,10 @@ describe('NotificationScheduler', () => {
         { provide: ConfigService, useValue: config },
         { provide: WorkerNotificationPushStore, useValue: store },
         { provide: NotificationRuleExecutor, useValue: executor },
+        {
+          provide: AssistantEventsService,
+          useValue: { record: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
   }

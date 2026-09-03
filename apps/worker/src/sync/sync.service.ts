@@ -4,6 +4,7 @@ import { PACS_RIS_ADAPTER, PacsRisAdapter } from '../pacs-adapter/pacs-ris-adapt
 import { PrismaService } from '../prisma/prisma.service';
 import { runSync, SyncRunSummary } from './sync-runner';
 import { SystemClock } from './clock';
+import { AssistantEventsService } from '../assistant/assistant-events.service';
 
 /**
  * Scheduled incremental PACS/RIS sync job (issue #6). Replaces the
@@ -41,6 +42,7 @@ export class SyncService implements OnModuleInit {
     private readonly prisma: PrismaService,
     @Inject(PACS_RIS_ADAPTER) private readonly adapter: PacsRisAdapter,
     private readonly clock: SystemClock,
+    private readonly assistantEvents: AssistantEventsService,
   ) {}
 
   onModuleInit(): void {
@@ -91,8 +93,9 @@ export class SyncService implements OnModuleInit {
       return null;
     }
     this.running = true;
+    const startedAt = new Date();
     try {
-      return await runSync(
+      const summary = await runSync(
         this.prisma,
         this.adapter,
         this.clock.now(),
@@ -105,6 +108,13 @@ export class SyncService implements OnModuleInit {
         },
         this.logger,
       );
+      // Push assistant feed (issue #70): KEYWORD_HIT rows for matches created
+      // during this pass. No per-sync "已同步 N 份" event - that would flood
+      // the feed; sync progress is shown as panel STATE instead. Best-effort -
+      // recordSyncMatches swallows its own errors so a feed write never fails
+      // a sync.
+      await this.assistantEvents.recordSyncMatches(summary.successCount, startedAt);
+      return summary;
     } finally {
       this.running = false;
     }

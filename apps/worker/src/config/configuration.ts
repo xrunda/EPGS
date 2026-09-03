@@ -42,6 +42,10 @@ export interface WorkerConfig {
   hospitalName: string;
   /** Push-rule scheduler tick cadence in seconds (10-300, default 60). */
   notificationTickSeconds: number;
+  /** Push assistant heartbeat write cadence in seconds (10-120, default 30). */
+  assistantHeartbeatSeconds: number;
+  /** Days to keep assistant_event rows before the heartbeat loop sweeps them (1-90, default 7). */
+  assistantEventRetentionDays: number;
 }
 
 export default (): WorkerConfig => ({
@@ -70,4 +74,6 @@ export default (): WorkerConfig => ({
   notificationSecretKey: process.env.NOTIFICATION_SECRET_KEY ?? '',
   hospitalName: process.env.HOSPITAL_NAME ?? '菏泽市中医医院',
   notificationTickSeconds: parseInt(process.env.NOTIFICATION_TICK_SECONDS ?? '60', 10),
+  assistantHeartbeatSeconds: parseInt(process.env.ASSISTANT_HEARTBEAT_SECONDS ?? '30', 10),
+  assistantEventRetentionDays: parseInt(process.env.ASSISTANT_EVENT_RETENTION_DAYS ?? '7', 10),
 });

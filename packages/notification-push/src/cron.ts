@@ -44,3 +44,43 @@ export function isCronDueAt(
   const next = cronTime.getNextDateFrom(new Date(minuteStart.getTime() - 1), timezone);
   return next.toMillis() < minuteEnd.getTime();
 }
+
+/**
+ * The next fire instant strictly after `from`, evaluated in `timezone`
+ * (Asia/Shanghai by default - same parsing contract as isCronDueAt). Used by
+ * the push assistant (issue #70) to write a "距下次推送" countdown target into
+ * the heartbeat row: the worker computes getNextTriggerAt for every enabled
+ * rule each tick and stores the earliest.
+ *
+ * NOTE the "strictly after" semantics - at exactly 18:00:00 for "0 18 * * *"
+ * this returns TOMORROW 18:00, not the current minute. The heartbeat writer
+ * calls it once per tick (30s cadence) so the sub-minute skew is invisible in
+ * an HH:MM:SS countdown.
+ */
+export function getNextTriggerAt(
+  expression: string,
+  from: Date = new Date(),
+  timezone: string = PUSH_CRON_TIMEZONE,
+): Date {
+  return new CronTime(expression, timezone).getNextDateFrom(from, timezone).toJSDate();
+}
+
+/**
+ * The earliest next fire across several cron expressions, or null when the
+ * list is empty (no enabled rules -> the assistant shows "未排程"). Invalid
+ * expressions throw via CronTime, matching getNextTriggerAt.
+ */
+export function earliestNextTriggerAt(
+  expressions: string[],
+  from: Date = new Date(),
+  timezone: string = PUSH_CRON_TIMEZONE,
+): Date | null {
+  let earliest: Date | null = null;
+  for (const expression of expressions) {
+    const next = getNextTriggerAt(expression, from, timezone);
+    if (earliest === null || next.getTime() < earliest.getTime()) {
+      earliest = next;
+    }
+  }
+  return earliest;
+}

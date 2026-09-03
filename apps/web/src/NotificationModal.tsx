@@ -6,15 +6,17 @@ import { PushLogsPanel } from './PushLogsPanel';
 import { TestSendDialog } from './TestSendDialog';
 import './NotificationModal.css';
 
+type ActiveTab = 'channels' | 'templates' | 'rules' | 'logs';
+
 interface NotificationModalProps {
   open: boolean;
   onClose(): void;
   /** 后端 @RequireRoles(SYSTEM_ADMIN) 强校验；此处仅隐藏写入口（UX 优化）。 */
   canManageNotifications?: boolean;
   actorId?: string;
+  /** 打开时的初始 tab（推送助理的「推送日志」入口用 'logs' 直接跳到日志页）。 */
+  initialTab?: ActiveTab;
 }
-
-type ActiveTab = 'channels' | 'templates' | 'rules' | 'logs';
 
 /** 发送测试对话框的预选（来自渠道/模板行的行内入口）。 */
 type TestSendSelection = { channelId?: string; templateId?: string };
@@ -31,8 +33,14 @@ export function NotificationModal({
   onClose,
   canManageNotifications = true,
   actorId = 'web-operator',
+  initialTab = 'channels',
 }: NotificationModalProps): JSX.Element | null {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('channels');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
+
+  // Re-sync to the requested tab each time the modal is (re)opened.
+  useEffect(() => {
+    if (open) setActiveTab(initialTab);
+  }, [open, initialTab]);
   // 抬升的 dirty：任一 panel 的编辑器未保存时门控切 tab 与关闭弹窗
   const [dirty, setDirty] = useState(false);
   const [testSend, setTestSend] = useState<TestSendSelection | null>(null);

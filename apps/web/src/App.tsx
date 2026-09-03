@@ -4,6 +4,7 @@ import type { AuthUser } from './authApi';
 import { NotificationModal } from './NotificationModal';
 import { RulesModal } from './RulesModal';
 import { Workbench } from './Workbench';
+import { PushAssistantWidget } from './PushAssistantWidget';
 import hospitalLogo from './assets/hospital-logo.jpg';
 import './App.css';
 
@@ -21,6 +22,14 @@ function AuthenticatedApp({
 }: AuthenticatedAppProps): JSX.Element {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  // The push-assistant「推送日志」link opens the notification modal straight on
+  // its 日志 tab; a normal open lands on 渠道.
+  const [notificationsTab, setNotificationsTab] = useState<'channels' | 'logs'>('channels');
+
+  const openNotifications = (tab: 'channels' | 'logs' = 'channels'): void => {
+    setNotificationsTab(tab);
+    setNotificationsOpen(true);
+  };
 
   return (
     <main className="app-shell">
@@ -45,14 +54,16 @@ function AuthenticatedApp({
           </button>
         </div>
       </header>
-      <Workbench onOpenRules={() => setRulesOpen(true)} onOpenNotifications={() => setNotificationsOpen(true)} />
+      <Workbench onOpenRules={() => setRulesOpen(true)} onOpenNotifications={() => openNotifications()} />
       <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} actorId={user.username} />
       <NotificationModal
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
         canManageNotifications={user.roles.includes('SYSTEM_ADMIN')}
         actorId={user.username}
+        initialTab={notificationsTab}
       />
+      <PushAssistantWidget onOpenLogs={() => openNotifications('logs')} />
     </main>
   );
 }

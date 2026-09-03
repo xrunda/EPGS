@@ -16,6 +16,7 @@ import type {
   PaginatedNotificationRules,
   PaginatedNotificationTemplates,
   PaginatedPushLogs,
+  PushAssistantStatusDto,
   RunNotificationRuleResult,
   TestSendBody,
   TestSendResult,
@@ -234,6 +235,13 @@ export async function runRule(ruleId: string, windowDate?: string): Promise<RunN
   const query = windowDate ? `?windowDate=${encodeURIComponent(windowDate)}` : '';
   return parseResponse(
     await fetch(`${API_BASE_URL}/api/notification-rules/${ruleId}/run${query}`, jsonRequest('POST', {})),
+  );
+}
+
+/** 推送助理聚合状态（issue #70）：心跳 / 倒计时 / 活动流 / 预览 / 上次推送。web 每 ~5s 轮询。 */
+export async function getPushAssistantStatus(): Promise<PushAssistantStatusDto> {
+  return parseResponse(
+    await fetch(`${API_BASE_URL}/api/notifications/assistant/status`, { credentials: 'include' }),
   );
 }
 

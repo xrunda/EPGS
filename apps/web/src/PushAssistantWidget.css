@@ -1,0 +1,434 @@
+/**
+ * 推送助理 (issue #70) - right-corner always-on component. Uses the shared
+ * design tokens (tokens.css) so it reads as one system with the workbench.
+ * The information design is deliberately clean and data-driven: no cartoon or
+ * anthropomorphic visuals (product constraint).
+ */
+
+.pa-widget {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  width: 336px;
+  font-family: var(--font-sans);
+  color: var(--ink-800);
+}
+
+@media (max-width: 640px) {
+  .pa-widget {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+    max-width: 336px;
+  }
+}
+
+/* ---------- status dot ---------- */
+.pa-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--green-accent);
+  flex: none;
+}
+.pa-widget--offline .pa-dot {
+  background: var(--red-accent);
+}
+.pa-dot--pulse {
+  animation: pa-pulse 2.4s var(--ease-out) infinite;
+}
+.pa-widget--offline .pa-dot--pulse {
+  animation: none;
+}
+@keyframes pa-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(60, 149, 96, 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(60, 149, 96, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(60, 149, 96, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pa-dot--pulse {
+    animation: none;
+  }
+}
+
+/* ---------- collapsed pill ---------- */
+.pa-pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-lg);
+  padding: 10px 16px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.pa-pill:hover {
+  border-color: var(--border-strong);
+}
+.pa-pill:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-lg), var(--shadow-focus);
+}
+.pa-widget--offline .pa-pill {
+  border-color: var(--red-tint);
+}
+.pa-pill__name {
+  font-weight: 650;
+}
+.pa-pill__divider {
+  width: 1px;
+  height: 14px;
+  background: var(--border-default);
+}
+.pa-pill__count {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.pa-pill__meta {
+  font-size: 12px;
+  color: var(--ink-300);
+}
+.pa-pill__meta--alarm {
+  color: var(--red-ink);
+  font-weight: 600;
+}
+.pa-pill__chev {
+  margin-left: auto;
+  color: var(--ink-200);
+  font-size: 14px;
+}
+
+/* ---------- expanded panel ---------- */
+.pa-panel {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.pa-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 12px;
+}
+.pa-panel__title {
+  font-size: 14px;
+  font-weight: 650;
+}
+.pa-chip {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+}
+.pa-chip--on_duty {
+  color: var(--green-ink);
+  background: var(--green-tint);
+}
+.pa-chip--just_done {
+  color: var(--teal-700);
+  background: rgba(36, 113, 129, 0.12);
+}
+.pa-chip--offline {
+  color: var(--red-ink);
+  background: var(--red-tint);
+}
+.pa-collapse {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--ink-200);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.pa-collapse:hover {
+  background: var(--surface-sunken);
+  color: var(--ink-400);
+}
+
+.pa-panel__body {
+  padding: 0 16px;
+}
+
+/* ---------- hero ---------- */
+.pa-hero {
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+}
+.pa-hero--offline {
+  border-color: var(--red-tint);
+  background: var(--red-wash);
+}
+.pa-hero__label {
+  font-size: 12px;
+  color: var(--ink-300);
+  letter-spacing: 0.04em;
+}
+.pa-hero__count {
+  font-size: 32px;
+  font-weight: 700;
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.pa-hero__sub {
+  font-size: 12px;
+  color: var(--ink-400);
+  margin-top: 4px;
+}
+.pa-hero__preview {
+  font-size: 12.5px;
+  color: var(--ink-400);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.pa-hero__preview b {
+  color: var(--red-ink);
+  font-weight: 600;
+}
+.pa-hero__alarm {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--red-ink);
+  margin-top: 6px;
+}
+.pa-hero__next {
+  font-size: 12px;
+  color: var(--ink-400);
+  margin-top: 10px;
+}
+.pa-mono {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.pa-stat-grid {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.pa-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 2px 6px;
+}
+.pa-stat b {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.pa-stat__red {
+  color: var(--red-ink);
+}
+.pa-stat span {
+  font-size: 11px;
+  color: var(--ink-300);
+  margin-top: 2px;
+}
+
+/* "同步在跑" as state, not feed rows (issue #70) */
+.pa-syncline {
+  font-size: 12px;
+  color: var(--ink-300);
+  margin-top: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- sections ---------- */
+.pa-sec {
+  padding: 14px 2px 0;
+}
+.pa-sec__label {
+  font-size: 12px;
+  color: var(--ink-300);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.pa-feed {
+  display: flex;
+  flex-direction: column;
+}
+.pa-feed__empty {
+  font-size: 12.5px;
+  color: var(--ink-300);
+  margin: 2px 0;
+}
+.pa-feed__row {
+  display: grid;
+  grid-template-columns: 80px 10px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.pa-feed__time {
+  color: var(--ink-300);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.pa-feed__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+  justify-self: center;
+  align-self: center;
+}
+.pa-feed__dot--red {
+  background: var(--red-accent);
+}
+.pa-feed__dot--yellow {
+  background: var(--yellow-accent);
+}
+.pa-feed__dot--ok {
+  background: var(--green-accent);
+}
+.pa-feed__text {
+  color: var(--ink-700);
+  line-height: 1.45;
+}
+
+.pa-exec__bar {
+  display: flex;
+  height: 6px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--border-subtle);
+  margin-top: 6px;
+}
+.pa-exec__seg {
+  display: block;
+  height: 100%;
+  flex-basis: 0;
+}
+.pa-exec__seg--sync {
+  background: var(--ink-100);
+}
+.pa-exec__seg--match {
+  background: var(--ink-200);
+}
+.pa-exec__seg--render {
+  background: var(--teal-400);
+}
+.pa-exec__seg--deliver {
+  background: var(--teal-600);
+}
+.pa-exec__labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--ink-300);
+  margin-top: 5px;
+}
+
+.pa-warn {
+  font-size: 12px;
+  color: var(--yellow-ink);
+  margin: 10px 0 0;
+}
+
+.pa-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 14px 0 0;
+}
+
+/* ---------- actions + footer ---------- */
+.pa-actions {
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px 4px;
+}
+.pa-btn {
+  flex: 1;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 0;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.pa-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.pa-btn--primary {
+  background: var(--teal-600);
+  border: 1px solid var(--teal-600);
+  color: #fff;
+}
+.pa-btn--primary:hover:not(:disabled) {
+  background: var(--teal-700);
+  border-color: var(--teal-700);
+}
+.pa-btn--primary:disabled {
+  background: var(--ink-200);
+  border-color: var(--ink-200);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.pa-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--ink-400);
+}
+.pa-btn--ghost:hover {
+  color: var(--teal-700);
+  border-color: var(--teal-500);
+}
+
+.pa-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-300);
+  padding: 10px 16px 13px;
+}
+.pa-widget--offline .pa-foot {
+  color: var(--red-ink);
+  font-weight: 600;
+}
+.pa-foot__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green-accent);
+  flex: none;
+}
+.pa-widget--offline .pa-foot__dot {
+  background: var(--red-accent);
+}

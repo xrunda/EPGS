@@ -194,16 +194,19 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
 
 ### 9.2 部署前（在堡垒机上，执行 `start.sh` 之前）
 
-- [ ] **确认入口地址**：医生手机在医院网络下能打开的 web 入口（nginx 单端口，
-      即网闸映射后的地址，形如 `http://10.10.10.91:5173`）。用手机浏览器直接访问
-      `http://<入口>/health` 应返回 200。**打不开就先不配 `ALERT_LINK_BASE_URL`**，
-      其余功能照常上线。
-- [ ] **两端同值写入 `.env`**（`apps/api/.env` 与 `apps/worker/.env` 各加两行，
-      `start.sh` 会校验一致性，不一致直接退出）：
+常规流程不变：VPN 连到堡垒机 → `bash start.sh`（脚本自行 `git pull` / 迁移 / 构建 /
+重启）。本批次只多一步**一次性**的 `.env` 修改：
+
+- [ ] **两端同值写入 `.env`**（`apps/api/.env` 与 `apps/worker/.env` 各加两行；
+      `start.sh` 每次都会校验两端一致，不一致直接退出）：
   ```dotenv
-  ALERT_LINK_BASE_URL=http://<入口地址>:<端口>
+  ALERT_LINK_BASE_URL=http://<医生浏览器打开工作台用的地址>:<端口>
   ALERT_LINK_TTL_HOURS=24
   ```
+  值就是大家现在访问工作台的那个入口（nginx 单端口 / 网闸映射后的地址），
+  **不是** `localhost`。医生手机能否点开卡片与能否打开工作台是同一个前提，不需要
+  额外提前验证；不确定时可以先不加这两行——卡片功能关闭，其余功能照常上线，
+  之后随时加上再 `bash start.sh nopull` 即可。
 - [ ] （可选）推送助理参数保持默认即可；只有当 worker 心跳周期改动时才需同时改
       api 的 `ASSISTANT_STALE_SECONDS`（≈ 3 × `ASSISTANT_HEARTBEAT_SECONDS`）。
 - [ ] **备份数据库**（§4）：本批次有两张新表的正向迁移，回滚会删表。
@@ -224,9 +227,9 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
 
 ### 9.4 部署后验证
 
-按 §8 新增的三项（推送链路、卡片真机验证、推送助理）逐项勾选；卡片验证务必在
-**医生实际使用的网络**下做一次（Wi‑Fi 与 4G 各一次），因为封面与链接都由手机
-自行拉取。
+按 §8 新增的三项（推送链路、卡片真机验证、推送助理）逐项勾选。卡片验证由在院
+同事在**医生实际使用的网络**下点一次即可（封面与链接都由手机自行拉取）；点不开
+就按 §9.5 删掉 `ALERT_LINK_BASE_URL` 关掉卡片，不影响其他功能。
 
 ### 9.5 回退
 

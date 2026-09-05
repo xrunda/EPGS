@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  AlertLinkIssuer,
   NotificationPushService,
   NotificationRuleExecutor,
   NotificationSecretCipher,
@@ -8,6 +9,7 @@ import {
 } from '@epgs/notification-push';
 import { WorkerNotificationPushStore } from './worker-notification-push-store';
 import { WorkerSummaryProvider } from './worker-summary.provider';
+import { WorkerAlertLinkStore } from './worker-alert-link.store';
 import { NotificationScheduler } from './notification-scheduler.service';
 
 /**
@@ -22,6 +24,21 @@ import { NotificationScheduler } from './notification-scheduler.service';
   providers: [
     WorkerNotificationPushStore,
     WorkerSummaryProvider,
+    WorkerAlertLinkStore,
+    {
+      // Issue #72: per-level alert links appended to scheduled runs. Disabled
+      // (no cards) unless ALERT_LINK_BASE_URL is configured - same value as api.
+      provide: AlertLinkIssuer,
+      inject: [WorkerAlertLinkStore, WorkerSummaryProvider, ConfigService],
+      useFactory: (store: WorkerAlertLinkStore, summary: WorkerSummaryProvider, config: ConfigService) =>
+        new AlertLinkIssuer({
+          store,
+          summary,
+          baseUrl: config.get<string | null>('alertLinkBaseUrl') ?? null,
+          ttlHours: config.get<number>('alertLinkTtlHours') ?? 24,
+          hospitalNameProvider: () => config.get<string>('hospitalName') ?? '菏泽市中医医院',
+        }),
+    },
     {
       provide: NotificationSecretCipher,
       inject: [ConfigService],
@@ -52,9 +69,12 @@ import { NotificationScheduler } from './notification-scheduler.service';
     },
     {
       provide: NotificationRuleExecutor,
-      inject: [WorkerNotificationPushStore, NotificationPushService],
-      useFactory: (store: WorkerNotificationPushStore, push: NotificationPushService) =>
-        new NotificationRuleExecutor({ store, push }),
+      inject: [WorkerNotificationPushStore, NotificationPushService, AlertLinkIssuer],
+      useFactory: (
+        store: WorkerNotificationPushStore,
+        push: NotificationPushService,
+        alertLinks: AlertLinkIssuer,
+      ) => new NotificationRuleExecutor({ store, push, alertLinks }),
     },
     NotificationScheduler,
   ],

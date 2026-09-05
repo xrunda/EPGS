@@ -12,8 +12,9 @@ export * from './summary';
 export * from './render';
 export * from './cron';
 export * from './wecom-webhook-sender';
+export * from './alert-link';
 export { NotificationSecretCipher } from './notification-secret-cipher';
-export { NotificationPushService } from './push.service';
+export { NotificationPushService, ALERT_CARDS_FAILED_PREFIX } from './push.service';
 export type {
   NotificationPushServiceDeps,
   PushToChannelInput,

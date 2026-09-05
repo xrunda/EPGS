@@ -35,6 +35,34 @@ export interface WecomOutboundMessage {
   linkUrl: string | null;
 }
 
+/** One article of a multi-article WeCom `news` message (issue #72 alert cards). */
+export interface WecomNewsArticle {
+  title: string;
+  description: string;
+  url: string;
+  /** Optional thumbnail; omitted/empty renders a text-only card. */
+  picurl?: string | null;
+}
+
+/**
+ * A `news` message with 1-8 articles - the shape the WeCom webhook accepts
+ * natively. Used for the per-level alert cards appended after the template
+ * message (issue #72); the single-article template path keeps using
+ * WecomOutboundMessage so existing callers and tests are untouched.
+ */
+export interface WecomNewsArticlesMessage {
+  articles: WecomNewsArticle[];
+}
+
+/** WeCom caps a news message at 8 articles. */
+export const WECOM_NEWS_MAX_ARTICLES = 8;
+
+export function isNewsArticlesMessage(
+  message: WecomOutboundMessage | WecomNewsArticlesMessage,
+): message is WecomNewsArticlesMessage {
+  return Array.isArray((message as WecomNewsArticlesMessage).articles);
+}
+
 /**
  * Raised for ANY outbound failure: network error, timeout, non-2xx HTTP,
  * non-JSON body, or a WeCom `errcode != 0` in the response. The thrown
@@ -81,7 +109,7 @@ export class WecomWebhookSender {
    */
   async send(
     webhookUrl: string,
-    message: WecomOutboundMessage,
+    message: WecomOutboundMessage | WecomNewsArticlesMessage,
   ): Promise<{ errcode: number; errmsg: string }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -139,7 +167,28 @@ export class WecomWebhookSender {
  * `text` and `news` both render their content correctly (in both the WeCom
  * client and personal WeChat).
  */
-export function toWecomPayload(message: WecomOutboundMessage): Record<string, unknown> {
+export function toWecomPayload(
+  message: WecomOutboundMessage | WecomNewsArticlesMessage,
+): Record<string, unknown> {
+  if (isNewsArticlesMessage(message)) {
+    if (message.articles.length === 0 || message.articles.length > WECOM_NEWS_MAX_ARTICLES) {
+      throw new WecomWebhookError(
+        0,
+        `WeCom news message must carry 1-${WECOM_NEWS_MAX_ARTICLES} articles (got ${message.articles.length})`,
+      );
+    }
+    return {
+      msgtype: 'news',
+      news: {
+        articles: message.articles.map((article) => ({
+          title: article.title,
+          description: article.description,
+          url: article.url,
+          picurl: article.picurl ?? '',
+        })),
+      },
+    };
+  }
   if (message.msgType === 'TEXT') {
     return { msgtype: 'text', text: { content: message.renderedContent } };
   }

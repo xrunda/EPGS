@@ -137,22 +137,24 @@ exit immediately with a clear, non-secret-leaking error message (e.g.
 `Config validation error: "DATABASE_URL" is required`) rather than starting in a
 broken state.
 
-| Variable                  | Used by          | Purpose                                             | Example / default                            |
-| ------------------------- | ---------------- | --------------------------------------------------- | -------------------------------------------- |
-| `NODE_ENV`                | api, worker      | Runtime environment                                 | `development`                                |
-| `PORT`                    | api, worker, web | HTTP port for that app                              | api `3000`, worker `3001`, web `5173`        |
-| `TZ`                      | api, worker      | Process timezone                                    | `Asia/Shanghai`                              |
-| `LOG_LEVEL`               | api, worker      | Minimum log level (`fatal`..`verbose`)              | `log`                                        |
-| `DATABASE_URL`            | api, worker      | PostgreSQL connection string (required, no default) | `postgresql://epgs:epgs@localhost:5432/epgs` |
-| `SYNC_INTERVAL_MINUTES`   | worker           | Scheduled source-sync cadence                       | `3`                                          |
-| `PACS_ADAPTER_MODE`       | worker           | `csv` for local Mock or `http` for hospital REST    | `csv`                                        |
-| `PACS_MOCK_CSV_PATH`      | worker           | API-shaped CSV path; required in `csv` mode         | `../../Doc/moke-data.csv`                    |
-| `PACS_HTTP_BASE_URL`      | worker           | Hospital REST gateway; required in `http` mode      | no default                                   |
-| `PACS_HTTP_SERVICE_TOKEN` | worker           | Gateway Bearer Token; required in `http` mode       | no default                                   |
-| `VITE_API_BASE_URL`       | web              | Base URL web uses to call the API                   | `http://localhost:3000`                      |
-| `JWT_SECRET`              | api              | 本地登录 JWT 签名密钥（至少 32 字符，必填）         | 无默认值                                     |
-| `JWT_EXPIRES_SECONDS`     | api              | 登录 Cookie 与 JWT 有效期（秒）                     | `28800`                                      |
-| `WEB_ORIGIN`              | api              | 允许携带 Cookie 调用 API 的前端来源                 | `http://localhost:5173`                      |
+| Variable                  | Used by          | Purpose                                                             | Example / default                            |
+| ------------------------- | ---------------- | ------------------------------------------------------------------- | -------------------------------------------- |
+| `NODE_ENV`                | api, worker      | Runtime environment                                                 | `development`                                |
+| `PORT`                    | api, worker, web | HTTP port for that app                                              | api `3000`, worker `3001`, web `5173`        |
+| `TZ`                      | api, worker      | Process timezone                                                    | `Asia/Shanghai`                              |
+| `LOG_LEVEL`               | api, worker      | Minimum log level (`fatal`..`verbose`)                              | `log`                                        |
+| `DATABASE_URL`            | api, worker      | PostgreSQL connection string (required, no default)                 | `postgresql://epgs:epgs@localhost:5432/epgs` |
+| `SYNC_INTERVAL_MINUTES`   | worker           | Scheduled source-sync cadence                                       | `3`                                          |
+| `PACS_ADAPTER_MODE`       | worker           | `csv` for local Mock or `http` for hospital REST                    | `csv`                                        |
+| `PACS_MOCK_CSV_PATH`      | worker           | API-shaped CSV path; required in `csv` mode                         | `../../Doc/moke-data.csv`                    |
+| `PACS_HTTP_BASE_URL`      | worker           | Hospital REST gateway; required in `http` mode                      | no default                                   |
+| `PACS_HTTP_SERVICE_TOKEN` | worker           | Gateway Bearer Token; required in `http` mode                       | no default                                   |
+| `VITE_API_BASE_URL`       | web              | Base URL web uses to call the API                                   | `http://localhost:3000`                      |
+| `JWT_SECRET`              | api              | 本地登录 JWT 签名密钥（至少 32 字符，必填）                         | 无默认值                                     |
+| `JWT_EXPIRES_SECONDS`     | api              | 登录 Cookie 与 JWT 有效期（秒）                                     | `28800`                                      |
+| `WEB_ORIGIN`              | api              | 允许携带 Cookie 调用 API 的前端来源                                 | `http://localhost:5173`                      |
+| `ALERT_LINK_BASE_URL`     | api, worker      | 企微客户端打开 `/alert` 患者列表页的地址；未设置则不追加卡片（#72） | 无默认值（关闭）                             |
+| `ALERT_LINK_TTL_HOURS`    | api, worker      | 预警链接有效期（小时，1-168）                                       | `24`                                         |
 
 See `.env.example` (root) and `apps/*/.env.example` for the full, commented list.
 

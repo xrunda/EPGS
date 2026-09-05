@@ -153,7 +153,7 @@ jobs:
       # 400s, summary==list, and the read-only detail endpoint. It seeds its
       # own 6-rule/12-record fixture in beforeAll and wipes monitor_match ->
       # monitor_record -> monitor_rule in afterAll, so the seed-count step
-      # below still sees exactly the 6 seeded RED rules.
+      # below still sees exactly the 17 seeded RED rules.
       - name: Monitor API e2e suite (real Postgres)
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/monitor.e2e-spec.ts
@@ -168,7 +168,7 @@ jobs:
       # horizontal-escalation-as-404, patient-data masking, server-side
       # actor authority on rule writes, and audit-trail hygiene. It wipes
       # the tables it asserts totals on in beforeAll and cleans up in
-      # afterAll, so the seed-count step below still sees exactly the 6
+      # afterAll, so the seed-count step below still sees exactly the 17
       # seeded RED rules.
       - name: Security e2e suite (real Postgres)
         working-directory: apps/api
@@ -193,7 +193,7 @@ jobs:
       # test-send success rendering (against a seeded monitor summary) and
       # WeCom failure 502, and the VIEWER/RULE_ADMIN write 403s. It overrides
       # WecomWebhookSender with a fake and cleans up after itself, so the
-      # seed-count step below still sees exactly the 6 seeded RED rules.
+      # seed-count step below still sees exactly the 17 seeded RED rules.
       - name: Notification API e2e suite (real Postgres)
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/notifications.e2e-spec.ts
@@ -218,21 +218,23 @@ jobs:
       # this issue exists. Runs after all other e2e suites and before the
       # seed step; its afterAll wipes audit_log -> app_user_access ->
       # app_user -> monitor_match -> monitor_record -> monitor_rule so the
-      # seed-count step below still sees exactly the 6 seeded RED rules.
+      # seed-count step below still sees exactly the 17 seeded RED rules.
       - name: Performance e2e suite (real Postgres, 100k rows, <=3s)
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/performance.e2e-spec.ts
 
-      # Issue #4: seed script idempotency - creates the 6 initial RED
-      # keywords, then re-runs and asserts no duplicates are created.
-      - name: Seed script creates the 6 initial RED keyword rules
+      # Issue #4: seed script idempotency - seeds the keyword rules, then
+      # re-runs and asserts no duplicates are created. The expected count
+      # follows apps/api/prisma/seed.ts: 17 RED since 6bf29d5 (内镜中心定稿
+      # RED 17 / YELLOW 13 / GREEN 0); update it together with the seed.
+      - name: Seed script creates the 17 seeded RED keyword rules
         working-directory: apps/api
         run: |
           pnpm exec ts-node --transpile-only prisma/seed.ts
           pnpm exec ts-node --transpile-only prisma/seed.ts
           COUNT=$(psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM monitor_rule WHERE level = 'RED' AND is_enabled = true;")
-          if [ "$COUNT" -ne 6 ]; then
-            echo "Expected 6 enabled RED rules after seeding twice (idempotency check), got $COUNT"
+          if [ "$COUNT" -ne 17 ]; then
+            echo "Expected 17 enabled RED rules after seeding twice (idempotency check), got $COUNT"
             exit 1
           fi
         env:

@@ -57,6 +57,7 @@
 - 用法：`bash start.sh`（git pull + 重启）/ `bash start.sh nopull`（改完 .env 快速重启）/ `bash start.sh stop`
 - 流程：git pull → env 校验 → docker postgres → 构建 libs → prisma migrate → 构建 web → 后台启动 api/worker → 生成并 reload nginx → 就绪等待
 - env fail-fast 预检：`NOTIFICATION_SECRET_KEY` 强制必填（`openssl rand -hex 24` 生成），缺了立刻报错，避免 60 秒等待后以「未就绪」收场
+- env 预检（#72/#76）：`ALERT_LINK_BASE_URL` 可选——两端都不配 = 卡片关闭（打印提示）；只配一端或两端不同值 → **报错退出**（否则 worker 签出的链接医生打不开且不报错）；指向 `localhost`/`127.0.0.1` → 报错退出；`ALERT_LINK_TTL_HOURS` 两端不一致仅警告
 - `.env` 不进 git，缺失即报错
 - 构建顺序：`pnpm run build:libs`（shared-types/matching-engine）→ `prisma migrate deploy` → `pnpm --filter web run build`
 - `LISTEN_PORT` 默认沿用 5173；换端口用 `LISTEN_PORT=xxxx bash start.sh nopull`
@@ -67,7 +68,7 @@
 - 消息类型：TEXT → `text`、NEWS → `news`（`markdown` 已弃用，个人微信企业会话不渲染）
 - Webhook 地址 AES-256-GCM 加密存储（`NotificationSecretCipher`），密钥 `NOTIFICATION_SECRET_KEY` 启动强制必填、不落日志
 - 测试推送与定时推送统计口径一致：都按当日新增（`windowDate`）；缺省 = 全量库存（`packages/notification-push/src/summary.ts`、`apps/api/src/notifications/notification-push.adapters.ts`）
-- 预警详情卡片（#72）：配置 `ALERT_LINK_BASE_URL`（api 与 worker **同值**，填医生在企微里能打开的 web 入口地址，即 nginx 单端口对外地址）后，每次推送追加一条最多三张卡片的 `news` 消息，链接 24 小时有效（`ALERT_LINK_TTL_HOURS`）；不配置则不追加。迁移 `20260905060000_add_alert_link` 需先 `prisma migrate deploy`。详见 `docs/auth.md`「预警链接受限凭证」
+- 预警详情卡片（#72）：配置 `ALERT_LINK_BASE_URL`（api 与 worker **同值**，填医生在企微里能打开的 web 入口地址，即 nginx 单端口对外地址）后，每次推送追加最多三条单篇 `news` 卡片消息（红 / 黄 / 绿各一条，企业微信与个人微信企业会话均可点击，封面为 `apps/web/public/alert-cover.jpg`（1068×455，院徽居中），同样经该入口地址拉取），链接 24 小时有效（`ALERT_LINK_TTL_HOURS`）；不配置则不追加。迁移 `20260905060000_add_alert_link` 需先 `prisma migrate deploy`。详见 `docs/auth.md`「预警链接受限凭证」
 
 ## 5. 相关文档
 

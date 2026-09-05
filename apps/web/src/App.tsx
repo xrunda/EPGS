@@ -5,8 +5,11 @@ import { NotificationModal } from './NotificationModal';
 import { RulesModal } from './RulesModal';
 import { Workbench } from './Workbench';
 import { PushAssistantWidget } from './PushAssistantWidget';
-import hospitalLogo from './assets/hospital-logo.jpg';
 import './App.css';
+
+// Served from apps/web/public so the SAME stable URL doubles as the WeCom
+// alert-card cover image (issue #76) in both the dev server and the built dist.
+const hospitalLogo = '/hospital-logo.jpg';
 
 interface AuthenticatedAppProps {
   user: AuthUser;

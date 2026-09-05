@@ -185,11 +185,11 @@ describe('NotificationPushService.pushToChannel', () => {
 
   describe('alert cards (issue #72)', () => {
     const cards = [
-      { level: 'RED' as const, count: 2, title: '红色关注 2 例 · 2026-08-23', description: 'd1', url: 'http://h/alert?t=a' },
-      { level: 'GREEN' as const, count: 1, title: '绿色关注 1 例 · 2026-08-23', description: 'd2', url: 'http://h/alert?t=b' },
+      { level: 'RED' as const, count: 2, title: '红色关注 2 例 · 2026-08-23', description: 'd1', url: 'http://h/alert?t=a', coverUrl: 'http://h/hospital-logo.jpg' },
+      { level: 'GREEN' as const, count: 1, title: '绿色关注 1 例 · 2026-08-23', description: 'd2', url: 'http://h/alert?t=b', coverUrl: 'http://h/hospital-logo.jpg' },
     ];
 
-    it('sends ONE extra news message with one article per card, after the template message', async () => {
+    it('sends one SINGLE-article news message per card, in order, after the template message (#76)', async () => {
       const { service, store, sender } = makeDeps();
       store.getChannel.mockResolvedValue(makeChannel());
       store.getTemplate.mockResolvedValue(makeTemplate());
@@ -197,15 +197,27 @@ describe('NotificationPushService.pushToChannel', () => {
       const outcome = await service.pushToChannel(baseInput({ alertCards: cards }));
 
       expect(outcome.success).toBe(true);
-      expect(sender.send).toHaveBeenCalledTimes(2);
+      expect(sender.send).toHaveBeenCalledTimes(3);
       expect(sender.send.mock.calls[0][1]).toMatchObject({ msgType: 'TEXT' });
-      expect(sender.send.mock.calls[1][0]).toBe('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=decrypted-key');
+      for (const call of sender.send.mock.calls.slice(1)) {
+        expect(call[0]).toBe('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=decrypted-key');
+      }
       expect(sender.send.mock.calls[1][1]).toEqual({
-        articles: [
-          { title: '红色关注 2 例 · 2026-08-23', description: 'd1', url: 'http://h/alert?t=a' },
-          { title: '绿色关注 1 例 · 2026-08-23', description: 'd2', url: 'http://h/alert?t=b' },
-        ],
+        msgType: 'NEWS',
+        renderedTitle: '红色关注 2 例 · 2026-08-23',
+        renderedContent: 'd1',
+        coverImageUrl: 'http://h/hospital-logo.jpg',
+        linkUrl: 'http://h/alert?t=a',
       });
+      expect(sender.send.mock.calls[2][1]).toEqual({
+        msgType: 'NEWS',
+        renderedTitle: '绿色关注 1 例 · 2026-08-23',
+        renderedContent: 'd2',
+        coverImageUrl: 'http://h/hospital-logo.jpg',
+        linkUrl: 'http://h/alert?t=b',
+      });
+      // Never the multi-article shape: personal WeChat cannot render it.
+      expect(sender.send.mock.calls.every(([, message]) => !('articles' in message))).toBe(true);
     });
 
     it('sends only the template message when alertCards is absent or empty (test-send stays single-send)', async () => {
@@ -217,22 +229,38 @@ describe('NotificationPushService.pushToChannel', () => {
       await service.pushToChannel(baseInput({ alertCards: [] }));
 
       expect(sender.send).toHaveBeenCalledTimes(2);
-      expect(sender.send.mock.calls.every(([, message]) => !('articles' in message))).toBe(true);
+      expect(sender.send.mock.calls.every(([, message]) => message.msgType === 'TEXT')).toBe(true);
     });
 
-    it('surfaces a card failure as a WecomWebhookError that says the body already went out', async () => {
+    it('surfaces a card failure naming the card behind the "正文已发送" prefix and stops at that card', async () => {
+      const { service, store, sender } = makeDeps();
+      store.getChannel.mockResolvedValue(makeChannel());
+      store.getTemplate.mockResolvedValue(makeTemplate());
+      sender.send
+        .mockResolvedValueOnce({ errcode: 0, errmsg: 'ok' }) // template message
+        .mockResolvedValueOnce({ errcode: 0, errmsg: 'ok' }) // RED card
+        .mockRejectedValueOnce(new WecomWebhookError(45009, 'api freq out of limit', 200)); // GREEN card
+
+      await expect(service.pushToChannel(baseInput({ alertCards: cards }))).rejects.toMatchObject({
+        name: 'WecomWebhookError',
+        wecomErrCode: 45009,
+        wecomErrMsg: '正文已发送，关注卡片发送失败: 绿色卡片（第 2/2 张）: api freq out of limit',
+        httpStatus: 200,
+      });
+      expect(sender.send).toHaveBeenCalledTimes(3);
+    });
+
+    it('wraps a non-WeCom failure (e.g. network) the same way', async () => {
       const { service, store, sender } = makeDeps();
       store.getChannel.mockResolvedValue(makeChannel());
       store.getTemplate.mockResolvedValue(makeTemplate());
       sender.send
         .mockResolvedValueOnce({ errcode: 0, errmsg: 'ok' })
-        .mockRejectedValueOnce(new WecomWebhookError(45009, 'api freq out of limit', 200));
+        .mockRejectedValueOnce(new Error('socket hang up'));
 
       await expect(service.pushToChannel(baseInput({ alertCards: cards }))).rejects.toMatchObject({
-        name: 'WecomWebhookError',
-        wecomErrCode: 45009,
-        wecomErrMsg: '正文已发送，关注卡片发送失败: api freq out of limit',
-        httpStatus: 200,
+        wecomErrCode: 0,
+        wecomErrMsg: '正文已发送，关注卡片发送失败: 红色卡片（第 1/2 张）: socket hang up',
       });
       expect(sender.send).toHaveBeenCalledTimes(2);
     });

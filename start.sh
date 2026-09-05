@@ -133,6 +133,49 @@ check_required_api_env() {
 check_required_api_env "NOTIFICATION_SECRET_KEY" 32 \
   "加密企业微信 Webhook 地址的密钥（见 docs/notification-design.md §5）。生成方式: openssl rand -hex 24"
 
+# issue #72/#76: 企微预警卡片。ALERT_LINK_BASE_URL 是可选项——不配 = 卡片功能
+# 关闭（只推文本，行为与之前完全一致）；配了则 api（手动"立即执行一次"）与
+# worker（定时推送）**必须同值**：worker 签发链接、api 解析链接，两端不一致
+# 会签出医生手机打不开的地址，而且不会报错——这是静默陷阱，所以在这里
+# fail-fast。值应为医生手机在医院网络下能打开的 web 入口（即 nginx 单端口
+# 对外地址，如 http://10.10.10.91:5173），不是 localhost。
+read_env_value() {
+  local file="$1" key="$2" line val
+  line=$(grep -E "^${key}=" "$file" | head -n 1 || true)
+  val="${line#*=}"
+  val="${val%\"}"; val="${val#\"}"
+  val="${val%\'}"; val="${val#\'}"
+  printf '%s' "$val"
+}
+api_alert_base=$(read_env_value apps/api/.env ALERT_LINK_BASE_URL)
+worker_alert_base=$(read_env_value apps/worker/.env ALERT_LINK_BASE_URL)
+if [ -z "$api_alert_base" ] && [ -z "$worker_alert_base" ]; then
+  echo "提示: ALERT_LINK_BASE_URL 未配置 -> 企微预警卡片功能关闭（仅推文本）。"
+  echo "      需要开启时在 apps/api/.env 与 apps/worker/.env 配置同一个医生手机可访问的 web 入口地址。"
+elif [ "$api_alert_base" != "$worker_alert_base" ]; then
+  echo ""
+  echo "错误: ALERT_LINK_BASE_URL 在 apps/api/.env 与 apps/worker/.env 不一致（或只配了一端）。"
+  echo "      api:    '${api_alert_base:-<未配置>}'"
+  echo "      worker: '${worker_alert_base:-<未配置>}'"
+  echo "      两端必须同值，否则定时推送签出的链接医生打不开且不会报错。"
+  exit 1
+else
+  case "$api_alert_base" in
+    http://localhost*|http://127.0.0.1*)
+      echo ""
+      echo "错误: ALERT_LINK_BASE_URL='${api_alert_base}' 指向本机回环地址，医生手机无法打开。"
+      echo "      请改为对外入口地址（nginx 监听的地址:端口）。"
+      exit 1 ;;
+  esac
+  echo "ALERT_LINK_BASE_URL=${api_alert_base}（api/worker 一致）-> 企微预警卡片功能开启。"
+  echo "      请确认医生手机在医院网络下能打开 ${api_alert_base}/alert 与 ${api_alert_base}/alert-cover.jpg。"
+  api_ttl=$(read_env_value apps/api/.env ALERT_LINK_TTL_HOURS)
+  worker_ttl=$(read_env_value apps/worker/.env ALERT_LINK_TTL_HOURS)
+  if [ "${api_ttl:-24}" != "${worker_ttl:-24}" ]; then
+    echo "警告: ALERT_LINK_TTL_HOURS 两端不一致（api=${api_ttl:-24} worker=${worker_ttl:-24}），链接有效期以签发方为准。"
+  fi
+fi
+
 echo ""
 echo "===== [1/8] 启动 Postgres (Docker) ====="
 if docker ps --filter "name=^epgs-postgres$" --filter "health=healthy" --format '{{.Names}}' \

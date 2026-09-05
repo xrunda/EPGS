@@ -175,8 +175,10 @@ psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821103732_add_auth_acces
 # 预警链接受限凭证（Issue #72）
 
 企业微信推送在聚合文本之后追加红 / 黄 / 绿三张「查看患者列表」卡片（0 例的
-颜色不发）。点开卡片进入 web 的 `/alert` H5 页面，**无需登录**——这是本系统
-第一条不经账号密码的读取通道，因此它的权限模型与 `epgs_session` 完全隔离：
+颜色不发；#76 起每张为一条**单篇**图文消息，企业微信客户端与**个人微信的
+企业会话**均可显示并点击）。点开卡片进入 web 的 `/alert` H5 页面，**无需
+登录**——这是本系统第一条不经账号密码的读取通道，因此它的权限模型与
+`epgs_session` 完全隔离：
 
 ## 凭证模型
 
@@ -225,7 +227,8 @@ psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821103732_add_auth_acces
 - `ALERT_LINK_BASE_URL` **必须在 api 与 worker 配置相同值**（worker 为定时推送
   签发链接，api 负责解析）；未设置时不追加卡片，推送行为与之前完全一致。
 - 卡片发送失败但正文已发出时，该渠道记为 `FAILED`，`wecomErrMsg` 以
-  「正文已发送，关注卡片发送失败」开头，避免运维误判后重复补推正文。
+  「正文已发送，关注卡片发送失败」开头并注明是哪一张（如「红色卡片（第 1/3
+  张）」），之后的卡片不再发送，避免运维误判后重复补推正文。
 - 链接签发失败（例如写库异常）不会阻塞正文推送：worker 日志给出
   `alert links were NOT issued`，运行结果照常记录。
 - 回滚：`psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260905060000_add_alert_link/rollback.sql`

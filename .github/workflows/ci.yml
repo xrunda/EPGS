@@ -174,6 +174,18 @@ jobs:
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/security.e2e-spec.ts
 
+      # Issue #72: WeCom alert-link e2e suite against this same real Postgres -
+      # the opaque link token as the ONLY credential on /api/alert-links/*,
+      # the frozen-snapshot boundary (out-of-snapshot detail = 404), always-on
+      # name masking with the report body kept, expiry 410 vs unknown 401,
+      # the open counter, and that a link token can never reach the
+      # cookie-guarded workbench routes. Seeds only its own TEST-AL-* rows and
+      # deletes exactly those in afterAll (never wipes shared tables), so the
+      # seed-count step below still sees exactly the 6 seeded RED rules.
+      - name: Alert-link e2e suite (real Postgres)
+        working-directory: apps/api
+        run: pnpm exec jest --config ./test/jest-e2e.json test/alert-links.e2e-spec.ts
+
       # Issue #54: notification channel/template API + WeCom test-send e2e
       # suite against this same real Postgres - channel/template full
       # lifecycle, webhook masking, PUT-without-webhookUrl preserving the

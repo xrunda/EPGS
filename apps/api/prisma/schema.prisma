@@ -793,6 +793,82 @@ model PushDelivery {
 }
 
 // ---------------------------------------------------------------------------
+// push assistant - the right-corner "推送助理" component's backing data
+// (issue #70). The worker is a headless process behind the 网闸: the browser
+// can only reach the api, and the api cannot probe the worker process, so
+// liveness MUST go through the DB. The worker writes a heartbeat row every
+// ~30s; the api judges 在线/失联 by its freshness. The worker also appends
+// activity events (sync done / keyword hit / push done) the panel replays.
+//
+// PRIVACY (notification-design §7): assistant_event.payload carries only
+// counts, keyword text, rule names, statuses and durations - never patient
+// names, report bodies, or webhook URLs.
+// ---------------------------------------------------------------------------
+
+/// Single-row heartbeat table (id is a fixed sentinel). The worker's
+/// dedicated heartbeat loop upserts this every ASSISTANT_HEARTBEAT_SECONDS
+/// (default 30s); the api reads lastSeenAt and flags 失联 when it is older
+/// than ASSISTANT_STALE_SECONDS (default 90s = 3× the write cadence, so one
+/// dropped tick is tolerated).
+model AssistantHeartbeat {
+  /// Fixed sentinel - there is only ever one row ("singleton").
+  id String @id @default("singleton")
+
+  /// UTC instant of the worker's most recent heartbeat write. Freshness of
+  /// this value is the sole 在线/失联 signal.
+  lastSeenAt DateTime @map("last_seen_at") @db.Timestamptz(6)
+
+  /// Earliest next fire across all ENABLED push rules, recomputed each tick
+  /// via the shared package's earliestNextTriggerAt (Asia/Shanghai). Null
+  /// when no rule is enabled -> the assistant shows "未排程".
+  nextTriggerAt DateTime? @map("next_trigger_at") @db.Timestamptz(6)
+
+  /// UTC instant the current worker process started. Used for the panel's
+  /// "连续运行 N 天" - process-level (owner decision §5): a worker restart
+  /// resets this, we do not persist a cross-restart running total.
+  runningSince DateTime @map("running_since") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("assistant_heartbeat")
+}
+
+/// What an AssistantEvent records. Mirrored as AssistantEventTypeDto.
+///
+/// NOTE: no per-sync event type. Sync runs every few minutes; a "已同步 N 份"
+/// row per run would flood the short feed and bury the hits/pushes that
+/// matter. Sync progress is surfaced as STATE on the status payload
+/// (todaySyncCount / lastSyncAt), assembled by the api from sync_job_log.
+enum AssistantEventType {
+  /// A monitor_match row was newly created for a keyword at a level.
+  KEYWORD_HIT
+  /// A push rule run finished (SCHEDULED or MANUAL).
+  PUSH_DONE
+}
+
+/// Activity-feed event, appended by the worker as it works. The panel shows
+/// the most recent 4; a background sweep in the heartbeat loop deletes rows
+/// older than 7 days (owner decision §5).
+model AssistantEvent {
+  id String @id @default(uuid()) @db.Uuid
+
+  type AssistantEventType
+
+  /// UTC instant the event occurred (worker clock).
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  /// Structured, privacy-safe facts behind the event, shape keyed by `type`:
+  ///   KEYWORD_HIT  { keyword: string, level: MonitorLevel, examItem: string | null }
+  ///   PUSH_DONE    { ruleName, status, groupCount, elapsedMs,
+  ///                  stages: [{ name, elapsedMs }] }
+  /// NEVER patient names, report text, or webhook URLs.
+  payload Json
+
+  @@index([occurredAt])
+  @@map("assistant_event")
+}
+
+// ---------------------------------------------------------------------------
 // alert_link - per-level "点击查看患者列表" links appended to a push (issue #72)
 // ---------------------------------------------------------------------------
 

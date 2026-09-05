@@ -242,13 +242,15 @@ jobs:
 
       - name: Roll back migration
         run: |
-          # Newest-first: #72's alert-link rollback precedes #61's push-rule
-          # rollback (alert_link has a FK to push_log, so it must go first),
-          # which precedes #53's notification rollback, which precedes #14's
-          # index rollback, which precedes the #13 -> #31 -> #3 chain, so the
-          # migration sequence is unwound in the same order it was applied
-          # (see docs/go-live.md §7.2 for the full runbook).
+          # Newest-first: #72's alert-link rollback (alert_link has a FK to
+          # push_log, so it must precede the push-rule rollback), then #70's
+          # push-assistant rollback (standalone tables), then #61's push-rule
+          # rollback, #53's notification rollback, #14's index rollback, and
+          # the #13 -> #31 -> #3 chain, so the migration sequence is unwound
+          # in the same order it was applied (see docs/go-live.md §7.2 for
+          # the full runbook).
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260905060000_add_alert_link/rollback.sql
+          psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260903000000_add_push_assistant/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260823055843_add_notification_push_rules/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260823032959_add_notification_channel_template/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821110858_add_monitor_record_patient_type_index/rollback.sql

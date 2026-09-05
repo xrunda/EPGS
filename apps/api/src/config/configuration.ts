@@ -46,6 +46,13 @@ export interface AppConfig {
    */
   hospitalName: string;
   /**
+   * Push assistant (issue #70): how old assistant_heartbeat.lastSeenAt may
+   * get (seconds) before the api reports the assistant as 失联. Default 90
+   * (3× the worker's heartbeat cadence). Exposed to the web in the status
+   * payload as staleAfterMs.
+   */
+  assistantStaleSeconds: number;
+  /**
    * Issue #72: absolute origin (+ optional path prefix) at which WeCom
    * clients can reach the web app's `/alert` H5 page, e.g.
    * `http://10.0.0.5:5173`. `null` (unset/empty) DISABLES alert-link cards:
@@ -75,6 +82,7 @@ export default (): AppConfig => {
       : nodeEnv === 'production',
     notificationSecretKey: process.env.NOTIFICATION_SECRET_KEY ?? '',
     hospitalName: process.env.HOSPITAL_NAME ?? '菏泽市中医医院',
+    assistantStaleSeconds: parseInt(process.env.ASSISTANT_STALE_SECONDS ?? '90', 10),
     alertLinkBaseUrl: process.env.ALERT_LINK_BASE_URL?.trim() || null,
     alertLinkTtlHours: parseInt(process.env.ALERT_LINK_TTL_HOURS ?? '24', 10),
   };

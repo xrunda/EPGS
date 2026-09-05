@@ -116,6 +116,17 @@ export interface PushDeliveryRecord {
 }
 
 /**
+ * One phase of a push run's execution, with wall-clock duration (issue #70).
+ * Written into the PUSH_DONE assistant event's payload so the panel's
+ * "执行过程" bar can show 同步→匹配→生成→发出 segment timings without a
+ * separate table. `name` is a stable machine key; the web maps it to a label.
+ */
+export interface PushStagesTiming {
+  name: 'sync' | 'match' | 'render' | 'deliver';
+  elapsedMs: number;
+}
+
+/**
  * Outcome of issuing the per-level alert links for a run (issue #72).
  * `issued` counts the cards (levels with >= 1 record); `error` is set when
  * issuance threw - the run then proceeds WITHOUT cards (the template message

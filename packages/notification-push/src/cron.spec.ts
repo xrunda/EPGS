@@ -1,4 +1,9 @@
-import { isCronDueAt, isValidCronExpression } from './cron';
+import {
+  earliestNextTriggerAt,
+  getNextTriggerAt,
+  isCronDueAt,
+  isValidCronExpression,
+} from './cron';
 
 describe('isValidCronExpression', () => {
   it.each(['0 9 * * *', '0 8 * * *', '0 9 * * 1', '*/30 * * * *'])(
@@ -44,5 +49,44 @@ describe('isCronDueAt (Asia/Shanghai)', () => {
     expect(isCronDueAt('0 0 * * *', atMidnightShanghai, 'Asia/Shanghai')).toBe(true);
     // The same instant is 16:00 UTC the previous day - not midnight in UTC.
     expect(isCronDueAt('0 0 * * *', atMidnightShanghai, 'UTC')).toBe(false);
+  });
+});
+
+describe('getNextTriggerAt (Asia/Shanghai)', () => {
+  it('returns today 18:00 Shanghai when asked at 17:00 the same day', () => {
+    // 2026-09-03T09:00:00Z == 17:00 Shanghai; next "0 18 * * *" == 18:00 == 10:00Z.
+    const from = new Date('2026-09-03T09:00:00Z');
+    expect(getNextTriggerAt('0 18 * * *', from).toISOString()).toBe('2026-09-03T10:00:00.000Z');
+  });
+
+  it('rolls to the next day once the fire time has passed', () => {
+    // 2026-09-03T10:30:00Z == 18:30 Shanghai; next fire is tomorrow 18:00.
+    const from = new Date('2026-09-03T10:30:00Z');
+    expect(getNextTriggerAt('0 18 * * *', from).toISOString()).toBe('2026-09-04T10:00:00.000Z');
+  });
+
+  it('has strictly-after semantics at the exact fire instant', () => {
+    // Asking AT 18:00:00 returns tomorrow, not the current minute.
+    const atFire = new Date('2026-09-03T10:00:00Z');
+    expect(getNextTriggerAt('0 18 * * *', atFire).toISOString()).toBe('2026-09-04T10:00:00.000Z');
+  });
+
+  it('evaluates the expression in Asia/Shanghai, not the process TZ', () => {
+    const from = new Date('2026-09-03T09:00:00Z');
+    // In UTC, "0 18 * * *" next fires at 18:00Z the same day.
+    expect(getNextTriggerAt('0 18 * * *', from, 'UTC').toISOString()).toBe('2026-09-03T18:00:00.000Z');
+  });
+});
+
+describe('earliestNextTriggerAt', () => {
+  it('returns null for an empty rule list (no enabled rules -> "未排程")', () => {
+    expect(earliestNextTriggerAt([], new Date('2026-09-03T09:00:00Z'))).toBeNull();
+  });
+
+  it('picks the soonest fire across several crons', () => {
+    const from = new Date('2026-09-03T09:00:00Z'); // 17:00 Shanghai
+    // "0 18 * * *" -> today 18:00 (10:00Z); "0 8 * * *" -> tomorrow 08:00 (2026-09-04T00:00Z).
+    const earliest = earliestNextTriggerAt(['0 8 * * *', '0 18 * * *'], from);
+    expect(earliest?.toISOString()).toBe('2026-09-03T10:00:00.000Z');
   });
 });

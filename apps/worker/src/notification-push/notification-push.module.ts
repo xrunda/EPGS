@@ -11,6 +11,7 @@ import { WorkerNotificationPushStore } from './worker-notification-push-store';
 import { WorkerSummaryProvider } from './worker-summary.provider';
 import { WorkerAlertLinkStore } from './worker-alert-link.store';
 import { NotificationScheduler } from './notification-scheduler.service';
+import { AssistantModule } from '../assistant/assistant.module';
 
 /**
  * Scheduled WeCom push rules (issue: push rules) - the worker half of the
@@ -21,6 +22,7 @@ import { NotificationScheduler } from './notification-scheduler.service';
  * the api) and push to WeCom directly.
  */
 @Module({
+  imports: [AssistantModule],
   providers: [
     WorkerNotificationPushStore,
     WorkerSummaryProvider,

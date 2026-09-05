@@ -48,12 +48,15 @@ export const ALERT_LINK_PATH = '/alert';
 export const ALERT_LINK_TOKEN_PARAM = 't';
 
 /**
- * Path (relative to ALERT_LINK_BASE_URL) of the card cover image - the
- * hospital logo served from apps/web/public, so it exists at the same
- * origin as /alert in both the Vite dev server and the built dist. The
- * viewer's client fetches it, so it must be reachable wherever /alert is.
+ * Path (relative to ALERT_LINK_BASE_URL) of the card cover image, served
+ * from apps/web/public so it exists at the same origin as /alert in both the
+ * Vite dev server and the built dist. The viewer's client fetches it, so it
+ * must be reachable wherever /alert is. The file is a 1068x455 banner (the
+ * WeCom large-image size) with the hospital emblem inside the central
+ * 455x455 square: WeCom shows the wide banner, personal WeChat's 企业会话
+ * shows a square centre crop - both keep the emblem whole.
  */
-export const ALERT_LINK_COVER_PATH = '/hospital-logo.jpg';
+export const ALERT_LINK_COVER_PATH = '/alert-cover.jpg';
 
 /** Token = 32 random bytes → 43-char base64url; the guard validates this shape. */
 export const ALERT_LINK_TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;

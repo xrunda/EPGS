@@ -136,7 +136,7 @@ describe('AlertLinkIssuer.issue', () => {
     );
     // Cover image on the same origin (trailing slash on baseUrl normalized away).
     expect(cards.map((card) => card.coverUrl)).toEqual(
-      Array(3).fill('http://10.0.0.5:5173/hospital-logo.jpg'),
+      Array(3).fill('http://10.0.0.5:5173/alert-cover.jpg'),
     );
     expect(hashAlertLinkToken('token-00000000000000000000000000000001')).toBe(red.tokenHash);
   });

@@ -218,6 +218,10 @@ body {
   background: var(--surface-raised);
   box-shadow: var(--shadow-xs);
 }
+/* A grid item stretches by default; the level pill must keep its natural width. */
+.alert-detail__summary > .level-tag {
+  justify-self: start;
+}
 .alert-detail__summary h2 {
   margin: 0;
   font-size: 20px;

@@ -4,9 +4,13 @@ import { NotificationSummaryProvider } from './summary';
 import { NotificationPushStore } from './store';
 import { PushDeliveryOutcome } from './types';
 import { buildNotificationVariables, renderTemplate } from './render';
-import { AlertLinkCard } from './alert-link';
+import { ALERT_LINK_LEVEL_LABELS, AlertLinkCard } from './alert-link';
 
-/** Prefix on the WecomWebhookError raised when the cards fail AFTER the template message went out. */
+/**
+ * Prefix on the WecomWebhookError raised when a card fails AFTER the template
+ * message went out; the rest of the message names the failed card
+ * ("红色卡片（第 1/3 张）: <WeCom reason>").
+ */
 export const ALERT_CARDS_FAILED_PREFIX = '正文已发送，关注卡片发送失败: ';
 import {
   NotificationChannelDisabledError,
@@ -53,9 +57,11 @@ export interface PushToChannelInput {
   /** Department scope (empty = global), matching MonitorService.summary's contract. */
   scope?: string[];
   /**
-   * Per-level alert cards (issue #72) to append as ONE extra `news` message
-   * right after the template message. Absent/empty = no second message (the
-   * api's test-send never passes cards, so it stays a single send).
+   * Per-level alert cards (issue #72) to append right after the template
+   * message, ONE single-article `news` message per card (issue #76: that is
+   * the only news shape personal WeChat's 企业会话 renders). Absent/empty = no
+   * extra message (the api's test-send never passes cards, so it stays a
+   * single send).
    */
   alertCards?: AlertLinkCard[];
 }
@@ -101,31 +107,37 @@ export class NotificationPushService {
       linkUrl: template.linkUrl,
     });
 
+    // Issue #76: one SINGLE-article news message per card, in level order.
+    // A multi-article news renders as "暂不支持此消息类型" in personal
+    // WeChat's 企业会话, whereas a single-article one renders (and opens) there
+    // too - verified against a live group - so doctors who only use personal
+    // WeChat can still tap through to /alert.
     const cards = input.alertCards ?? [];
-    if (cards.length > 0) {
-      // The template message is already delivered at this point. A card
-      // failure is surfaced as a WecomWebhookError whose message says so
-      // explicitly, so the delivery row reads "正文已发送，关注卡片发送失败"
-      // and an operator does not blindly re-push the (already sent) body.
+    for (const [index, card] of cards.entries()) {
+      // The template message (and every earlier card) is already delivered
+      // at this point. A card failure is surfaced as a WecomWebhookError that
+      // names WHICH card failed behind the "正文已发送" prefix, so the delivery
+      // row is unambiguous and an operator does not re-push the body.
       try {
         await sender.send(webhookUrl, {
-          articles: cards.map((card) => ({
-            title: card.title,
-            description: card.description,
-            url: card.url,
-          })),
+          msgType: 'NEWS',
+          renderedTitle: card.title,
+          renderedContent: card.description,
+          coverImageUrl: null,
+          linkUrl: card.url,
         });
       } catch (error) {
+        const which = `${ALERT_LINK_LEVEL_LABELS[card.level]}卡片（第 ${index + 1}/${cards.length} 张）`;
         if (error instanceof WecomWebhookError) {
           throw new WecomWebhookError(
             error.wecomErrCode,
-            `${ALERT_CARDS_FAILED_PREFIX}${error.wecomErrMsg}`,
+            `${ALERT_CARDS_FAILED_PREFIX}${which}: ${error.wecomErrMsg}`,
             error.httpStatus,
           );
         }
         throw new WecomWebhookError(
           0,
-          `${ALERT_CARDS_FAILED_PREFIX}${error instanceof Error ? error.message : 'unknown error'}`,
+          `${ALERT_CARDS_FAILED_PREFIX}${which}: ${error instanceof Error ? error.message : 'unknown error'}`,
         );
       }
     }

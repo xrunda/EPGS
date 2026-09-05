@@ -53,6 +53,14 @@
 - [ ] Worker 仅能访问医院网关白名单地址 + API 需要的内部服务；对外仅暴露
       API（`/health` + `/api/*`），前端静态资源按内网策略放行。
 - [ ] 浏览器不直接调用医院网关（[docs/pacs-ris-adapter.md](./pacs-ris-adapter.md) §5）。
+- [ ] **企业微信推送出站**（#53/#61）：api（手动「立即执行一次」/「发送测试」）与
+      worker（定时推送）所在主机都能出站访问 `https://qyapi.weixin.qq.com`
+      （群机器人 Webhook）；否则推送记录为 `FAILED`、`wecomErrMsg` 为网络错误。
+- [ ] **预警卡片链接可达**（#72/#76）：`ALERT_LINK_BASE_URL` 必须是**医生手机在医院
+      网络下**能打开的 web 入口（nginx 单端口对外地址，如 `http://10.10.10.91:5173`），
+      手机需能访问 `/alert` 与封面 `/alert-cover.jpg`；用 4G 看企微的场景下若入口
+      不可达，卡片可显示但点不开。未确认前**不要配置**该变量（不配 = 只推文本，
+      行为与之前一致），确认后 api 与 worker 配同值（`start.sh` 会校验一致性）。
 
 ## 4. 备份与恢复演练
 
@@ -102,31 +110,47 @@ pnpm --filter @epgs/api auth:assign-access --username <账号> --roles SYSTEM_AD
 回滚部署产物 / revert 对应提交，重启服务即恢复到上一版本代码。数据库不降级时，
 新版只读代码对旧 schema 天然兼容（#14 只新增索引，无字段变更，可安全保留）。
 
+**功能级开关（不必回滚代码）**：
+
+- 预警卡片（#72/#76）：从 api 与 worker 的 `.env` 删除/清空 `ALERT_LINK_BASE_URL`
+  并 `bash start.sh nopull`，推送即回到只发文本；已发出的卡片链接仍可在其
+  24 小时有效期内打开（要立刻全部失效，执行 §7.2 第 1 步删除 `alert_link` 表，或
+  `DELETE FROM alert_link;`）。
+- 定时推送（#61）：在配置页停用对应规则即可，不需要改配置或重启。
+
 ### 7.2 数据库迁移回滚（新到旧）
 
-迁移链（新 → 旧）：
+迁移链（新 → 旧，每个目录都自带 `rollback.sql`）：
 
-| 顺序 | 迁移目录                                                      | 回滚脚本作用                                             |
-| ---- | ------------------------------------------------------------- | -------------------------------------------------------- |
-| 1    | `20260821110858_add_monitor_record_patient_type_index`（#14） | 删除 `monitor_record_patient_type_code_idx` 索引         |
-| 2    | `20260821103732_add_auth_access_and_audit_log`（#13）         | 删除 `app_user_access` / `audit_log` 与相关枚举          |
-| 3    | `20260821093500_add_local_auth`（#31）                        | 删除 `app_user`（全部本地账号）                          |
-| 4    | `20260821073851_remove_closed_loop_readonly`（#26）           | **破坏性**：恢复闭环模型，数据不还原，见脚本头部 WARNING |
-| 5    | `20260821040339_init_monitoring_schema`（#3）                 | 删除全部 `monitor_*` 表与枚举                            |
+| 顺序 | 迁移目录                                                      | 回滚脚本作用                                                                                               |
+| ---- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1    | `20260905060000_add_alert_link`（#72）                        | 删除 `alert_link`（已发出的企微卡片链接立即失效）。**必须先于第 3 步**：它对 `push_log` 有外键             |
+| 2    | `20260903000000_add_push_assistant`（#70）                    | 删除 `assistant_heartbeat` / `assistant_event` 与枚举 `AssistantEventType`（推送助理心跳与活动流，可重建） |
+| 3    | `20260823055843_add_notification_push_rules`（#61）           | 删除 `push_delivery` / `push_log` / `notification_rule_channel` / `notification_rule` 与相关枚举           |
+| 4    | `20260823032959_add_notification_channel_template`（#53）     | 删除 `notification_channel` / `notification_template`（含加密的 Webhook 地址）与枚举                       |
+| 5    | `20260821110858_add_monitor_record_patient_type_index`（#14） | 删除 `monitor_record_patient_type_code_idx` 索引                                                           |
+| 6    | `20260821103732_add_auth_access_and_audit_log`（#13）         | 删除 `app_user_access` / `audit_log` 与相关枚举                                                            |
+| 7    | `20260821093500_add_local_auth`（#31）                        | 删除 `app_user`（全部本地账号）                                                                            |
+| 8    | `20260821073851_remove_closed_loop_readonly`（#26）           | **破坏性**：恢复闭环模型，数据不还原，见脚本头部 WARNING                                                   |
+| 9    | `20260821040339_init_monitoring_schema`（#3）                 | 删除全部 `monitor_*` 表与枚举                                                                              |
 
 ```bash
-# 单步回滚示例（第 1 步：撤掉 #14 索引）
-psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821110858_add_monitor_record_patient_type_index/rollback.sql
-DELETE FROM "_prisma_migrations" WHERE migration_name = '20260821110858_add_monitor_record_patient_type_index';
+# 单步回滚示例（第 1 步：撤掉 #72 的 alert_link 表）
+psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260905060000_add_alert_link/rollback.sql
+DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_alert_link';
 ```
 
-- **只回退单一特性**：按上表只执行到该迁移为止（新到旧依次）。例：仅撤销权限层
-  → 执行 1、2 两步。
-- **完全重置到空库**：执行 1→5 全部回滚，再 `DELETE FROM "_prisma_migrations";`
+- **只回退单一特性**：按上表只执行到该迁移为止（新到旧依次）。例：仅撤销预警
+  卡片 → 只执行第 1 步；撤销整个推送模块 → 执行 1→4。
+- **枚举值不可逆**：#53/#61 向 `AuditAction` 追加的 `CONFIG_CHANGE` 触发点、
+  `NOTIFICATION_TEST_SEND`、`NOTIFICATION_RULE_RUN` 无法用 `ALTER TYPE` 删除；
+  对应 `rollback.sql` 头部给出了"先确认 `audit_log` 无该值再重建枚举"的手工 SQL，
+  默认不自动执行。
+- **完全重置到空库**：执行 1→9 全部回滚，再 `DELETE FROM "_prisma_migrations";`
   清空历史（否则 re-deploy 会跳过"看似已应用"的迁移），最后按需
   `prisma migrate deploy` 重建。CI 的 db-migrations job 即按此流程验证：
-  #14→#13→#31→#3 回滚（#26 因 #3 已全量清表而省略其破坏性回滚）→ 清空历史 →
-  重新正向迁移。
+  #72→#70→#61→#53→#14→#13→#31→#3 回滚（#26 因 #3 已全量清表而省略其破坏性
+  回滚）→ 清空历史 → 重新正向迁移。
 - **#26 特别警告**：该回滚会重建 `monitor_action` 与 `handling_status` 等已被
   删除的字段（数据不还原），仅当明确需要回到旧闭环模型时执行；否则靠 #3 清表
   即可。
@@ -140,3 +164,70 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260821110858_add_moni
       的量级一致（远低于 3s）。
 - [ ] 首次生产同步完成后，`monitor_record` 行数与源系统对账无重复（幂等主键
       `source_record_id + report_id + report_version`，见 verify-constraints）。
+- [ ] **推送链路**（#53/#61/#72/#76）：对绑定**测试群**的规则点「立即执行一次」，
+      群内收到文本汇总 + 红/黄/绿各一条卡片（0 例的颜色不发）；配置页「日志」中该
+      次运行 `SUCCESS`。若某渠道 `FAILED` 且 `wecomErrMsg` 以「正文已发送，关注卡片
+      发送失败」开头，说明文本已到、仅卡片失败——**不要重复补推**。
+- [ ] **卡片真机验证**：医生手机（医院网络）在企业微信客户端与个人微信企业会话中
+      各点一张卡片，能打开列表与详情、封面显示完整院徽；库内
+      `SELECT level, open_count FROM alert_link ORDER BY created_at DESC LIMIT 3;`
+      的 `open_count` 随点击增加。
+- [ ] **推送助理**（#70）：工作台右下角胶囊显示「值班中」与距下次推送倒计时；
+      worker 停 2 分钟后变「已失联」，恢复后自动回到在线。
+
+## 9. 发布记录：2026-09 推送增强（#74 / #72 / #70 / #76）
+
+本批次合并了四个 PR，涉及**两张新表、两个新环境变量、一张新静态资源**。按下列
+顺序执行，每步有明确的通过标准；任何一步不通过先按 §7.1 功能开关回退，不要带着
+问题继续。
+
+### 9.1 变更清单
+
+| 来源 | 内容                                                                                  | 数据库                                               | 配置                                                                                                                       |
+| ---- | ------------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| #74  | 修复 CI 两条过时断言，`db-migrations` 回滚验证恢复运行                                | 无                                                   | 无                                                                                                                         |
+| #72  | 企微推送追加预警卡片 → `/alert` 免登 H5（脱敏列表 / 详情），token 24h、库内只存哈希   | `20260905060000_add_alert_link`（新表 `alert_link`） | `ALERT_LINK_BASE_URL`（可选）、`ALERT_LINK_TTL_HOURS`                                                                      |
+| #70  | 工作台右下角「推送助理」：worker 心跳、倒计时、活动流、「立即推送」                   | `20260903000000_add_push_assistant`（两张新表）      | `ASSISTANT_STALE_SECONDS`（api）、`ASSISTANT_HEARTBEAT_SECONDS` / `ASSISTANT_EVENT_RETENTION_DAYS`（worker），均可选有默认 |
+| #76  | 卡片改为每色一条**单篇**图文（个人微信企业会话也可点击）+ 院徽封面 `/alert-cover.jpg` | 无                                                   | 复用 `ALERT_LINK_BASE_URL`                                                                                                 |
+
+### 9.2 部署前（在堡垒机上，执行 `start.sh` 之前）
+
+- [ ] **确认入口地址**：医生手机在医院网络下能打开的 web 入口（nginx 单端口，
+      即网闸映射后的地址，形如 `http://10.10.10.91:5173`）。用手机浏览器直接访问
+      `http://<入口>/health` 应返回 200。**打不开就先不配 `ALERT_LINK_BASE_URL`**，
+      其余功能照常上线。
+- [ ] **两端同值写入 `.env`**（`apps/api/.env` 与 `apps/worker/.env` 各加两行，
+      `start.sh` 会校验一致性，不一致直接退出）：
+  ```dotenv
+  ALERT_LINK_BASE_URL=http://<入口地址>:<端口>
+  ALERT_LINK_TTL_HOURS=24
+  ```
+- [ ] （可选）推送助理参数保持默认即可；只有当 worker 心跳周期改动时才需同时改
+      api 的 `ASSISTANT_STALE_SECONDS`（≈ 3 × `ASSISTANT_HEARTBEAT_SECONDS`）。
+- [ ] **备份数据库**（§4）：本批次有两张新表的正向迁移，回滚会删表。
+- [ ] **企微群准备**：确认要接收卡片的群机器人 Webhook 已在配置页「渠道」中配置
+      并「发送测试」成功；先用**测试群**验证，再切到正式群。
+
+### 9.3 部署（`bash start.sh`，脚本自动完成的步骤只需看输出）
+
+1. `git pull` 到包含 #76 的 main。
+2. env 预检输出中应看到 `ALERT_LINK_BASE_URL=...（api/worker 一致）-> 企微预警卡片功能开启`
+   （或未配置时的「功能关闭」提示）；看到「错误」即停下修 `.env`。
+3. `prisma migrate deploy` 应输出应用了 `20260903000000_add_push_assistant` 与
+   `20260905060000_add_alert_link`（已应用过则显示 "No pending migrations"）。
+4. `pnpm --filter web run build` 后确认产物里有封面：
+   `ls apps/web/dist/alert-cover.jpg apps/web/dist/hospital-logo.jpg`。
+5. nginx reload 后：`curl -sI http://<入口>/alert-cover.jpg` 为 200 `image/jpeg`，
+   `curl -sI http://<入口>/alert` 为 200（SPA fallback）。
+
+### 9.4 部署后验证
+
+按 §8 新增的三项（推送链路、卡片真机验证、推送助理）逐项勾选；卡片验证务必在
+**医生实际使用的网络**下做一次（Wi‑Fi 与 4G 各一次），因为封面与链接都由手机
+自行拉取。
+
+### 9.5 回退
+
+- 只关卡片：删 `ALERT_LINK_BASE_URL` → `bash start.sh nopull`（§7.1）。
+- 回退代码：revert 对应 PR 后重启；两张新表可留存不影响旧代码。
+- 回退数据库：§7.2 第 1、2 步（先 `alert_link`，再 `assistant_*`）。

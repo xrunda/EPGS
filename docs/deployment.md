@@ -57,6 +57,7 @@
 - 用法：`bash start.sh`（git pull + 重启）/ `bash start.sh nopull`（改完 .env 快速重启）/ `bash start.sh stop`
 - 流程：git pull → env 校验 → docker postgres → 构建 libs → prisma migrate → 构建 web → 后台启动 api/worker → 生成并 reload nginx → 就绪等待
 - env fail-fast 预检：`NOTIFICATION_SECRET_KEY` 强制必填（`openssl rand -hex 24` 生成），缺了立刻报错，避免 60 秒等待后以「未就绪」收场
+- env 预检（#72/#76）：`ALERT_LINK_BASE_URL` 可选——两端都不配 = 卡片关闭（打印提示）；只配一端或两端不同值 → **报错退出**（否则 worker 签出的链接医生打不开且不报错）；指向 `localhost`/`127.0.0.1` → 报错退出；`ALERT_LINK_TTL_HOURS` 两端不一致仅警告
 - `.env` 不进 git，缺失即报错
 - 构建顺序：`pnpm run build:libs`（shared-types/matching-engine）→ `prisma migrate deploy` → `pnpm --filter web run build`
 - `LISTEN_PORT` 默认沿用 5173；换端口用 `LISTEN_PORT=xxxx bash start.sh nopull`

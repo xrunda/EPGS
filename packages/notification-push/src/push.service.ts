@@ -123,7 +123,7 @@ export class NotificationPushService {
           msgType: 'NEWS',
           renderedTitle: card.title,
           renderedContent: card.description,
-          coverImageUrl: null,
+          coverImageUrl: card.coverUrl,
           linkUrl: card.url,
         });
       } catch (error) {

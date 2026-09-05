@@ -278,7 +278,7 @@ describe('NotificationRuleExecutor.execute', () => {
 
   describe('alert links (issue #72)', () => {
     const cards = [
-      { level: 'RED' as const, count: 2, title: '红色关注 2 例 · 2026-08-23', description: 'd', url: 'http://h/alert?t=a' },
+      { level: 'RED' as const, count: 2, title: '红色关注 2 例 · 2026-08-23', description: 'd', url: 'http://h/alert?t=a', coverUrl: 'http://h/hospital-logo.jpg' },
     ];
 
     function makeIssuer(overrides: Partial<{ enabled: boolean; issue: jest.Mock }> = {}) {

@@ -67,7 +67,7 @@
 - 消息类型：TEXT → `text`、NEWS → `news`（`markdown` 已弃用，个人微信企业会话不渲染）
 - Webhook 地址 AES-256-GCM 加密存储（`NotificationSecretCipher`），密钥 `NOTIFICATION_SECRET_KEY` 启动强制必填、不落日志
 - 测试推送与定时推送统计口径一致：都按当日新增（`windowDate`）；缺省 = 全量库存（`packages/notification-push/src/summary.ts`、`apps/api/src/notifications/notification-push.adapters.ts`）
-- 预警详情卡片（#72）：配置 `ALERT_LINK_BASE_URL`（api 与 worker **同值**，填医生在企微里能打开的 web 入口地址，即 nginx 单端口对外地址）后，每次推送追加最多三条单篇 `news` 卡片消息（红 / 黄 / 绿各一条，企业微信与个人微信企业会话均可点击），链接 24 小时有效（`ALERT_LINK_TTL_HOURS`）；不配置则不追加。迁移 `20260905060000_add_alert_link` 需先 `prisma migrate deploy`。详见 `docs/auth.md`「预警链接受限凭证」
+- 预警详情卡片（#72）：配置 `ALERT_LINK_BASE_URL`（api 与 worker **同值**，填医生在企微里能打开的 web 入口地址，即 nginx 单端口对外地址）后，每次推送追加最多三条单篇 `news` 卡片消息（红 / 黄 / 绿各一条，企业微信与个人微信企业会话均可点击，封面为 `apps/web/public/hospital-logo.jpg`，同样经该入口地址拉取），链接 24 小时有效（`ALERT_LINK_TTL_HOURS`）；不配置则不追加。迁移 `20260905060000_add_alert_link` 需先 `prisma migrate deploy`。详见 `docs/auth.md`「预警链接受限凭证」
 
 ## 5. 相关文档
 

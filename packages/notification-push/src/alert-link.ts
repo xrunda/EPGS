@@ -47,6 +47,14 @@ export const ALERT_LINK_PATH = '/alert';
 /** Query parameter carrying the token on the H5 entry URL. */
 export const ALERT_LINK_TOKEN_PARAM = 't';
 
+/**
+ * Path (relative to ALERT_LINK_BASE_URL) of the card cover image - the
+ * hospital logo served from apps/web/public, so it exists at the same
+ * origin as /alert in both the Vite dev server and the built dist. The
+ * viewer's client fetches it, so it must be reachable wherever /alert is.
+ */
+export const ALERT_LINK_COVER_PATH = '/hospital-logo.jpg';
+
 /** Token = 32 random bytes → 43-char base64url; the guard validates this shape. */
 export const ALERT_LINK_TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;
 
@@ -62,6 +70,8 @@ export interface AlertLinkCard {
   title: string;
   description: string;
   url: string;
+  /** Cover image (WeCom `picurl`), `${baseUrl}${ALERT_LINK_COVER_PATH}`. */
+  coverUrl: string;
 }
 
 export interface CreateAlertLinkInput {
@@ -202,10 +212,16 @@ export class AlertLinkIssuer {
           MAX_DESCRIPTION_CHARS,
         ),
         url: buildAlertLinkUrl(baseUrl, token),
+        coverUrl: buildAlertCoverUrl(baseUrl),
       });
     }
     return cards;
   }
+}
+
+/** Absolute URL of the card cover image on the same origin as /alert. */
+export function buildAlertCoverUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}${ALERT_LINK_COVER_PATH}`;
 }
 
 function buildDescription(hospitalName: string, keywords: string, ttlHours: number): string {

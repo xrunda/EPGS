@@ -1,7 +1,9 @@
 import { FormEvent, ReactNode, useEffect, useState } from 'react';
 import { AuthApiError, AuthUser, changePassword, getCurrentUser, login, logout } from './authApi';
-import hospitalLogo from './assets/hospital-logo.jpg';
 import './AuthGate.css';
+
+// See App.tsx - the logo lives in apps/web/public for a stable URL.
+const hospitalLogo = '/hospital-logo.jpg';
 
 interface AuthContext {
   user: AuthUser;

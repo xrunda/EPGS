@@ -185,8 +185,8 @@ describe('NotificationPushService.pushToChannel', () => {
 
   describe('alert cards (issue #72)', () => {
     const cards = [
-      { level: 'RED' as const, count: 2, title: '红色关注 2 例 · 2026-08-23', description: 'd1', url: 'http://h/alert?t=a' },
-      { level: 'GREEN' as const, count: 1, title: '绿色关注 1 例 · 2026-08-23', description: 'd2', url: 'http://h/alert?t=b' },
+      { level: 'RED' as const, count: 2, title: '红色关注 2 例 · 2026-08-23', description: 'd1', url: 'http://h/alert?t=a', coverUrl: 'http://h/hospital-logo.jpg' },
+      { level: 'GREEN' as const, count: 1, title: '绿色关注 1 例 · 2026-08-23', description: 'd2', url: 'http://h/alert?t=b', coverUrl: 'http://h/hospital-logo.jpg' },
     ];
 
     it('sends one SINGLE-article news message per card, in order, after the template message (#76)', async () => {
@@ -206,14 +206,14 @@ describe('NotificationPushService.pushToChannel', () => {
         msgType: 'NEWS',
         renderedTitle: '红色关注 2 例 · 2026-08-23',
         renderedContent: 'd1',
-        coverImageUrl: null,
+        coverImageUrl: 'http://h/hospital-logo.jpg',
         linkUrl: 'http://h/alert?t=a',
       });
       expect(sender.send.mock.calls[2][1]).toEqual({
         msgType: 'NEWS',
         renderedTitle: '绿色关注 1 例 · 2026-08-23',
         renderedContent: 'd2',
-        coverImageUrl: null,
+        coverImageUrl: 'http://h/hospital-logo.jpg',
         linkUrl: 'http://h/alert?t=b',
       });
       // Never the multi-article shape: personal WeChat cannot render it.

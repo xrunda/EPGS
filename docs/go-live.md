@@ -19,8 +19,10 @@
       （`monitor_match`）保留策略已与运维确认。
 - [ ] **患者类型字典确认**：`PAADM_Type` 完整字典由内镜中心确认；未确认的代码
       一律存 NULL（[docs/acceptance.md](./acceptance.md) §三）。
-- [ ] **词库确认**：黄/绿关键词清单由内镜中心签核后由 `RULE_ADMIN` 导入
-      （种子脚本有意只内置 6 条 RED，见 issue #4 / [docs/rules-api.md](./rules-api.md)）。
+- [ ] **词库确认**：种子脚本内置内镜中心定稿的 RED 17 / YELLOW 13 条（`6bf29d5`，
+      `apps/api/prisma/seed.ts`，幂等可重复执行）；后续增补由 `RULE_ADMIN` 在配置页
+      导入（见 [docs/rules-api.md](./rules-api.md)），上线前与内镜中心核对一遍现网
+      规则表与定稿清单一致。
 
 ## 1. 凭据轮换
 

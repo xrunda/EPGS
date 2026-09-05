@@ -7,3 +7,4 @@ export * from './sync-status';
 export * from './auth';
 export * from './notification';
 export * from './push-assistant';
+export * from './alert-link';

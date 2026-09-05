@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, NotificationChannel, NotificationTemplate, PushLog } from '@prisma/client';
 import {
+  ALERT_LINK_LEVELS,
+  AlertLinkLevel,
+  AlertLinkStore,
+  CreateAlertLinkInput,
   KeywordHit,
   NotificationPushStore,
   NotificationSummaryProvider,
@@ -165,6 +169,62 @@ export class MonitorSummaryProvider implements NotificationSummaryProvider {
       count: row._count._all,
     }));
   }
+}
+
+/**
+ * Prisma-backed AlertLinkStore for the api's manual "run now" (issue #72).
+ * The snapshot query uses the SAME window + department-scope conditions as
+ * MonitorSummaryProvider above, so a card's count equals the summary count
+ * the operator sees. Only ids are read - never patient columns.
+ */
+@Injectable()
+export class PrismaAlertLinkStore implements AlertLinkStore {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async listRecordIdsByLevel(input: {
+    windowDate: string;
+    scope?: string[];
+  }): Promise<Partial<Record<AlertLinkLevel, string[]>>> {
+    const range = resolveShanghaiDayRange(input.windowDate);
+    const rows = await this.prisma.monitorRecord.findMany({
+      where: {
+        examTime: { gte: range.gte, lt: range.lt },
+        currentLevel: { in: [...ALERT_LINK_LEVELS] },
+        ...(input.scope && input.scope.length > 0 ? { department: { in: input.scope } } : {}),
+      },
+      select: { id: true, currentLevel: true },
+      orderBy: [{ examTime: 'desc' }, { id: 'asc' }],
+    });
+    return groupIdsByLevel(rows);
+  }
+
+  async createAlertLink(input: CreateAlertLinkInput): Promise<{ id: string }> {
+    const row = await this.prisma.alertLink.create({
+      data: {
+        tokenHash: input.tokenHash,
+        level: input.level,
+        windowDate: input.windowDate,
+        pushLogId: input.pushLogId,
+        recordIds: input.recordIds,
+        createdAt: input.createdAt,
+        expiresAt: input.expiresAt,
+      },
+      select: { id: true },
+    });
+    return { id: row.id };
+  }
+}
+
+export function groupIdsByLevel(
+  rows: { id: string; currentLevel: string }[],
+): Partial<Record<AlertLinkLevel, string[]>> {
+  const result: Partial<Record<AlertLinkLevel, string[]>> = {};
+  for (const row of rows) {
+    const level = row.currentLevel as AlertLinkLevel;
+    if (!ALERT_LINK_LEVELS.includes(level)) continue;
+    (result[level] ??= []).push(row.id);
+  }
+  return result;
 }
 
 function toPushChannel(channel: NotificationChannel): PushChannel {

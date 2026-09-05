@@ -756,6 +756,7 @@ model PushLog {
   finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
 
   deliveries PushDelivery[]
+  alertLinks AlertLink[]
 
   @@index([ruleId, startedAt])
   @@index([trigger])
@@ -865,4 +866,51 @@ model AssistantEvent {
 
   @@index([occurredAt])
   @@map("assistant_event")
+}
+
+// ---------------------------------------------------------------------------
+// alert_link - per-level "点击查看患者列表" links appended to a push (issue #72)
+// ---------------------------------------------------------------------------
+
+/// One alert link issued for a push run (issue #72): a FROZEN snapshot of the
+/// monitor_record ids that sat at `level` inside the run's summary window,
+/// reachable for `expiresAt - createdAt` (24h by default) through an opaque
+/// token that is NEVER stored - only its SHA-256 hex (`tokenHash`). The token
+/// is the credential: AlertLinkGuard resolves it to this row and narrows every
+/// read to `recordIds`; no epgs_session is ever issued from a link. Membership
+/// is frozen on purpose (user decision): later level changes or new records
+/// never alter what a link shows. `openCount`/`lastOpenedAt` are the only
+/// access trace (no audit_log row: there is no AppRole actor). Holds NO
+/// patient data - ids only. See docs/auth.md "预警链接受限凭证".
+model AlertLink {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// SHA-256 hex of the opaque token (64 chars) - the unique lookup key.
+  tokenHash String @unique @map("token_hash") @db.VarChar(64)
+
+  /// Which level's list this link opens (UNCLASSIFIED never gets a link).
+  level MonitorLevel
+
+  /// Shanghai date (YYYY-MM-DD) of the summary window the snapshot covers.
+  windowDate String @map("window_date") @db.VarChar(10)
+
+  /// The push_log run this link was issued for. SetNull so a (currently
+  /// never-performed) log deletion cannot fail on this FK.
+  pushLogId String?  @map("push_log_id") @db.Uuid
+  pushLog   PushLog? @relation(fields: [pushLogId], references: [id], onDelete: SetNull)
+
+  /// Frozen monitor_record ids (the snapshot). Deliberately NOT an FK: a
+  /// record removed later simply drops out of the list at read time.
+  recordIds String[] @map("record_ids") @db.Uuid
+
+  /// Times the link was opened (GET /api/alert-links/me) + the last instant.
+  openCount    Int       @default(0) @map("open_count")
+  lastOpenedAt DateTime? @map("last_opened_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@index([pushLogId])
+  @@map("alert_link")
 }

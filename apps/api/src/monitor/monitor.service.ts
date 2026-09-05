@@ -7,7 +7,12 @@ import { MonitorFiltersDto } from './dto/monitor-filters.query.dto';
 import { MonitorRecordNotFoundException } from './errors/monitor-record-not-found.exception';
 import { resolveDateRange } from './monitor-time';
 import { toExamDetailDto, toExamDto } from './monitor.mapper';
-import { MonitorExamDetailDto, MonitorSummaryDto, PaginatedMonitorExams } from '@epgs/shared-types';
+import {
+  MonitorExamDetailDto,
+  MonitorExamDto,
+  MonitorSummaryDto,
+  PaginatedMonitorExams,
+} from '@epgs/shared-types';
 import { buildDepartmentScopeWhere, maskExamDetail, maskExamRow } from '../access/data-scope';
 
 /** Issue #13 query options: data-scope restriction + patient-data masking. */
@@ -119,6 +124,24 @@ export class MonitorService {
       // are unaffected.
       ...(masked ? { dataAccess: { masked: true } } : {}),
     };
+  }
+
+  /**
+   * List rows for an explicit id set (issue #72 alert links): the caller has
+   * already established authorization for exactly these ids (the link's frozen
+   * snapshot), so there is no scope/mask here - the alert-link service applies
+   * its own always-on name masking. Same LIST_SELECT (no report body) and the
+   * same default ordering as list(). Ids not found (record since removed)
+   * simply drop out; an empty id set never hits the database.
+   */
+  async listByIds(ids: string[]): Promise<MonitorExamDto[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.prisma.monitorRecord.findMany({
+      where: { id: { in: ids } },
+      orderBy: [{ examTime: { sort: 'desc', nulls: 'last' } }, { currentLevel: 'asc' }, { id: 'asc' }],
+      select: MonitorService.LIST_SELECT,
+    });
+    return rows.map((row) => toExamDto(row));
   }
 
   async getDetail(id: string, opts?: MonitorQueryOptions): Promise<MonitorExamDetailDto> {

@@ -5,13 +5,21 @@ import {
   PushLogRow,
 } from './store';
 import { NotificationPushService } from './push.service';
-import { ExecuteRuleResult, PushDeliveryRecord, PushStatus, PushTrigger } from './types';
+import {
+  AlertLinksOutcome,
+  ExecuteRuleResult,
+  PushDeliveryRecord,
+  PushStatus,
+  PushTrigger,
+} from './types';
 import { formatShanghaiDate } from './summary';
 import { NotificationRuleNotFoundError, ScheduledPushAlreadyExistsError } from './errors';
 import { WecomWebhookError } from './wecom-webhook-sender';
+import { AlertLinkCard, AlertLinkIssuer } from './alert-link';
 
 const MAX_WECOM_ERR_MSG = 255; // push_delivery.wecom_err_msg is VarChar(255)
 const MAX_ERROR_SUMMARY = 500; // push_log.error_summary is free Text; cap for hygiene
+const NO_ALERT_LINKS: AlertLinksOutcome = { issued: 0, error: null };
 
 /**
  * Executes a push rule across all of its channels (issue: push rules) - the
@@ -37,6 +45,12 @@ const MAX_ERROR_SUMMARY = 500; // push_log.error_summary is free Text; cap for h
 export interface NotificationRuleExecutorDeps {
   store: NotificationPushStore;
   push: NotificationPushService;
+  /**
+   * Issues the per-level alert links/cards (issue #72). Optional so existing
+   * wiring/tests without the feature keep working; when present but not
+   * `enabled` (no ALERT_LINK_BASE_URL) it issues nothing.
+   */
+  alertLinks?: AlertLinkIssuer;
   /** Injectable clock for deterministic tests; defaults to real now. */
   nowProvider?: () => Date;
 }
@@ -81,6 +95,7 @@ export class NotificationRuleExecutor {
           windowDate,
           status: null,
           deliveries: [],
+          alertLinks: NO_ALERT_LINKS,
         };
       }
     }
@@ -103,10 +118,16 @@ export class NotificationRuleExecutor {
           windowDate,
           status: null,
           deliveries: [],
+          alertLinks: NO_ALERT_LINKS,
         };
       }
       throw error;
     }
+
+    // Issue #72: freeze ONE snapshot per level for this run (not per channel)
+    // so every channel receives the same links. Issuance failing must not
+    // block the template message - degrade to "no cards" and report why.
+    const { cards, alertLinks } = await this.issueAlertLinks(pushLog.id, windowDate, now, input.scope);
 
     const deliveries: PushDeliveryRecord[] = [];
     let anySuccess = false;
@@ -121,6 +142,7 @@ export class NotificationRuleExecutor {
           date: windowDate,
           windowDate,
           scope: input.scope,
+          ...(cards.length > 0 ? { alertCards: cards } : {}),
         });
         anySuccess = true;
         const delivery = await this.recordDelivery(pushLog.id, {
@@ -181,7 +203,24 @@ export class NotificationRuleExecutor {
       errorSummary: status === 'SUCCESS' ? null : truncate(finalSummary, MAX_ERROR_SUMMARY),
     });
 
-    return { alreadyPushed: false, pushLogId: pushLog.id, windowDate, status, deliveries };
+    return { alreadyPushed: false, pushLogId: pushLog.id, windowDate, status, deliveries, alertLinks };
+  }
+
+  private async issueAlertLinks(
+    pushLogId: string,
+    windowDate: string,
+    now: Date,
+    scope: string[] | undefined,
+  ): Promise<{ cards: AlertLinkCard[]; alertLinks: AlertLinksOutcome }> {
+    const issuer = this.deps.alertLinks;
+    if (!issuer || !issuer.enabled) return { cards: [], alertLinks: NO_ALERT_LINKS };
+    try {
+      const cards = await issuer.issue({ windowDate, pushLogId, scope, now });
+      return { cards, alertLinks: { issued: cards.length, error: null } };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      return { cards: [], alertLinks: { issued: 0, error: truncate(message, MAX_ERROR_SUMMARY) } };
+    }
   }
 
   private async recordDelivery(

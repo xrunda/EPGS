@@ -54,4 +54,16 @@ export const envValidationSchema = Joi.object({
   // Keep it operationally in sync with the worker value; a mismatch only
   // shifts how quickly 失联 is declared, not correctness.
   ASSISTANT_STALE_SECONDS: Joi.number().integer().min(60).max(300).default(90),
+
+  // Issue #72: where WeCom clients reach the web app's /alert H5 page. Optional
+  // on purpose - unset/empty disables the alert-link cards rather than sending
+  // links that cannot be opened (see AppConfig.alertLinkBaseUrl). Must be the
+  // SAME value in apps/worker (the worker issues the links for scheduled runs).
+  ALERT_LINK_BASE_URL: Joi.string()
+    .uri({ scheme: [/https?/] })
+    .allow('')
+    .optional(),
+  // Issue #72: link lifetime in hours. 24 by default (covers a full shift so a
+  // doctor coming out of surgery still finds the link alive); capped at a week.
+  ALERT_LINK_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
 });

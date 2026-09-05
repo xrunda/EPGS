@@ -46,6 +46,13 @@ export interface WorkerConfig {
   assistantHeartbeatSeconds: number;
   /** Days to keep assistant_event rows before the heartbeat loop sweeps them (1-90, default 7). */
   assistantEventRetentionDays: number;
+  /**
+   * Issue #72: origin of the web app's /alert H5 page as reachable from WeCom
+   * clients (same value as apps/api). null = alert-link cards disabled.
+   */
+  alertLinkBaseUrl: string | null;
+  /** Issue #72: alert-link lifetime in hours (1-168, default 24). */
+  alertLinkTtlHours: number;
 }
 
 export default (): WorkerConfig => ({
@@ -76,4 +83,6 @@ export default (): WorkerConfig => ({
   notificationTickSeconds: parseInt(process.env.NOTIFICATION_TICK_SECONDS ?? '60', 10),
   assistantHeartbeatSeconds: parseInt(process.env.ASSISTANT_HEARTBEAT_SECONDS ?? '30', 10),
   assistantEventRetentionDays: parseInt(process.env.ASSISTANT_EVENT_RETENTION_DAYS ?? '7', 10),
+  alertLinkBaseUrl: process.env.ALERT_LINK_BASE_URL?.trim() || null,
+  alertLinkTtlHours: parseInt(process.env.ALERT_LINK_TTL_HOURS ?? '24', 10),
 });

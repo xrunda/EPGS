@@ -108,9 +108,17 @@ export class NotificationScheduler implements OnModuleInit {
           continue;
         }
         executed += 1;
+        // Issue #72: report link issuance next to the run outcome. Counts and
+        // the (sanitized) failure reason only - never a token or patient data.
+        const alertLinks = result.alertLinks ?? { issued: 0, error: null };
         this.logger.log(
-          `push rule "${rule.name}" finished: status=${result.status} channels=${result.deliveries.length}`,
+          `push rule "${rule.name}" finished: status=${result.status} channels=${result.deliveries.length} alertLinks=${alertLinks.issued}`,
         );
+        if (alertLinks.error) {
+          this.logger.warn(
+            `push rule "${rule.name}": alert links were NOT issued (template message still sent): ${alertLinks.error}`,
+          );
+        }
 
         // Push assistant feed (issue #70): a PUSH_DONE event the panel's
         // "刚完成" hero + "执行过程" bar read. The executor exposes render +

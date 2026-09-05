@@ -12,6 +12,7 @@ import { AuthModule } from './auth/auth.module';
 import { AccessModule } from './access/access.module';
 import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { AlertLinksModule } from './alert-links/alert-links.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     HealthModule,
     MonitorModule,
     NotificationsModule,
+    AlertLinksModule,
     RulesModule,
     SystemModule,
   ],

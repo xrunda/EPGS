@@ -124,4 +124,15 @@ export const envValidationSchema = Joi.object({
   // older than this every ~20 ticks. 7 days covers the panel's look-back and
   // the "连续运行天数" display without unbounded growth.
   ASSISTANT_EVENT_RETENTION_DAYS: Joi.number().integer().min(1).max(90).default(7),
+
+  // Issue #72: origin of the web app's /alert H5 page as WeCom clients reach
+  // it - MUST equal apps/api's value (the worker issues the links for
+  // scheduled runs, the api resolves them). Optional: unset/empty disables the
+  // alert-link cards rather than sending links that cannot be opened.
+  ALERT_LINK_BASE_URL: Joi.string()
+    .uri({ scheme: [/https?/] })
+    .allow('')
+    .optional(),
+  // Issue #72: link lifetime in hours (default 24, max a week).
+  ALERT_LINK_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
 });

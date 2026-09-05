@@ -1,0 +1,405 @@
+/**
+ * WeCom alert H5 page (issue #72). Mobile-first: one column, large tap
+ * targets, reads inside the WeCom in-app browser. Uses the shared tokens
+ * (tokens.css) so it belongs to the same system as the workbench without
+ * pulling in the desktop shell's stylesheets.
+ */
+html,
+body,
+#root {
+  min-height: 100%;
+}
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.alert-page {
+  min-height: 100dvh;
+  padding: 16px 16px 32px;
+  background: var(--surface-app);
+  color: #19383d;
+  box-sizing: border-box;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* ---------- header ---------- */
+.alert-header {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-top: 4px solid var(--teal-700);
+  box-shadow: var(--shadow-sm);
+}
+.alert-page--red .alert-header {
+  border-top-color: var(--red-accent);
+}
+.alert-page--yellow .alert-header {
+  border-top-color: var(--yellow-accent);
+}
+.alert-page--green .alert-header {
+  border-top-color: var(--green-accent);
+}
+.alert-header__eyebrow {
+  margin: 0;
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.alert-header__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.alert-header__title h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink-800);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.alert-header__expiry {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--yellow-wash);
+  border: 1px solid var(--yellow-tint);
+  color: var(--yellow-ink);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* ---------- level tag (same look as the workbench) ---------- */
+.level-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.level-tag--red {
+  background: var(--red-tint);
+  color: var(--red-ink);
+}
+.level-tag--yellow {
+  background: var(--yellow-tint);
+  color: var(--yellow-ink);
+}
+.level-tag--green {
+  background: var(--green-tint);
+  color: var(--green-ink);
+}
+.level-tag--unclassified {
+  background: #e9eeee;
+  color: #667779;
+}
+
+/* ---------- list ---------- */
+.alert-list {
+  margin-top: 14px;
+}
+.alert-list ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.alert-row {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 14px 40px 14px 16px;
+  border: 1px solid var(--border-default);
+  border-left: 4px solid var(--teal-700);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease-standard);
+}
+.alert-row:active {
+  box-shadow: var(--shadow-sm);
+}
+.alert-row:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.alert-row--red {
+  border-left-color: var(--red-accent);
+}
+.alert-row--yellow {
+  border-left-color: var(--yellow-accent);
+}
+.alert-row--green {
+  border-left-color: var(--green-accent);
+}
+.alert-row__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.alert-row__head strong {
+  font-size: 17px;
+  color: var(--ink-800);
+}
+.alert-row__bed {
+  font-weight: 700;
+  color: var(--ink-600);
+  font-variant-numeric: tabular-nums;
+}
+.alert-row__dept {
+  color: var(--ink-300);
+  font-size: 13px;
+}
+.alert-row__meta {
+  color: var(--ink-400);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.alert-row__keywords {
+  color: var(--ink-700);
+  font-size: 13px;
+  font-weight: 600;
+}
+.alert-row__chevron {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-200);
+  font-size: 26px;
+  line-height: 1;
+}
+
+/* ---------- detail ---------- */
+.alert-detail {
+  margin-top: 14px;
+  display: grid;
+  gap: 14px;
+}
+.alert-back {
+  justify-self: start;
+  padding: 8px 12px 8px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--teal-700);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.alert-back:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.alert-detail__summary {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
+}
+.alert-detail__summary h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink-800);
+}
+.alert-detail__summary h2 small {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-400);
+}
+.alert-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin: 0;
+}
+.alert-fields div {
+  display: grid;
+  gap: 2px;
+}
+.alert-fields dt {
+  color: var(--ink-300);
+  font-size: 12px;
+}
+.alert-fields dd {
+  margin: 0;
+  color: #1d3033;
+  font-size: 14px;
+  font-weight: 600;
+}
+.alert-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: var(--ink-800);
+  font-size: 15px;
+  font-weight: 700;
+}
+.alert-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: #e7efed;
+  color: #587074;
+  font-size: 12px;
+  font-weight: 700;
+}
+.alert-text {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: #334b4f;
+  font-size: 15px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.alert-placeholder {
+  color: var(--ink-200);
+  font-size: 13px;
+}
+.hit-highlight {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: #ffe9a8;
+  color: inherit;
+  box-shadow: inset 0 0 0 1px rgba(215, 162, 13, 0.25);
+}
+.alert-hits {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.alert-hit {
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--teal-700);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+.alert-hit__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.alert-hit__head strong {
+  color: var(--ink-700);
+  font-size: 14px;
+}
+.alert-hit__field {
+  margin-left: auto;
+  color: var(--ink-300);
+  font-size: 12px;
+}
+.alert-hit__snippet {
+  margin: 10px 0 0;
+  padding: 0 0 0 10px;
+  border-left: 2px solid var(--border-subtle);
+  color: var(--ink-400);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* ---------- states / footer ---------- */
+.alert-state {
+  margin: 24px 0;
+  color: var(--ink-500);
+  font-weight: 700;
+  text-align: center;
+}
+.alert-state--block {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 28px 20px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-sm);
+}
+.alert-state--block h1 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--ink-800);
+}
+.alert-state--block p {
+  margin: 0;
+  font-weight: 500;
+  line-height: 1.6;
+}
+.alert-button {
+  padding: 10px 18px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--teal-700);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.alert-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.alert-link {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--teal-700);
+  font-weight: 700;
+  text-decoration: none;
+}
+.alert-link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: 4px;
+}
+.alert-footer {
+  margin-top: 28px;
+  display: grid;
+  gap: 6px;
+  text-align: center;
+  color: var(--ink-300);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.alert-footer p {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-row {
+    transition: none;
+  }
+}

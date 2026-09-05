@@ -181,7 +181,7 @@ jobs:
       # the open counter, and that a link token can never reach the
       # cookie-guarded workbench routes. Seeds only its own TEST-AL-* rows and
       # deletes exactly those in afterAll (never wipes shared tables), so the
-      # seed-count step below still sees exactly the 6 seeded RED rules.
+      # seed-count step below still sees exactly the 17 seeded RED rules.
       - name: Alert-link e2e suite (real Postgres)
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/alert-links.e2e-spec.ts

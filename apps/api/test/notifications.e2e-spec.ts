@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { GlobalExceptionFilter } from '../src/common/filters/global-exception.filter';
 import { hash, argon2id } from 'argon2';
-import { WecomWebhookSender, WecomWebhookError, NotificationRuleExecutor } from '@epgs/notification-push';
+import { WecomWebhookSender, WecomWebhookError, NotificationRuleExecutor, formatShanghaiDate } from '@epgs/notification-push';
 
 /**
  * Full-stack e2e test for issue #54's notification channel/template APIs +
@@ -40,6 +40,16 @@ describe('Notification API (e2e, real Postgres)', () => {
 
   /** Summary fixture: RED x2, YELLOW x1, GREEN x3, UNCLASSIFIED x1 => total 7. */
   const SUMMARY_LEVELS = ['RED', 'RED', 'YELLOW', 'GREEN', 'GREEN', 'GREEN', 'UNCLASSIFIED'];
+  /**
+   * test-send counts "today's new reports" (issue #62: the same Shanghai-day
+   * window a SCHEDULED rule run uses), so the first summary record gets
+   * examTime = the real clock at seed time. That keeps the full-inventory
+   * counts above unchanged (still 7 records, examTime is not a filter there)
+   * while guaranteeing today's window is non-empty on ANY run date - the
+   * test-send case asserts against the summary endpoint queried for today,
+   * so it never depends on which day CI happens to run (issue #74).
+   */
+  const SEEDED_AT = new Date();
 
   function itWithDb(name: string, fn: () => Promise<void>): void {
     it(name, async () => {
@@ -95,6 +105,8 @@ describe('Notification API (e2e, real Postgres)', () => {
           department: '骨科',
           examItem: '电子胃镜检查',
           currentLevel: level as never,
+          // Only the first (RED) record lands in today's window - see SEEDED_AT.
+          ...(index === 0 ? { examTime: SEEDED_AT } : {}),
         },
       });
     }
@@ -310,9 +322,9 @@ describe('Notification API (e2e, real Postgres)', () => {
       .expect(404);
   });
 
-  itWithDb('variables dictionary exposes the 7 fixed placeholders', async () => {
+  itWithDb('variables dictionary exposes the 9 fixed placeholders (7 counts + 2 keyword lists from #69)', async () => {
     const res = await adminAgent.get('/api/notification-templates/variables').expect(200);
-    expect(res.body).toHaveLength(7);
+    expect(res.body).toHaveLength(9);
     expect(res.body.map((v: any) => v.key)).toEqual([
       'reportDate',
       'hospitalName',
@@ -321,6 +333,8 @@ describe('Notification API (e2e, real Postgres)', () => {
       'greenCount',
       'unclassifiedCount',
       'totalCount',
+      'redKeywords',
+      'yellowKeywords',
     ]);
   });
 
@@ -344,7 +358,17 @@ describe('Notification API (e2e, real Postgres)', () => {
         '{{reportDate}} {{hospitalName}} 红色{{redCount}} 黄{{yellowCount}} 绿{{greenCount}} 未分类{{unclassifiedCount}} 共{{totalCount}}',
     });
 
-    const summary = await adminAgent.get('/api/monitor/summary').expect(200);
+    // test-send renders TODAY's (Shanghai) window, not the full inventory
+    // (issue #62 aligned it with scheduled runs) - so compare against the
+    // summary endpoint queried for the same day. The fixture guarantees at
+    // least one RED record in that window (SEEDED_AT), so the assertion is
+    // never a trivial all-zeros match.
+    const today = formatShanghaiDate(new Date());
+    const summary = await adminAgent
+      .get('/api/monitor/summary')
+      .query({ examDateFrom: today, examDateTo: today })
+      .expect(200);
+    expect(summary.body.red).toBeGreaterThanOrEqual(1);
 
     const res = await adminAgent
       .post(`/api/notification-channels/${channel.id}/test-send`)
@@ -352,6 +376,7 @@ describe('Notification API (e2e, real Postgres)', () => {
       .expect(200);
     expect(res.body.success).toBe(true);
     // Rendered numbers must match the live summary endpoint (design §4).
+    expect(res.body.renderedContent).toContain(`${today} 菏泽市中医医院`);
     expect(res.body.renderedContent).toContain(`红色${summary.body.red}`);
     expect(res.body.renderedContent).toContain(`黄${summary.body.yellow}`);
     expect(res.body.renderedContent).toContain(`绿${summary.body.green}`);

@@ -45,6 +45,17 @@ export interface AppConfig {
    * hospital.
    */
   hospitalName: string;
+  /**
+   * Issue #72: absolute origin (+ optional path prefix) at which WeCom
+   * clients can reach the web app's `/alert` H5 page, e.g.
+   * `http://10.0.0.5:5173`. `null` (unset/empty) DISABLES alert-link cards:
+   * a push then sends only the template message - the safe default while
+   * the hospital intranet <-> WeCom network path is unresolved
+   * (docs/notification-design.md §1), since a dead link is worse than none.
+   */
+  alertLinkBaseUrl: string | null;
+  /** Issue #72: alert-link lifetime in hours (1-168, default 24 - user decision). */
+  alertLinkTtlHours: number;
 }
 
 export default (): AppConfig => {
@@ -64,5 +75,7 @@ export default (): AppConfig => {
       : nodeEnv === 'production',
     notificationSecretKey: process.env.NOTIFICATION_SECRET_KEY ?? '',
     hospitalName: process.env.HOSPITAL_NAME ?? '菏泽市中医医院',
+    alertLinkBaseUrl: process.env.ALERT_LINK_BASE_URL?.trim() || null,
+    alertLinkTtlHours: parseInt(process.env.ALERT_LINK_TTL_HOURS ?? '24', 10),
   };
 };

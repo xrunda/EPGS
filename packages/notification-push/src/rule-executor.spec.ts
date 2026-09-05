@@ -10,6 +10,7 @@ import {
 } from './errors';
 import { WecomWebhookError } from './wecom-webhook-sender';
 import { PushRule, PushTrigger } from './types';
+import { AlertLinkIssuer } from './alert-link';
 
 const NOW = new Date('2026-08-23T01:00:00Z'); // 09:00 Shanghai
 
@@ -273,5 +274,116 @@ describe('NotificationRuleExecutor.execute', () => {
     expect(store.createPushLog).toHaveBeenCalledWith(
       expect.objectContaining({ trigger: 'MANUAL' as PushTrigger }),
     );
+  });
+
+  describe('alert links (issue #72)', () => {
+    const cards = [
+      { level: 'RED' as const, count: 2, title: '红色关注 2 例 · 2026-08-23', description: 'd', url: 'http://h/alert?t=a' },
+    ];
+
+    function makeIssuer(overrides: Partial<{ enabled: boolean; issue: jest.Mock }> = {}) {
+      return { enabled: true, issue: jest.fn(async () => cards), ...overrides };
+    }
+
+    function buildWithIssuer(
+      store: ReturnType<typeof makeStore>,
+      push: ReturnType<typeof makePush>,
+      issuer: ReturnType<typeof makeIssuer>,
+    ): NotificationRuleExecutor {
+      return new NotificationRuleExecutor({
+        store: store as never,
+        push: push as unknown as NotificationPushService,
+        alertLinks: issuer as unknown as AlertLinkIssuer,
+      });
+    }
+
+    it('issues the links ONCE per run (after the push_log exists) and passes the same cards to every channel', async () => {
+      const store = makeStore();
+      const push = makePush(successOutcome());
+      const issuer = makeIssuer();
+
+      const result = await buildWithIssuer(store, push, issuer).execute(input({ scope: ['内镜中心'] }));
+
+      expect(issuer.issue).toHaveBeenCalledTimes(1);
+      expect(issuer.issue).toHaveBeenCalledWith({
+        windowDate: '2026-08-23',
+        pushLogId: 'log-1',
+        scope: ['内镜中心'],
+        now: NOW,
+      });
+      expect(push.pushToChannel).toHaveBeenCalledTimes(2);
+      for (const call of push.pushToChannel.mock.calls) {
+        expect(call[0]).toMatchObject({ alertCards: cards });
+      }
+      expect(result.alertLinks).toEqual({ issued: 1, error: null });
+      expect(result.status).toBe('SUCCESS');
+    });
+
+    it('passes no alertCards when the issuer returns none (all levels empty)', async () => {
+      const store = makeStore();
+      const push = makePush(successOutcome());
+      const issuer = makeIssuer({ issue: jest.fn(async () => []) });
+
+      const result = await buildWithIssuer(store, push, issuer).execute(input());
+
+      expect(push.pushToChannel.mock.calls[0][0]).not.toHaveProperty('alertCards');
+      expect(result.alertLinks).toEqual({ issued: 0, error: null });
+    });
+
+    it('skips issuance entirely when the issuer is disabled or absent', async () => {
+      const store = makeStore();
+      const push = makePush(successOutcome());
+      const issuer = makeIssuer({ enabled: false });
+
+      const withDisabled = await buildWithIssuer(store, push, issuer).execute(input());
+      const without = await build(makeStore(), makePush(successOutcome())).execute(input());
+
+      expect(issuer.issue).not.toHaveBeenCalled();
+      expect(withDisabled.alertLinks).toEqual({ issued: 0, error: null });
+      expect(without.alertLinks).toEqual({ issued: 0, error: null });
+    });
+
+    it('degrades to "no cards" and still pushes the template message when issuance throws', async () => {
+      const store = makeStore();
+      const push = makePush(successOutcome());
+      const issuer = makeIssuer({ issue: jest.fn(async () => { throw new Error('db down'); }) });
+
+      const result = await buildWithIssuer(store, push, issuer).execute(input());
+
+      expect(push.pushToChannel).toHaveBeenCalledTimes(2);
+      expect(push.pushToChannel.mock.calls[0][0]).not.toHaveProperty('alertCards');
+      expect(result.status).toBe('SUCCESS');
+      expect(result.alertLinks).toEqual({ issued: 0, error: 'db down' });
+    });
+
+    it('does not issue links for a deduped SCHEDULED run', async () => {
+      const store = makeStore();
+      store.findScheduledPush.mockResolvedValue({ id: 'log-existing', ruleId: 'rule-1', windowDate: '2026-08-23', trigger: 'SCHEDULED', status: 'SUCCESS', errorSummary: null, startedAt: NOW, finishedAt: NOW });
+      const issuer = makeIssuer();
+
+      const result = await buildWithIssuer(store, makePush(successOutcome()), issuer).execute(input({ trigger: 'SCHEDULED' }));
+
+      expect(issuer.issue).not.toHaveBeenCalled();
+      expect(result.alertLinks).toEqual({ issued: 0, error: null });
+    });
+
+    it('records a FAILED delivery carrying the "正文已发送" reason when only the cards fail on a channel', async () => {
+      const store = makeStore();
+      let call = 0;
+      const push = makePush(async () => {
+        call += 1;
+        if (call === 2) throw new WecomWebhookError(45009, '正文已发送，关注卡片发送失败: api freq out of limit');
+        return { success: true, renderedTitle: '', renderedContent: '7', sentAt: '2026-08-23T01:00:01Z' };
+      });
+
+      const result = await buildWithIssuer(store, push, makeIssuer()).execute(input());
+
+      expect(result.status).toBe('PARTIAL');
+      expect(result.deliveries[1]).toMatchObject({
+        status: 'FAILED',
+        wecomErrCode: 45009,
+        wecomErrMsg: '正文已发送，关注卡片发送失败: api freq out of limit',
+      });
+    });
   });
 });

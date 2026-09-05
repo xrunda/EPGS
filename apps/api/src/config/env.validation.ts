@@ -45,4 +45,16 @@ export const envValidationSchema = Joi.object({
   // derives a fixed 32-byte AES key from this value via SHA-256, so it does
   // not need to be exactly 32 bytes itself.
   NOTIFICATION_SECRET_KEY: Joi.string().min(32).required(),
+
+  // Issue #72: where WeCom clients reach the web app's /alert H5 page. Optional
+  // on purpose - unset/empty disables the alert-link cards rather than sending
+  // links that cannot be opened (see AppConfig.alertLinkBaseUrl). Must be the
+  // SAME value in apps/worker (the worker issues the links for scheduled runs).
+  ALERT_LINK_BASE_URL: Joi.string()
+    .uri({ scheme: [/https?/] })
+    .allow('')
+    .optional(),
+  // Issue #72: link lifetime in hours. 24 by default (covers a full shift so a
+  // doctor coming out of surgery still finds the link alive); capped at a week.
+  ALERT_LINK_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
 });

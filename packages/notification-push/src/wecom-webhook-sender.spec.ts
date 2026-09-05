@@ -169,3 +169,42 @@ describe('WecomWebhookSender.send', () => {
     expect((error as Error).message).not.toContain('test-key-123');
   });
 });
+
+describe('multi-article news (issue #72 alert cards)', () => {
+  const articles = [
+    { title: '红色关注 2 例 · 2026-09-05', description: '点击查看', url: 'http://10.0.0.5:5173/alert?t=a' },
+    { title: '黄色关注 1 例 · 2026-09-05', description: '点击查看', url: 'http://10.0.0.5:5173/alert?t=b', picurl: null },
+  ];
+
+  it('maps an articles message to a single news payload with one entry per article', () => {
+    expect(toWecomPayload({ articles })).toEqual({
+      msgtype: 'news',
+      news: {
+        articles: [
+          { title: '红色关注 2 例 · 2026-09-05', description: '点击查看', url: 'http://10.0.0.5:5173/alert?t=a', picurl: '' },
+          { title: '黄色关注 1 例 · 2026-09-05', description: '点击查看', url: 'http://10.0.0.5:5173/alert?t=b', picurl: '' },
+        ],
+      },
+    });
+  });
+
+  it('rejects an empty article list and more than 8 articles (WeCom limit)', () => {
+    expect(() => toWecomPayload({ articles: [] })).toThrow(WecomWebhookError);
+    const nine = Array.from({ length: 9 }, (_, index) => ({ ...articles[0], title: `t${index}` }));
+    expect(() => toWecomPayload({ articles: nine })).toThrow(/1-8 articles/);
+  });
+
+  it('POSTs the articles message through the same webhook path', async () => {
+    let received: unknown;
+    pool
+      .intercept({ path: WEBHOOK_PATH, method: 'POST' })
+      .reply(200, (opts) => {
+        received = JSON.parse(String(opts.body));
+        return { errcode: 0, errmsg: 'ok' };
+      });
+
+    const sender = new WecomWebhookSender({ fetchImpl: mockFetch() });
+    await expect(sender.send(WEBHOOK_URL, { articles })).resolves.toEqual({ errcode: 0, errmsg: 'ok' });
+    expect(received).toMatchObject({ msgtype: 'news', news: { articles: [expect.any(Object), expect.any(Object)] } });
+  });
+});

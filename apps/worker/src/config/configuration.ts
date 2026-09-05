@@ -42,6 +42,13 @@ export interface WorkerConfig {
   hospitalName: string;
   /** Push-rule scheduler tick cadence in seconds (10-300, default 60). */
   notificationTickSeconds: number;
+  /**
+   * Issue #72: origin of the web app's /alert H5 page as reachable from WeCom
+   * clients (same value as apps/api). null = alert-link cards disabled.
+   */
+  alertLinkBaseUrl: string | null;
+  /** Issue #72: alert-link lifetime in hours (1-168, default 24). */
+  alertLinkTtlHours: number;
 }
 
 export default (): WorkerConfig => ({
@@ -70,4 +77,6 @@ export default (): WorkerConfig => ({
   notificationSecretKey: process.env.NOTIFICATION_SECRET_KEY ?? '',
   hospitalName: process.env.HOSPITAL_NAME ?? '菏泽市中医医院',
   notificationTickSeconds: parseInt(process.env.NOTIFICATION_TICK_SECONDS ?? '60', 10),
+  alertLinkBaseUrl: process.env.ALERT_LINK_BASE_URL?.trim() || null,
+  alertLinkTtlHours: parseInt(process.env.ALERT_LINK_TTL_HOURS ?? '24', 10),
 });

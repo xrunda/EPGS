@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  AlertLinkIssuer,
   NotificationPushService,
   NotificationRuleExecutor,
   NotificationSecretCipher,
@@ -9,7 +10,11 @@ import {
 import { NotificationsService } from './notifications.service';
 import { NotificationTestSendService } from './notification-test-send.service';
 import { NotificationRulesService } from './notification-rules.service';
-import { PrismaNotificationPushStore, MonitorSummaryProvider } from './notification-push.adapters';
+import {
+  PrismaNotificationPushStore,
+  MonitorSummaryProvider,
+  PrismaAlertLinkStore,
+} from './notification-push.adapters';
 import { NotificationChannelsController } from './notification-channels.controller';
 import { NotificationTemplatesController } from './notification-templates.controller';
 import { NotificationRulesController } from './notification-rules.controller';
@@ -47,6 +52,21 @@ import { MonitorModule } from '../monitor/monitor.module';
     NotificationRulesService,
     PrismaNotificationPushStore,
     MonitorSummaryProvider,
+    PrismaAlertLinkStore,
+    {
+      // Issue #72: per-level alert links appended to a manual "run now".
+      // Disabled (no cards) unless ALERT_LINK_BASE_URL is configured.
+      provide: AlertLinkIssuer,
+      inject: [PrismaAlertLinkStore, MonitorSummaryProvider, ConfigService],
+      useFactory: (store: PrismaAlertLinkStore, summary: MonitorSummaryProvider, config: ConfigService) =>
+        new AlertLinkIssuer({
+          store,
+          summary,
+          baseUrl: config.get<string | null>('alertLinkBaseUrl') ?? null,
+          ttlHours: config.get<number>('alertLinkTtlHours') ?? 24,
+          hospitalNameProvider: () => config.get<string>('hospitalName') ?? '菏泽市中医医院',
+        }),
+    },
     {
       provide: NotificationSecretCipher,
       inject: [ConfigService],
@@ -77,9 +97,12 @@ import { MonitorModule } from '../monitor/monitor.module';
     },
     {
       provide: NotificationRuleExecutor,
-      inject: [PrismaNotificationPushStore, NotificationPushService],
-      useFactory: (store: PrismaNotificationPushStore, push: NotificationPushService) =>
-        new NotificationRuleExecutor({ store, push }),
+      inject: [PrismaNotificationPushStore, NotificationPushService, AlertLinkIssuer],
+      useFactory: (
+        store: PrismaNotificationPushStore,
+        push: NotificationPushService,
+        alertLinks: AlertLinkIssuer,
+      ) => new NotificationRuleExecutor({ store, push, alertLinks }),
     },
   ],
   exports: [NotificationSecretCipher, NotificationsService],

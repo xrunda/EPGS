@@ -174,6 +174,18 @@ jobs:
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/security.e2e-spec.ts
 
+      # Issue #72: WeCom alert-link e2e suite against this same real Postgres -
+      # the opaque link token as the ONLY credential on /api/alert-links/*,
+      # the frozen-snapshot boundary (out-of-snapshot detail = 404), always-on
+      # name masking with the report body kept, expiry 410 vs unknown 401,
+      # the open counter, and that a link token can never reach the
+      # cookie-guarded workbench routes. Seeds only its own TEST-AL-* rows and
+      # deletes exactly those in afterAll (never wipes shared tables), so the
+      # seed-count step below still sees exactly the 17 seeded RED rules.
+      - name: Alert-link e2e suite (real Postgres)
+        working-directory: apps/api
+        run: pnpm exec jest --config ./test/jest-e2e.json test/alert-links.e2e-spec.ts
+
       # Issue #54: notification channel/template API + WeCom test-send e2e
       # suite against this same real Postgres - channel/template full
       # lifecycle, webhook masking, PUT-without-webhookUrl preserving the
@@ -230,11 +242,13 @@ jobs:
 
       - name: Roll back migration
         run: |
-          # Newest-first: #61's push-rule rollback precedes #53's notification
-          # rollback, which precedes #14's index rollback, which precedes the
-          # #13 -> #31 -> #3 chain, so the migration sequence is unwound in
-          # the same order it was applied (see docs/go-live.md §7.2 for the
-          # full runbook).
+          # Newest-first: #72's alert-link rollback precedes #61's push-rule
+          # rollback (alert_link has a FK to push_log, so it must go first),
+          # which precedes #53's notification rollback, which precedes #14's
+          # index rollback, which precedes the #13 -> #31 -> #3 chain, so the
+          # migration sequence is unwound in the same order it was applied
+          # (see docs/go-live.md §7.2 for the full runbook).
+          psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260905060000_add_alert_link/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260823055843_add_notification_push_rules/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260823032959_add_notification_channel_template/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821110858_add_monitor_record_patient_type_index/rollback.sql

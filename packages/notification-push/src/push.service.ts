@@ -1,9 +1,13 @@
 import { NotificationSecretCipher } from './notification-secret-cipher';
-import { WecomWebhookSender } from './wecom-webhook-sender';
+import { WecomWebhookError, WecomWebhookSender } from './wecom-webhook-sender';
 import { NotificationSummaryProvider } from './summary';
 import { NotificationPushStore } from './store';
 import { PushDeliveryOutcome } from './types';
 import { buildNotificationVariables, renderTemplate } from './render';
+import { AlertLinkCard } from './alert-link';
+
+/** Prefix on the WecomWebhookError raised when the cards fail AFTER the template message went out. */
+export const ALERT_CARDS_FAILED_PREFIX = '正文已发送，关注卡片发送失败: ';
 import {
   NotificationChannelDisabledError,
   NotificationChannelNotFoundError,
@@ -48,6 +52,12 @@ export interface PushToChannelInput {
   windowDate?: string;
   /** Department scope (empty = global), matching MonitorService.summary's contract. */
   scope?: string[];
+  /**
+   * Per-level alert cards (issue #72) to append as ONE extra `news` message
+   * right after the template message. Absent/empty = no second message (the
+   * api's test-send never passes cards, so it stays a single send).
+   */
+  alertCards?: AlertLinkCard[];
 }
 
 export class NotificationPushService {
@@ -90,6 +100,35 @@ export class NotificationPushService {
       coverImageUrl: template.coverImageUrl,
       linkUrl: template.linkUrl,
     });
+
+    const cards = input.alertCards ?? [];
+    if (cards.length > 0) {
+      // The template message is already delivered at this point. A card
+      // failure is surfaced as a WecomWebhookError whose message says so
+      // explicitly, so the delivery row reads "正文已发送，关注卡片发送失败"
+      // and an operator does not blindly re-push the (already sent) body.
+      try {
+        await sender.send(webhookUrl, {
+          articles: cards.map((card) => ({
+            title: card.title,
+            description: card.description,
+            url: card.url,
+          })),
+        });
+      } catch (error) {
+        if (error instanceof WecomWebhookError) {
+          throw new WecomWebhookError(
+            error.wecomErrCode,
+            `${ALERT_CARDS_FAILED_PREFIX}${error.wecomErrMsg}`,
+            error.httpStatus,
+          );
+        }
+        throw new WecomWebhookError(
+          0,
+          `${ALERT_CARDS_FAILED_PREFIX}${error instanceof Error ? error.message : 'unknown error'}`,
+        );
+      }
+    }
 
     return {
       success: true,

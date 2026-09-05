@@ -111,4 +111,15 @@ export const envValidationSchema = Joi.object({
   NOTIFICATION_SECRET_KEY: Joi.string().min(32).required(),
   HOSPITAL_NAME: Joi.string().default('菏泽市中医医院'),
   NOTIFICATION_TICK_SECONDS: Joi.number().integer().min(10).max(300).default(60),
+
+  // Issue #72: origin of the web app's /alert H5 page as WeCom clients reach
+  // it - MUST equal apps/api's value (the worker issues the links for
+  // scheduled runs, the api resolves them). Optional: unset/empty disables the
+  // alert-link cards rather than sending links that cannot be opened.
+  ALERT_LINK_BASE_URL: Joi.string()
+    .uri({ scheme: [/https?/] })
+    .allow('')
+    .optional(),
+  // Issue #72: link lifetime in hours (default 24, max a week).
+  ALERT_LINK_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
 });

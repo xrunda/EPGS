@@ -115,6 +115,18 @@ export interface PushDeliveryRecord {
   sentAt: string | null;
 }
 
+/**
+ * Outcome of issuing the per-level alert links for a run (issue #72).
+ * `issued` counts the cards (levels with >= 1 record); `error` is set when
+ * issuance threw - the run then proceeds WITHOUT cards (the template message
+ * is still pushed) and the caller logs the reason. Never contains patient
+ * data or tokens.
+ */
+export interface AlertLinksOutcome {
+  issued: number;
+  error: string | null;
+}
+
 /** Result of one rule execution (all channels). */
 export interface ExecuteRuleResult {
   /** True when the run was deduped (SCHEDULED + same rule/windowDate already ran). */
@@ -126,4 +138,6 @@ export interface ExecuteRuleResult {
   /** Aggregate outcome; null when alreadyPushed. */
   status: PushStatus | null;
   deliveries: PushDeliveryRecord[];
+  /** Alert-link issuance outcome; `{ issued: 0, error: null }` when disabled or alreadyPushed. */
+  alertLinks: AlertLinksOutcome;
 }

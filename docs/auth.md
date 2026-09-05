@@ -169,3 +169,64 @@ pnpm --filter @epgs/api auth:show-access --username doctor
 ```bash
 psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821103732_add_auth_access_and_audit_log/rollback.sql
 ```
+
+---
+
+# 预警链接受限凭证（Issue #72）
+
+企业微信推送在聚合文本之后追加红 / 黄 / 绿三张「查看患者列表」卡片（0 例的
+颜色不发）。点开卡片进入 web 的 `/alert` H5 页面，**无需登录**——这是本系统
+第一条不经账号密码的读取通道，因此它的权限模型与 `epgs_session` 完全隔离：
+
+## 凭证模型
+
+- **链接即凭证**：URL 形如 `<ALERT_LINK_BASE_URL>/alert?t=<token>`，token 是
+  32 字节随机数（base64url），**不是 JWT、不含任何声明**。页面把它作为
+  `Authorization: Bearer <token>` 发给 `/api/alert-links/*`，每次请求都按
+  SHA-256 哈希到 `alert_link.token_hash` 查库。数据库只存哈希，泄库拿不到可用
+  链接；日志、审计、异常里不会出现 token。
+- **不换发会话**：链接永远不会设置或读取 `epgs_session`，也不会进入
+  `RolesGuard`。`/api/alert-links` 控制器标记为 `@Public()`（跳过 Cookie 鉴权）
+  后由 `AlertLinkGuard` 单独把关，无法用链接进入工作台任何其他接口。
+- **快照即边界**：每条链接绑定推送那一刻该颜色的 `monitor_record.id` 列表
+  （`record_ids`）。列表接口只返回这些 id；详情接口对快照外的 id 一律
+  `404 MONITOR_RECORD_NOT_FOUND`（与 #13 越权即 404 的语义一致）。推送之后
+  新增或转色的患者**不会**出现在旧链接里（业务方决定：链接语义是"那次推送"）。
+- **有效期 24 小时、可重复打开、不限次数**（`ALERT_LINK_TTL_HOURS`）。不做
+  "用一次即焚"——医生手术 / 门诊期间大段时间不看手机，短时效会让点开即失效。
+  过期返回 `410 ALERT_LINK_EXPIRED`，无效 / 未知返回 `401 ALERT_LINK_INVALID`
+  （不区分是哪一种）。
+
+## 脱敏
+
+- 卡片、列表页：姓名脱敏为姓氏 + `*`（与 #13 `maskName` 相同），**保留床号与
+  科室**便于定位患者；不出现报告正文。
+- 详情页：姓名同样脱敏，报告内容 / 诊断 / 命中片段**保留**（这正是链接的目的）。
+  响应不带 `dataAccess.masked`——该标记的含义是"正文被隐去"，这里从不发生。
+- 页面常驻提示："关键词分级仅用于监测提示，不作为正式诊断"。
+
+## 审计与追踪
+
+打开链接的人没有 `AppRole` 身份，`audit_log`（`actor_role` 非空）无法落行；
+作为替代，`alert_link.open_count` / `last_opened_at` 在每次 `GET
+/api/alert-links/me` 时累加，可用于事后核对某条链接是否被打开、打开过多少次。
+若日后需要按次数告警，以此为基础扩展。
+
+## 接口
+
+| 方法  | 路径                             | 说明                                                        |
+| ----- | -------------------------------- | ----------------------------------------------------------- |
+| `GET` | `/api/alert-links/me`            | 解析 Bearer token：颜色、窗口日期、例数、有效期；计一次打开 |
+| `GET` | `/api/alert-links/me/exams`      | 快照内患者列表（姓名脱敏，无报告正文）                      |
+| `GET` | `/api/alert-links/me/exams/{id}` | 单条详情（姓名脱敏，含报告 / 诊断 / 命中证据）；快照外 404  |
+
+## 部署与回滚
+
+- `ALERT_LINK_BASE_URL` **必须在 api 与 worker 配置相同值**（worker 为定时推送
+  签发链接，api 负责解析）；未设置时不追加卡片，推送行为与之前完全一致。
+- 卡片发送失败但正文已发出时，该渠道记为 `FAILED`，`wecomErrMsg` 以
+  「正文已发送，关注卡片发送失败」开头，避免运维误判后重复补推正文。
+- 链接签发失败（例如写库异常）不会阻塞正文推送：worker 日志给出
+  `alert links were NOT issued`，运行结果照常记录。
+- 回滚：`psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260905060000_add_alert_link/rollback.sql`
+  （删除 `alert_link` 表，已发出的链接立即失效；先取消 `ALERT_LINK_BASE_URL`）。

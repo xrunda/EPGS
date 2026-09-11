@@ -261,6 +261,7 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
   - `apps/api/prisma/migrations/20260821103732_add_auth_access_and_audit_log/migration.sql`（issue #13 增加 `app_user_access`/`audit_log` 与 `AppRole`/`AuditAction` 枚举）
   - `apps/api/prisma/migrations/20260821110858_add_monitor_record_patient_type_index/migration.sql`（issue #14 为 `patient_type_code` 常用筛选补建 btree 索引）
   - `apps/api/prisma/migrations/20260823032959_add_notification_channel_template/migration.sql`（issue #52/#53 增加 `notification_channel`/`notification_template` 与 `NotificationMsgType` 枚举，并为既有 `AuditAction` 枚举追加 `NOTIFICATION_TEST_SEND` 值）
+  - `apps/api/prisma/migrations/20260911000000_add_user_admin_role_and_audit_actions/migration.sql`（issue #78/#79 为既有 `AppRole` 枚举追加 `USER_ADMIN` 值，为既有 `AuditAction` 枚举追加 `USER_CREATE`/`USER_ROLE_CHANGE`/`USER_DISABLE`/`USER_ENABLE`/`USER_DELETE`/`USER_PASSWORD_RESET` 六个值，不新建表）
 - 回滚脚本（Prisma Migrate 本身没有内建 down-migration 机制，回滚脚本需手动执行，
   详见脚本头部注释）：
   - `20260821040339_init_monitoring_schema/rollback.sql`
@@ -269,6 +270,7 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
   - `20260821103732_add_auth_access_and_audit_log/rollback.sql`（删除全部角色授权与审计日志）
   - `20260821110858_add_monitor_record_patient_type_index/rollback.sql`（删除 `patient_type_code` 索引，issue #14）
   - `20260823032959_add_notification_channel_template/rollback.sql`（删除两张新表与 `NotificationMsgType` 枚举可直接执行；`AuditAction` 追加值**不可**用 `DROP TYPE` 简单回滚——PostgreSQL 无 `ALTER TYPE ... DROP VALUE`，脚本头部注释给出了需要人工确认 `audit_log` 无该值记录后再执行的枚举重建 SQL，不自动执行）
+  - `20260911000000_add_user_admin_role_and_audit_actions/rollback.sql`（同样无表可删——`AppRole`/`AuditAction` 追加值均不可用 `DROP TYPE` 简单回滚，脚本头部注释给出需人工确认 `app_user_access`/`audit_log` 无该值记录后再执行的枚举重建 SQL，不自动执行）
 - **生产数据确认门（issue #26）**：`remove_closed_loop_readonly` 迁移开头包含
   PL/pgSQL 数据门禁——若 `monitor_action` 仍存在任何数据，或任意
   `monitor_record.handling_status <> 'PENDING'`，迁移会抛出异常并中止。

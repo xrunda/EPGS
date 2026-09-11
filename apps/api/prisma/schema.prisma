@@ -173,11 +173,15 @@ enum SyncJobStatus {
 /// RULE_ADMIN - manages monitor_rule keywords (still subject to data masking).
 /// SYSTEM_ADMIN - system operator; by default has NO patient detail rights.
 /// AUDITOR - read-only access to the audit log.
+/// USER_ADMIN - manages app_user accounts and app_user_access grants via the
+/// user-admin feature (issue #78); deliberately separate from SYSTEM_ADMIN so
+/// account/authorization management is not bundled with system-status access.
 enum AppRole {
   VIEWER
   RULE_ADMIN
   SYSTEM_ADMIN
   AUDITOR
+  USER_ADMIN
 }
 
 /// One audited operation. LOGIN is a reserved seam for issue #31 and has no
@@ -201,6 +205,16 @@ enum AuditAction {
   /// push_log table itself; only the manual trigger is a real outbound
   /// action by a person that needs an audit_log entry.
   NOTIFICATION_RULE_RUN
+  /// User-admin actions (issue #78/#79): account and access-grant writes
+  /// made through the new /api/users endpoints. Mirrors the existing manual
+  /// audit.record(...) call pattern used by RULE_CREATE/RULE_UPDATE - no
+  /// decorator/interceptor magic.
+  USER_CREATE
+  USER_ROLE_CHANGE
+  USER_DISABLE
+  USER_ENABLE
+  USER_DELETE
+  USER_PASSWORD_RESET
 }
 
 /// Message shape for a notification_template. Deliberately mirrors what the

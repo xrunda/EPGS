@@ -12,8 +12,17 @@
  * text, or credentials.
  */
 
-/** Application role assigned to a user via app_user_access (issue #13). */
-export type AppRoleDto = 'VIEWER' | 'RULE_ADMIN' | 'SYSTEM_ADMIN' | 'AUDITOR';
+/**
+ * Application role assigned to a user via app_user_access (issue #13).
+ * USER_ADMIN (issue #78/#79) manages app_user accounts and app_user_access
+ * grants via the user-admin feature, kept separate from SYSTEM_ADMIN.
+ */
+export type AppRoleDto =
+  | 'VIEWER'
+  | 'RULE_ADMIN'
+  | 'SYSTEM_ADMIN'
+  | 'AUDITOR'
+  | 'USER_ADMIN';
 
 /**
  * One audited operation. LOGIN is a reserved seam (issue #31) and currently
@@ -24,6 +33,9 @@ export type AppRoleDto = 'VIEWER' | 'RULE_ADMIN' | 'SYSTEM_ADMIN' | 'AUDITOR';
  * NOTIFICATION_RULE_RUN (issue: push rules) is a manual "run now" of a push
  * rule - scheduled runs have no operator, so their audit trail IS the
  * push_log rows and they never write audit_log.
+ * USER_CREATE/USER_ROLE_CHANGE/USER_DISABLE/USER_ENABLE/USER_DELETE/
+ * USER_PASSWORD_RESET (issue #78/#79) are account and access-grant writes
+ * made through the /api/users endpoints (issue #81).
  */
 export type AuditActionDto =
   | 'EXAM_LIST'
@@ -35,7 +47,13 @@ export type AuditActionDto =
   | 'AUDIT_VIEW'
   | 'LOGIN'
   | 'NOTIFICATION_TEST_SEND'
-  | 'NOTIFICATION_RULE_RUN';
+  | 'NOTIFICATION_RULE_RUN'
+  | 'USER_CREATE'
+  | 'USER_ROLE_CHANGE'
+  | 'USER_DISABLE'
+  | 'USER_ENABLE'
+  | 'USER_DELETE'
+  | 'USER_PASSWORD_RESET';
 
 /** One row of `GET /api/audit`. */
 export interface AuditLogDto {

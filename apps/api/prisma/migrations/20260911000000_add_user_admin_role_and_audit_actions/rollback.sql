@@ -1,0 +1,42 @@
+-- Rollback for add_user_admin_role_and_audit_actions (issue #78/#79).
+--
+-- PostgreSQL has no `ALTER TYPE ... DROP VALUE`. Removing the seven new
+-- enum values (AppRole.USER_ADMIN + six AuditAction values) requires
+-- rebuilding both enum types: create a new type without the value, repoint
+-- every column that uses it, drop the old type, rename the new one into
+-- place. This is only safe if NO row currently uses the value being
+-- dropped. Same pattern as the add_notification_push_rules rollback.
+--
+-- Before running, confirm no data depends on the new values:
+--
+--   SELECT count(*) FROM app_user_access WHERE 'USER_ADMIN' = ANY(roles);
+--   SELECT count(*) FROM audit_log WHERE action IN (
+--     'USER_CREATE', 'USER_ROLE_CHANGE', 'USER_DISABLE', 'USER_ENABLE',
+--     'USER_DELETE', 'USER_PASSWORD_RESET'
+--   );
+--
+-- Both must return 0 before proceeding. If either is non-zero, decide
+-- whether to delete those rows (losing data/audit history) or keep the
+-- enum values and skip this rollback.
+--
+-- 1. Rebuild AppRole without USER_ADMIN:
+--
+--      ALTER TYPE "AppRole" RENAME TO "AppRole_old";
+--      CREATE TYPE "AppRole" AS ENUM ('VIEWER', 'RULE_ADMIN', 'SYSTEM_ADMIN', 'AUDITOR');
+--      ALTER TABLE "app_user_access"
+--        ALTER COLUMN "roles" TYPE "AppRole"[] USING "roles"::text[]::"AppRole"[];
+--      ALTER TABLE "audit_log"
+--        ALTER COLUMN "actor_role" TYPE "AppRole" USING "actor_role"::text::"AppRole";
+--      DROP TYPE "AppRole_old";
+--
+-- 2. Rebuild AuditAction without the six USER_* values:
+--
+--      ALTER TYPE "AuditAction" RENAME TO "AuditAction_old";
+--      CREATE TYPE "AuditAction" AS ENUM (
+--        'EXAM_LIST', 'EXAM_DETAIL', 'RULE_CREATE', 'RULE_UPDATE',
+--        'RULE_IMPORT', 'CONFIG_CHANGE', 'AUDIT_VIEW', 'LOGIN',
+--        'NOTIFICATION_TEST_SEND', 'NOTIFICATION_RULE_RUN'
+--      );
+--      ALTER TABLE "audit_log"
+--        ALTER COLUMN "action" TYPE "AuditAction" USING "action"::text::"AuditAction";
+--      DROP TYPE "AuditAction_old";

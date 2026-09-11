@@ -66,6 +66,17 @@ describe('access CLI (issue #13)', () => {
     expect(deps.upsertAccess).not.toHaveBeenCalled();
   });
 
+  it('accepts USER_ADMIN (issue #78/#79 cold-start: bootstrapping the first Web-admin account)', async () => {
+    const deps = setup();
+    await runAccessCommand(
+      ['assign-access', '--username', 'admin', '--roles', 'USER_ADMIN'],
+      deps,
+    );
+    expect(deps.upsertAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ roles: ['USER_ADMIN'] }),
+    );
+  });
+
   it('rejects a missing --username', async () => {
     const deps = setup();
     await expect(runAccessCommand(['assign-access', '--roles', 'VIEWER'], deps)).rejects.toThrow(

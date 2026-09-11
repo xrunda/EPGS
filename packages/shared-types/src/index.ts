@@ -8,3 +8,4 @@ export * from './auth';
 export * from './notification';
 export * from './push-assistant';
 export * from './alert-link';
+export * from './users';

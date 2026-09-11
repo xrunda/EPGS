@@ -18,7 +18,18 @@ interface CliDependencies {
 
 export class AccessCliError extends Error {}
 
-const VALID_ROLES: readonly AppRole[] = ['VIEWER', 'RULE_ADMIN', 'SYSTEM_ADMIN', 'AUDITOR'];
+// USER_ADMIN (issue #78/#79) is included so this CLI can bootstrap the
+// first Web-admin account - see docs/auth.md's cold-start instructions.
+// Without it there is no way to grant USER_ADMIN at all (the Web UI itself
+// requires USER_ADMIN to reach), which would make the documented recovery
+// path a dead end.
+const VALID_ROLES: readonly AppRole[] = [
+  'VIEWER',
+  'RULE_ADMIN',
+  'SYSTEM_ADMIN',
+  'AUDITOR',
+  'USER_ADMIN',
+];
 
 interface ParsedArgs {
   command: Command;

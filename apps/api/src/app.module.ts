@@ -13,6 +13,7 @@ import { AccessModule } from './access/access.module';
 import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AlertLinksModule } from './alert-links/alert-links.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AlertLinksModule } from './alert-links/alert-links.module';
     AlertLinksModule,
     RulesModule,
     SystemModule,
+    UsersModule,
   ],
 })
 export class AppModule implements NestModule {

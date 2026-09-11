@@ -19,16 +19,19 @@ export interface AccessUser {
 
 /** Deterministic precedence for choosing the single "primary" role for audit. */
 const PRIMARY_ROLE_ORDER: Record<AppRole, number> = {
-  AUDITOR: 0,
-  SYSTEM_ADMIN: 1,
-  RULE_ADMIN: 2,
-  VIEWER: 3,
+  USER_ADMIN: 0,
+  AUDITOR: 1,
+  SYSTEM_ADMIN: 2,
+  RULE_ADMIN: 3,
+  VIEWER: 4,
 };
 
 /**
- * Returns the highest-privilege role from a user's role set (AUDITOR >
- * SYSTEM_ADMIN > RULE_ADMIN > VIEWER), used as the single `actorRole` on
- * audit rows. Returns null when the set is empty (audit then skips the row).
+ * Returns the highest-privilege role from a user's role set (USER_ADMIN >
+ * AUDITOR > SYSTEM_ADMIN > RULE_ADMIN > VIEWER), used as the single
+ * `actorRole` on audit rows. USER_ADMIN ranks highest because it can grant
+ * or revoke every other role, including itself. Returns null when the set is
+ * empty (audit then skips the row).
  */
 export function pickPrimaryRole(roles: AppRole[]): AppRole | null {
   if (roles.length === 0) return null;

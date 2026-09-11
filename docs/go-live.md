@@ -124,6 +124,15 @@ pnpm --filter @epgs/api auth:assign-access --username <现有管理员> \
 - [ ] **`--departments` 漏写 = 全院可见**（命令行会警告）：原账号若设过科室限制，
       不传该参数会**静默放宽到全院**。原账号有科室限制时，必须原样带上
       `--departments <原值,...>`。
+- [ ] **`--patient-detail` 漏写 = 静默降权**：该**不是**"保持原值"的三态开关，而是
+      `booleanFlags.has('--patient-detail')`——不传就是 `false`。原账号
+      `patient_detail = true`（不脱敏）时漏写，会被静默改成脱敏，现象是"某账号突然
+      看不到患者姓名"。原值为 `true` 时必须显式带上 `--patient-detail`。
+      `update` 分支是 `roles`／`departmentScope`／`patientDetail` **三个字段全量覆盖**，
+      没有"只改一个字段"的用法。
+- [ ] **选`assign-access` 目标账号的一个稳妥判据**：优先挑三个字段值恰好等于 CLI
+      默认值（`roles` 原样列出、`department_scope` 为空、`patient_detail = false`）
+      的账号——这样的命令物理上不可能改动任何现有授权，只会追加 `USER_ADMIN`。
 - [ ] 授权**无需重新登录**即对接口生效（`RolesGuard` 每次请求实时查库，
       `/api/auth/me` 同样实时返回）——但已打开的页面需要**刷新**才会重新拉
       `/me` 并渲染出入口按钮。
@@ -312,9 +321,15 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
 1. `git pull` 到包含 #85 的 main（本次批次末尾提交为 `507e6fd`）。
 2. env 预检输出应与 §9 部署时**逐字一致**（`ALERT_LINK_BASE_URL` 那行的开启/关闭
    状态不变）。出现新「错误」即停下。
-3. `prisma migrate deploy` 应新增应用 `20260911000000_add_user_admin_role_and_audit_actions`，
-   且**只打印 `ALTER TYPE` 语句**。若它试图 `CREATE TABLE` / `DROP` / 改字段，
-   立刻中断并排查（那不是本批次应有的内容）。已应用过则显示 "No pending migrations"。
+3. `prisma migrate deploy` 应新增应用 `20260911000000_add_user_admin_role_and_audit_actions`
+   （已应用过则显示 "No pending migrations"）。**注意 `migrate deploy` 只打印迁移
+   文件名、不回显 SQL**，所以"只有 `ALTER TYPE`、没建表"无法从输出直接确认——
+   改用下面的枚举查询事后核对（`AppRole` 应恰好 5 个值，且 `\dt` 的表清单不新增）：
+   ```bash
+   docker exec -i epgs-postgres psql -U epgs -d epgs -c \
+     "SELECT e.enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+       WHERE t.typname = 'AppRole' ORDER BY e.enumsortorder;"
+   ```
 4. **确认 Prisma Client 已按新枚举重新生成**（这是本批次唯一的构建期风险：
    `start.sh` 里没有显式 `prisma generate`，靠 `pnpm install` 的 `postinstall`
    触发；client 若没更新，`AppRole.USER_ADMIN` 在运行时是 `undefined`，
@@ -349,6 +364,12 @@ pnpm --filter @epgs/api auth:assign-access --username <管理员账号> \
 - [ ] **不传 `--departments` = 全院可见**（且命令行只给警告）：该账号原本设过科室
       限制的话，这一步会**静默放宽到全院**。原值非空时必须原样带回：
       `--departments <原值,...>`。
+- [ ] **不传 `--patient-detail` = 脱敏**：该参数不是"保持原值"，不传即写 `false`。
+      目标账号原值若为 `true`（不脱敏），漏写会把它**静默改成脱敏**。原值为 `true`
+      时必须显式带上 `--patient-detail`。
+- [ ] **挑目标账号**：优先选 `roles` 原样列出、`department_scope` 为空、
+      `patient_detail = false` 的账号（三个值都等于 CLI 默认值）——命令便不可能
+      改动任何现有授权，只会追加 `USER_ADMIN`。
 - [ ] 授权即时生效（每次请求实时查库）；已打开的页面**刷新**即可看到入口，
       不需要重新登录。
 - [ ] 立即用该账号登录验证：右上角出现「用户管理」，点开能看到列表且行数与

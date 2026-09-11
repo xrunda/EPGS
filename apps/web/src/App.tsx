@@ -3,6 +3,7 @@ import { AuthGate } from './AuthGate';
 import type { AuthUser } from './authApi';
 import { NotificationModal } from './NotificationModal';
 import { RulesModal } from './RulesModal';
+import { UsersModal } from './UsersModal';
 import { Workbench } from './Workbench';
 import { PushAssistantWidget } from './PushAssistantWidget';
 import './App.css';
@@ -24,6 +25,7 @@ function AuthenticatedApp({
   openChangePassword,
 }: AuthenticatedAppProps): JSX.Element {
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [usersOpen, setUsersOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   // The push-assistant「推送日志」link opens the notification modal straight on
   // its 日志 tab; a normal open lands on 渠道.
@@ -57,8 +59,13 @@ function AuthenticatedApp({
           </button>
         </div>
       </header>
-      <Workbench onOpenRules={() => setRulesOpen(true)} onOpenNotifications={() => openNotifications()} />
+      <Workbench
+        onOpenRules={() => setRulesOpen(true)}
+        onOpenNotifications={() => openNotifications()}
+        onOpenUsers={user.roles.includes('USER_ADMIN') ? () => setUsersOpen(true) : undefined}
+      />
       <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} actorId={user.username} />
+      <UsersModal open={usersOpen} onClose={() => setUsersOpen(false)} />
       <NotificationModal
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}

@@ -9,7 +9,11 @@ sync logic is implemented yet — those land in later issues (#2–#14).
 
 Product requirements and other working documents live outside this repository (`Doc/`
 is gitignored — it holds local-only PRDs, screenshots, and hospital-provided samples
-that must never reach a deployment target). Ask a maintainer for the current PRD.
+that must never reach a deployment target). Note that `Doc/PRD.md` is the V1.1
+requirements document from **before** the scope was narrowed: its
+reporting / daily-report / false-positive items were dropped by issue #26, so the
+current scope is defined by [docs/acceptance.md](./docs/acceptance.md) scenario 10.
+Documentation index: [docs/README.md](./docs/README.md).
 
 ## Architecture overview
 

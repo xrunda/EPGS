@@ -102,6 +102,34 @@ pnpm --filter @epgs/api auth:assign-access --username <账号> --roles SYSTEM_AD
 - [ ] 科室范围（`--departments`）与账号职责一致；为空 = 全部科室，需谨慎。
 - [ ] 无默认/写死账号密码（系统主动拒绝 `--password` 参数）。
 
+### 6.1 USER_ADMIN 冷启动（#78/#81，每次新环境必做）
+
+`SYSTEM_ADMIN` 与 `USER_ADMIN` 是**职责分离**的两个角色——`SYSTEM_ADMIN` 拿不到
+`/api/users/*`，Web 上的「用户管理」入口也**只对 `USER_ADMIN` 渲染**。所以新环境
+（或任何尚无 `USER_ADMIN` 的环境）部署完管理员模块后，**必须先用 CLI 给至少一个
+管理员账号追加 `USER_ADMIN`**，否则页面上根本看不到这个模块，且系统里没有任何
+人能新建第二个 `USER_ADMIN`。
+
+```bash
+# 1. 先看该账号当前角色，避免整表替换丢角色
+pnpm --filter @epgs/api auth:show-access --username <现有管理员>
+
+# 2. 带上"原有全部角色" + USER_ADMIN，一次写入
+pnpm --filter @epgs/api auth:assign-access --username <现有管理员> \
+  --roles SYSTEM_ADMIN,USER_ADMIN
+```
+
+- [ ] **`assign-access` 是整表替换**：`--roles` 必须列出该账号原有**全部**角色，
+      漏写即静默丢失（第 1 步的 `show-access` 就是为此）。
+- [ ] **`--departments` 漏写 = 全院可见**（命令行会警告）：原账号若设过科室限制，
+      不传该参数会**静默放宽到全院**。原账号有科室限制时，必须原样带上
+      `--departments <原值,...>`。
+- [ ] 授权**无需重新登录**即对接口生效（`RolesGuard` 每次请求实时查库，
+      `/api/auth/me` 同样实时返回）——但已打开的页面需要**刷新**才会重新拉
+      `/me` 并渲染出入口按钮。
+- [ ] 冷启动完成后立即用该账号登录验证：工作台右上角出现「用户管理」，
+      点开能看到账号列表。此后再新增 `USER_ADMIN` 一律走 Web 界面，不再用 CLI。
+
 ## 7. 上线回滚 runbook
 
 > 原则：**先回滚应用，再按需回滚数据库**。数据库迁移是链式的——要撤销某次迁移，
@@ -122,7 +150,9 @@ pnpm --filter @epgs/api auth:assign-access --username <账号> --roles SYSTEM_AD
 
 ### 7.2 数据库迁移回滚（新到旧）
 
-迁移链（新 → 旧，每个目录都自带 `rollback.sql`）：
+迁移链（新 → 旧，每个目录都自带 `rollback.sql`）。**下表记录的是截止 §9 批次
+（2026-09 推送增强）的链条**；其后的 `20260911000000_add_user_admin_role_and_audit_actions`
+（#83 管理员模块）比下表全部条目都新，回退说明见 §10.6。
 
 | 顺序 | 迁移目录                                                      | 回滚脚本作用                                                                                               |
 | ---- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -236,3 +266,150 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
 - 只关卡片：删 `ALERT_LINK_BASE_URL` → `bash start.sh nopull`（§7.1）。
 - 回退代码：revert 对应 PR 后重启；两张新表可留存不影响旧代码。
 - 回退数据库：§7.2 第 1、2 步（先 `alert_link`，再 `assistant_*`）。
+
+## 10. 发布记录：2026-09 管理员模块（#82 / #83 / #84 / #85）
+
+代码上线本身很轻：**一张迁移（只改枚举）、零新环境变量、零新依赖、零新静态资源**。
+真正的操作重点是 §10.4 的**冷启动**——不做的话模块上线了但没人能打开。
+
+### 10.1 变更清单
+
+| 来源 | 内容 | 数据库 | 配置 |
+| ---- | ---- | ------ | ---- |
+| #83 | `AppRole` 追加 `USER_ADMIN`；`AuditAction` 追加 6 个 `USER_*` 值 | `20260911000000_add_user_admin_role_and_audit_actions`（**仅 `ALTER TYPE ... ADD VALUE`**，无新表、无字段变更、不触碰任何现有行） | 无 |
+| #84 | `/api/users` 账号 CRUD / 启停 / 重置密码 / 授权读写，类级 `@RequireRoles(USER_ADMIN)` | 无 | 无 |
+| #85 | 工作台「用户管理」弹窗；入口按钮仅当 `/api/auth/me` 返回的角色含 `USER_ADMIN` 时渲染 | 无 | 无 |
+| #78/#79 | 设计文档、API 文档、`docs/auth.md` 角色表补 `USER_ADMIN` 行 | 无 | 无 |
+
+对照上一批（§9），**本批次不需要动 `.env`、不需要准备图片、`.env` 预检输出应与
+上次完全一致**——如果 `start.sh` 的 env 预检报出新错误，说明是环境被改动过，
+停下来查，不是本次部署引入的。
+
+### 10.2 部署前（在堡垒机上，执行 `start.sh` 之前）
+
+- [ ] **备份数据库**（§4）。本批次迁移只加枚举值、不删不改数据，但备份是常规动作。
+- [ ] 本节及 §10.5 的 `psql` 需要 `DATABASE_URL`。堡垒机的登录 shell 里通常没有
+      导出它（服务是由 `start.sh` 读 `apps/api/.env` 启动的），先取出来：
+      ```bash
+      cd <仓库根> && DATABASE_URL=$(grep -m1 '^DATABASE_URL=' apps/api/.env | cut -d= -f2- | tr -d '"')
+      ```
+- [ ] **盘点现有账号与授权**（决定 §10.4 冷启动挂到谁头上，也是"数据完整"的基线）：
+  ```bash
+  psql "$DATABASE_URL" -c 'SELECT u.username, u.display_name, u.is_active,
+      a.roles, a.department_scope, a.patient_detail
+    FROM app_user u LEFT JOIN app_user_access a ON a.username = u.username
+    ORDER BY u.created_at;'
+  ```
+  **把输出存档**（部署后要逐行对比，确认没有任何账号的角色/科室/脱敏被改动）。
+- [ ] 从上面结果里**选定一个管理员账号**作为首个 `USER_ADMIN`（建议现有
+      `SYSTEM_ADMIN` 账号），记下它当前的 `roles` 与 `department_scope` 原值。
+- [ ] 确认**没有任何账号的 `department_scope` 非空**、或已记下这些账号的科室原值。
+      非空的账号在 §10.4 和 §10.5 都要特别处理（见那里的警告）。
+- [ ] `apps/api/.env` / `apps/worker/.env` 无需改动（本批次无新环境变量）。
+
+### 10.3 部署（`bash start.sh`，脚本自动完成的步骤只需看输出）
+
+1. `git pull` 到包含 #85 的 main（本次批次末尾提交为 `507e6fd`）。
+2. env 预检输出应与 §9 部署时**逐字一致**（`ALERT_LINK_BASE_URL` 那行的开启/关闭
+   状态不变）。出现新「错误」即停下。
+3. `prisma migrate deploy` 应新增应用 `20260911000000_add_user_admin_role_and_audit_actions`，
+   且**只打印 `ALTER TYPE` 语句**。若它试图 `CREATE TABLE` / `DROP` / 改字段，
+   立刻中断并排查（那不是本批次应有的内容）。已应用过则显示 "No pending migrations"。
+4. **确认 Prisma Client 已按新枚举重新生成**（这是本批次唯一的构建期风险：
+   `start.sh` 里没有显式 `prisma generate`，靠 `pnpm install` 的 `postinstall`
+   触发；client 若没更新，`AppRole.USER_ADMIN` 在运行时是 `undefined`，
+   写授权会报数据库枚举错误）：
+   ```bash
+   # 应打印 "runtime AppRole.USER_ADMIN = USER_ADMIN"
+   # 打印 undefined 说明 client 是旧的（postinstall 没跑到），停下来先
+   # `pnpm --filter api exec prisma generate` 再重启，不要带着它上线。
+   # 用子 shell 以免改变当前目录，后面的步骤还依赖仓库根路径。
+   ( cd apps/api && node -e "const {AppRole}=require('@prisma/client'); console.log('runtime AppRole.USER_ADMIN =', AppRole.USER_ADMIN)" )
+   ```
+5. `pnpm --filter web run build` 完成后，产物应包含本批次的弹窗代码：
+   ```bash
+   grep -rl "用户管理" apps/web/dist/assets/ | head   # 应列出打包后的 JS
+   ```
+6. nginx reload 后：`curl -sI http://<入口>/` 为 200（SPA fallback 正常）。
+
+### 10.4 冷启动：授予首个 `USER_ADMIN`（**本批次的关键步骤**）
+
+页面上的「用户管理」入口**只对持有 `USER_ADMIN` 的账号渲染**，`SYSTEM_ADMIN`
+刻意拿不到它（职责分离，见 `docs/auth.md` 角色表）。所以刚部署完时，**所有人
+都看不到这个模块**，必须先用 CLI 打通第一个口子。完整注意事项见 §6.1。
+
+```bash
+# 用 §10.2 选定的账号替换 <管理员账号>
+pnpm --filter @epgs/api auth:show-access --username <管理员账号>   # 先看现有角色原值
+pnpm --filter @epgs/api auth:assign-access --username <管理员账号> \
+  --roles <原角色1>,<原角色2>,USER_ADMIN                          # 带上原有全部角色 + USER_ADMIN
+```
+
+- [ ] **`assign-access` 整表替换**：`--roles` 漏写的原有角色会被静默删除。
+- [ ] **不传 `--departments` = 全院可见**（且命令行只给警告）：该账号原本设过科室
+      限制的话，这一步会**静默放宽到全院**。原值非空时必须原样带回：
+      `--departments <原值,...>`。
+- [ ] 授权即时生效（每次请求实时查库）；已打开的页面**刷新**即可看到入口，
+      不需要重新登录。
+- [ ] 立即用该账号登录验证：右上角出现「用户管理」，点开能看到列表且行数与
+      §10.2 的盘点结果一致。
+
+### 10.5 部署后验证（24h 内）
+
+先做 §8 的常规项（`/health`、同步状态、脱敏抽查、审计写入），本批次额外确认：
+
+- [ ] **入口隔离**：换一个只有 `VIEWER`/`SYSTEM_ADMIN`（无 `USER_ADMIN`）的账号登录，
+      右上角**没有**「用户管理」按钮；直接调 `GET /api/users` 返回 `403`。
+- [ ] **建号闭环**：用 `USER_ADMIN` 账号新建一个测试账号（账号/显示名/密码两次），
+      保存后应**自动展开该账号的授权编辑区**；分配 `VIEWER` 保存。
+- [ ] **新账号可用**：用刚建的测试账号登录，能看到工作台监测列表（`VIEWER` 语义）。
+- [ ] **审计落库**：
+      ```bash
+      # 注意 action 是 AuditAction 枚举类型，LIKE 前必须显式转 text
+      psql "$DATABASE_URL" -c "SELECT action, actor_username, meta, created_at
+        FROM audit_log WHERE action::text LIKE 'USER_%' ORDER BY created_at DESC LIMIT 10;"
+      ```
+      应能看到 `USER_CREATE` / `USER_ROLE_CHANGE`，且 `meta` **不含任何密码或哈希**。
+- [ ] **最后管理员保护**：把唯一 `USER_ADMIN` 账号的角色取消 `USER_ADMIN` 后保存，
+      应返回 `409 LAST_USER_ADMIN_PROTECTED` 并被界面拦住（禁用/删除同一账号同样被拦）。
+      **先决条件**：做这条之前，§10.4 的冷启动账号之外**再授予第二个账号
+      `USER_ADMIN`**。守卫本身是 fail-closed 的（请求被拒、数据不变），但万一它
+      失效，唯一管理员会被自己锁在门外、只能回堡垒机用 CLI 救——两个管理员时
+      最坏情况也只是自己丢权限，另一个账号还能进 Web 改回来。验证完把角色改回去。
+- [ ] **回归：老账号授权未被改动**——重新执行 §10.2 的盘点 SQL，与存档逐行对比：
+      `roles`、`department_scope`、`patient_detail` 三项必须与部署前完全一致。
+      这是"线上数据完整"的直接证据。
+- [ ] **回归：科室限制未被放宽**——若盘点里有 `department_scope` 非空的账号，
+      在 Web 上给它改一次角色并保存，再查一次库：`department_scope` 应**保持原值
+      不变**（这是 #81 修复的行为，界面不显示该字段但也不会覆盖它）；若有账号被
+      意外放宽到 `{}`，立即用 CLI 按原值 `--departments` 改回。
+- [ ] **回归：脱敏未被打乱**——抽查一个 `patient_detail = false` 的账号，
+      监测详情仍脱敏（响应带 `dataAccess.masked`）。
+- [ ] **删除联动**：删除 §10.5 建的测试账号，确认 `app_user` 与 `app_user_access`
+      两行同时消失，不留孤儿授权行：
+      ```bash
+      psql "$DATABASE_URL" -c "SELECT count(*) FROM app_user_access a
+        WHERE NOT EXISTS (SELECT 1 FROM app_user u WHERE u.username = a.username);"
+      ```
+      应为 `0`。
+
+### 10.6 回退
+
+- **首选：只回退应用**。`revert` #85/#84 对应提交后 `bash start.sh nopull`。
+  **数据库不用动**：#83 迁移只是在两个枚举类型上追加了值，旧代码从不引用它们，
+  留在库里完全无害（本批次没有新表、没有字段变更，因此不存在"新旧 schema 不兼容"）。
+- **不要回退 #83 的枚举迁移**。PostgreSQL 没有 `ALTER TYPE ... DROP VALUE`，
+  撤销需要重建枚举类型并重指两个表的列，且有数据时不可逆。**没有任何理由做这件事**
+  ——枚举值冗余存在不影响任何功能。
+- 若确实需要（例如必须让 `AppRole` 回到四个值），按
+  `apps/api/prisma/migrations/20260911000000_add_user_admin_role_and_audit_actions/rollback.sql`
+  头部的手工 SQL 执行，**执行前必须先确认无数据引用**：
+  ```bash
+  psql "$DATABASE_URL" -c "SELECT count(*) FROM app_user_access WHERE 'USER_ADMIN' = ANY(roles);"
+  psql "$DATABASE_URL" -c "SELECT count(*) FROM audit_log WHERE action IN
+    ('USER_CREATE','USER_ROLE_CHANGE','USER_DISABLE','USER_ENABLE','USER_DELETE','USER_PASSWORD_RESET');"
+  ```
+  两者都必须为 `0`，否则要么删掉这些行（丢失账号授权/审计历史），要么放弃回退。
+- **功能级降级（推荐给"只想先关掉这个模块再排查"的场景）**：回退应用即可——入口
+  按钮随新前端一起消失，`/api/users` 随新后端一起消失。已授予的 `USER_ADMIN`
+  角色留在库里，下次重新部署即恢复，无需重新冷启动。

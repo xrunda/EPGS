@@ -129,7 +129,15 @@ MONITOR_RECORD_NOT_FOUND`（而非 403），不暴露该记录存在。
 
 `app_user_access`（按 `username` 主键）保存角色、科室范围与患者详情授权，不依赖
 `app_user` 存在与否。创建/重置账号（#31）后必须分配授权，否则登录后角色受限
-接口全部 403：
+接口全部 403。
+
+**日常操作（issue #78/#81 起）**：持有 `USER_ADMIN` 角色的账号可直接通过
+`/api/users` 系列接口（见 `docs/user-admin-api.md`）完成账号创建、启停、
+重置密码、授权分配——不再需要登录应用服务器执行 CLI。
+
+**CLI 仍保留**，作为 Web 不可用时的紧急止血手段，以及首个 `USER_ADMIN` 账号
+的冷启动（Web 页面本身需要 `USER_ADMIN` 才能访问，第一个该角色只能靠 CLI
+授予）：
 
 ```bash
 # 给 doctor 分配“查看者”角色，限定消化内科与呼吸内科
@@ -145,6 +153,11 @@ pnpm --filter @epgs/api auth:show-access --username doctor
 - 未指定 `--departments` 时命令行会**大声警告**“该用户将拥有全部科室的访问范围”。
 - `assign-access` 整表替换该账号的授权；`show-access` 无记录时非零退出。
 - 授权即时生效，无需重新登录：每次请求都从数据库读取（不缓存）。
+- **科室范围收窄（issue #78）**：Web 页面与 `/api/users` 接口不提供科室范围
+  编辑入口，写入的 `departmentScope` 恒为空数组（全院可见）。CLI 的
+  `--departments` 参数仍然存在（数据库字段未删除），但 Web 场景下不再使用；
+  两条路径都能写这张表，混用可能导致授权状态相互覆盖，建议日常操作统一走
+  Web，CLI 仅用于兜底。
 
 ## 审计日志
 

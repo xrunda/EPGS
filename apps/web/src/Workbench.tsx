@@ -16,6 +16,8 @@ interface WorkbenchProps {
   onOpenRules: () => void;
   /** Opens the notification-configuration modal (owned by App). Optional for compat. */
   onOpenNotifications?: () => void;
+  /** Opens the user-management modal (owned by App). undefined when the current user lacks USER_ADMIN - button hidden (server still enforces via RolesGuard). */
+  onOpenUsers?: () => void;
 }
 
 interface WorkbenchFilters {
@@ -179,6 +181,7 @@ function friendlyError(error: unknown): string {
 export function Workbench({
   onOpenRules,
   onOpenNotifications,
+  onOpenUsers,
 }: WorkbenchProps): JSX.Element {
   const [items, setItems] = useState<MonitorExamDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -356,6 +359,11 @@ export function Workbench({
           {onOpenNotifications && (
             <button className="button" type="button" onClick={onOpenNotifications}>
               消息推送
+            </button>
+          )}
+          {onOpenUsers && (
+            <button className="button" type="button" onClick={onOpenUsers}>
+              用户管理
             </button>
           )}
         </div>

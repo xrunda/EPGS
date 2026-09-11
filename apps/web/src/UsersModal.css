@@ -1,0 +1,250 @@
+/* 用户管理弹窗 chrome（issue #78/#82）。
+   共享原语（.button / .icon-button / .feedback--* / .switch-row /
+   .panel-* / .rules-table / .rules-pagination / .rules-state / .rule-editor /
+   .status / .readonly-label / .table-actions）定义于 RulesModal.css，
+   经 App.tsx 引入 RulesModal 模块副作用全局生效——本文件只定义 .users-*
+   命名空间，不复定义任何共享类。 */
+
+.users-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 31, 34, 0.58);
+  backdrop-filter: blur(3px);
+  animation: users-backdrop-in var(--dur-base) var(--ease-out);
+}
+
+.users-modal {
+  width: min(1240px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  outline: none;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-lg);
+  animation: users-modal-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes users-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes users-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+.users-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 28px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.users-modal__header h2 {
+  margin: 2px 0 0;
+  color: var(--ink-800);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.users-modal__eyebrow {
+  margin: 0;
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.users-modal__notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 28px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--teal-600);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: #eaf4f5;
+  color: #315b62;
+  font-size: 13px;
+}
+.users-modal__notice span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid #70a7b1;
+  border-radius: 50%;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.users-modal__notice p {
+  margin: 0;
+}
+
+.users-filters {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) 140px auto;
+  gap: 14px;
+  align-items: end;
+  padding: 20px 28px;
+}
+.users-filters label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-400);
+  font-size: 13px;
+  font-weight: 600;
+}
+.users-filters__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.users-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px 12px;
+}
+.users-toolbar p {
+  margin: 0;
+  color: var(--ink-300);
+  font-size: 13px;
+}
+.users-toolbar strong {
+  color: var(--ink-800);
+}
+
+.users-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-top: 1px solid var(--border-subtle);
+}
+.users-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  background: #fff;
+}
+.users-table__time {
+  color: #687b7e;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.users-roles {
+  color: #334b4f;
+}
+.table-actions__danger {
+  color: #b23c34 !important;
+}
+
+.users-role-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.users-warning {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--yellow-tint);
+  color: var(--yellow-ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.users-warning--info {
+  background: #eaf4f5;
+  color: #315b62;
+}
+
+.users-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 31, 34, 0.58);
+  backdrop-filter: blur(3px);
+}
+.users-confirm {
+  width: min(420px, 100%);
+  padding: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-lg);
+}
+.users-confirm h3 {
+  margin: 0 0 10px;
+  color: var(--ink-800);
+}
+.users-confirm p {
+  margin: 0;
+  color: var(--ink-500);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.button--danger {
+  border-color: #b23c34;
+  background: #b23c34;
+  color: #fff;
+}
+.button--danger:hover:not(:disabled) {
+  border-color: #8f2f29;
+  background: #8f2f29;
+}
+
+@media (max-width: 900px) {
+  .users-backdrop {
+    padding: 0;
+  }
+  .users-modal {
+    width: 100%;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+  .users-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+  .users-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .users-modal__header,
+  .users-filters,
+  .users-toolbar {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .users-modal__notice {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+  .users-filters {
+    grid-template-columns: 1fr;
+  }
+  .users-toolbar {
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .users-backdrop,
+  .users-modal {
+    animation: none;
+  }
+}

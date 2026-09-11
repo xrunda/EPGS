@@ -70,6 +70,9 @@ function defaultResponse(url: string): Promise<Response> {
   if (url.includes('/api/notification-templates')) {
     return Promise.resolve(jsonResponse({ items: [], total: 0, page: 1, pageSize: 20 }));
   }
+  if (url.includes('/api/users')) {
+    return Promise.resolve(jsonResponse({ items: [], total: 0, page: 1, pageSize: 20 }));
+  }
   return Promise.resolve(jsonResponse({ error: { message: '未知请求' } }, 404));
 }
 
@@ -122,6 +125,35 @@ describe('App', () => {
     expect(screen.getByRole('dialog', { name: '监测规则配置' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
     expect(await screen.findByText('没有符合条件的监测规则')).toBeInTheDocument();
+  });
+
+  it('hides the user-management entry for a user without USER_ADMIN', async () => {
+    render(<App />);
+    await screen.findByText('测试患者甲');
+
+    expect(screen.queryByRole('button', { name: '用户管理' })).not.toBeInTheDocument();
+  });
+
+  it('shows and opens user management for a USER_ADMIN account', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(
+            jsonResponse({ user: { ...authUser, roles: ['USER_ADMIN'] } }),
+          );
+        }
+        return defaultResponse(url);
+      }),
+    );
+    render(<App />);
+    await screen.findByText('测试患者甲');
+
+    fireEvent.click(screen.getByRole('button', { name: '用户管理' }));
+
+    expect(screen.getByRole('dialog', { name: '用户管理' })).toBeInTheDocument();
+    expect(await screen.findByText('没有符合条件的账号')).toBeInTheDocument();
   });
 
   it('shows password and logout actions for the current user', async () => {

@@ -66,10 +66,15 @@ export type SemanticConfidence = 'HIGH' | 'MEDIUM' | 'LOW';
 
 /**
  * Which AI task produced a judgement. Mirrors Prisma enum `SemanticTask`.
- * #88's report-classification task will add its own value when it lands; #87
- * owns only VALIDATE_MATCH.
+ *
+ *   VALIDATE_MATCH  #87 - judge the local context of ONE keyword hit, and decide
+ *                   whether it still counts. Implemented in validate-match.ts.
+ *   CLASSIFY_REPORT #88 - read a WHOLE report and match it against the
+ *                   hospital's attention semantics. Implemented in
+ *                   classify-report.ts. Additive only: it can never remove a
+ *                   hit or lower a level.
  */
-export type SemanticTask = 'VALIDATE_MATCH';
+export type SemanticTask = 'VALIDATE_MATCH' | 'CLASSIFY_REPORT';
 
 /** Runtime list of every SemanticStatus, for strict wire-value validation. */
 export const SEMANTIC_STATUSES: readonly SemanticStatus[] = [

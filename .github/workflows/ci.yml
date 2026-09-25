@@ -147,6 +147,20 @@ jobs:
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/rules.e2e-spec.ts
 
+      # Issue #88: attention-semantic configuration e2e suite against this
+      # same real Postgres - the versioned-edit rule (a wording/colour change
+      # creates a NEW row and disables the old one, so a historical AI finding
+      # still resolves to the meaning that was in force), the optimistic-lock
+      # 409s for both a superseded-row edit and a stale in-place edit, the
+      # duplicate-name 409, the illegal-level/blank-field 400s, the
+      # explicit-only-and-idempotent preset load, and the RULE_ADMIN/VIEWER
+      # write boundary. Wipes attention_semantic in beforeEach and its own test
+      # users in afterAll, so the seed-count step below still sees exactly the
+      # 17 seeded RED rules.
+      - name: Attention semantics API e2e suite (real Postgres)
+        working-directory: apps/api
+        run: pnpm exec jest --config ./test/jest-e2e.json test/attention-semantics.e2e-spec.ts
+
       # Issue #7: monitor workbench API e2e suite against this same real
       # Postgres instance - covers combined filters, cross-day Asia/Shanghai
       # boundaries, exact day edges, nulls, stable pagination, invalid-param
@@ -242,17 +256,21 @@ jobs:
 
       - name: Roll back migration
         run: |
-          # Newest-first: #87's semantic-judge rollback must come first, and
-          # not only because it is the newest migration - monitor_match_semantic
-          # has an FK to monitor_match, and the #3 rollback below drops
-          # monitor_match WITHOUT CASCADE, so leaving #87's table in place makes
-          # that statement fail outright. Then #72's alert-link rollback
+          # Newest-first: #88's report-classify rollback comes first (its
+          # monitor_report_ai table has an FK to monitor_record, and it must
+          # release the AttentionLevel type before #87's rollback runs), then
+          # #87's semantic-judge rollback, which must also precede the #3
+          # rollback below - monitor_match_semantic has an FK to monitor_match,
+          # and the #3 rollback drops monitor_match WITHOUT CASCADE, so leaving
+          # #87's table in place makes that statement fail outright. Then #72's
+          # alert-link rollback
           # (alert_link has a FK to push_log, so it must precede the push-rule
           # rollback), then #70's push-assistant rollback (standalone tables),
           # then #61's push-rule rollback, #53's notification rollback, #14's
           # index rollback, and the #13 -> #31 -> #3 chain, so the migration
           # sequence is unwound in the same order it was applied (see
           # docs/go-live.md §7.2 for the full runbook).
+          psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260926000000_add_ai_report_classify/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260925000000_add_semantic_judge/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260905060000_add_alert_link/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260903000000_add_push_assistant/rollback.sql

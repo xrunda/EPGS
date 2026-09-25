@@ -12,11 +12,18 @@
  * back to the rule version that produced it. See
  * apps/api/prisma/schema.prisma and docs/data-dictionary.md for the
  * authoritative field-level documentation.
+ *
+ * Issue #87 adds three fields to the hit row (`semanticFiltered` + the
+ * `semantic` verdict) describing whether an AI judged the hit to be a real
+ * expression of the rule's intent. This is NOT the closed-loop status the
+ * #26 model forbids: it says nothing about whether anyone read, acknowledged
+ * or handled the report. The raw hit is still always present and its
+ * deterministic `level` is unchanged.
  */
 
-import { MatchFieldDto, MonitorLevelDto } from './rules';
+import { MatchFieldDto, MonitorLevelDto, SemanticConfidenceDto, SemanticStatusDto } from './rules';
 
-export type { MatchFieldDto, MonitorLevelDto };
+export type { MatchFieldDto, MonitorLevelDto, SemanticConfidenceDto, SemanticStatusDto };
 
 /**
  * Patient type as shown in the workbench: the source code (PAADM_Type raw
@@ -79,6 +86,45 @@ export interface MonitorExamHitDto {
   contextSnippet: string | null;
   /** ISO 8601 UTC instant. */
   matchedAt: string;
+  /**
+   * Issue #87: true = this hit was judged NOT to express the rule's
+   * `semanticIntent`, so it does not count as an effective attention result -
+   * it is excluded from `MonitorExamDto.matchedKeywords`, from the keyword
+   * filter, from the push keyword counts, and from the record's
+   * `monitorLevel`. The hit row itself is never hidden or deleted (the raw
+   * keyword evidence is permanent); the detail drawer shows it with a
+   * "未计入关注" annotation.
+   *
+   * `level` is deliberately NOT adjusted: it stays the deterministic keyword
+   * level, so the workbench never implies the model classified anything.
+   */
+  semanticFiltered: boolean;
+  /** Issue #87: the current AI verdict, or null when the hit was never judged. */
+  semantic: MonitorHitSemanticDto | null;
+}
+
+/**
+ * Issue #87: the newest AI judgement on a hit. Present only when the model
+ * actually returned a usable verdict - a hit that was never judged (no
+ * `semanticIntent`, judge disabled) or whose last attempt failed has
+ * `semantic: null`, and in both cases the hit stands.
+ *
+ * `status`/`confidence` are the model's OPINION; `semanticFiltered` on the hit
+ * is the DECISION, which deterministic code makes. They can disagree in one
+ * direction only: a NEGATED verdict at MEDIUM/LOW confidence leaves
+ * `semanticFiltered` false.
+ */
+export interface MonitorHitSemanticDto {
+  status: SemanticStatusDto;
+  confidence: SemanticConfidenceDto;
+  /**
+   * The model's own one-sentence explanation, in Chinese. Nulled when the
+   * server masks HIGH-sensitivity fields (issue #13) - the model may quote the
+   * report body into it, so it is report-adjacent text.
+   */
+  reason: string | null;
+  /** ISO 8601 UTC instant of the call that produced this verdict. */
+  judgedAt: string;
 }
 
 /**

@@ -159,6 +159,60 @@ enum MatchMode {
   REGEX
 }
 
+/// Issue #87: what the AI semantic judge concluded about the LOCAL CONTEXT a
+/// keyword hit sits in. This is a statement about the report text only - it is
+/// NOT a clinical judgement and NOT a monitor level. The monitor level
+/// (monitor_match.level / monitor_record.current_level) continues to come from
+/// the deterministic keyword rule and is never set by the model.
+///   PRESENT   本次明确存在          -> keep the keyword hit
+///   NEGATED   明确否定              -> filterable only at HIGH confidence
+///   SUSPECTED 疑似/考虑/不能除外    -> keep
+///   HISTORY   仅为既往史/背景描述   -> filterable only at HIGH confidence AND
+///                                     when the rule's semanticIntent
+///                                     explicitly excludes history
+///   UNCERTAIN 无法可靠判断          -> keep
+/// NULL on monitor_match means "no verdict yet" - see semanticResolvedAt.
+enum SemanticStatus {
+  PRESENT
+  NEGATED
+  SUSPECTED
+  HISTORY
+  UNCERTAIN
+}
+
+/// Issue #87: the model's self-reported confidence in `semantic_status`.
+/// Only HIGH ever authorizes filtering (see the disposition matrix in
+/// packages/ai-semantic/src/decision.ts) - MEDIUM/LOW always keep the
+/// original keyword hit, so a hedged model can never silently drop a hit.
+enum SemanticConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+/// Issue #87: outcome of ONE AI semantic judge attempt, i.e. the audit verdict
+/// on the CALL itself rather than on the report text.
+///   OK    模型返回了 schema 合法、evidence 可回指原文的结果
+///   ERROR 超时/网络/非法 JSON/schema 失败/未知枚举等任何失败 - always
+///         fail-open to the original keyword result
+/// A "skipped" case (rule has no semanticIntent, or the judge is disabled)
+/// deliberately writes NO audit row - no model call means no AI decision to
+/// audit, and "why wasn't this judged" is deterministically answerable from
+/// monitor_rule.semantic_intent IS NULL. Such matches are still marked
+/// resolved so the queue drains (see MonitorMatch.semanticResolvedAt).
+enum SemanticJudgeOutcome {
+  OK
+  ERROR
+}
+
+/// Issue #87: which AI task produced an audit row. VALIDATE_MATCH is the only
+/// value implemented today. Issue #88's "Classify Report" task will add its own
+/// value (and its own table shape) when it lands - do not add values here
+/// without that task's implementation and tests.
+enum SemanticTask {
+  VALIDATE_MATCH
+}
+
 /// Outcome status of one sync_job_log run.
 enum SyncJobStatus {
   RUNNING
@@ -276,6 +330,24 @@ model MonitorRule {
 
   /// How the keyword is compared against report text.
   matchMode MatchMode @default(CONTAINS) @map("match_mode")
+
+  /// Issue #87: the doctor's own words for "what this keyword is meant to
+  /// catch", e.g. "本次检查明确发现或疑似存在溃疡性病变；明确否定、单纯既往史
+  /// 不作为本次有效命中。" Read by the AI semantic judge (Validate Match task)
+  /// as the intent it validates a hit against - it NEVER changes keyword
+  /// matching itself.
+  ///
+  /// NULL/empty means "not configured": such rules are skipped by the judge
+  /// entirely (no model call), so a rule without an intent behaves exactly
+  /// like it did before #87.
+  ///
+  /// Included in the versioned-edit set (see rules.service.ts
+  /// SEMANTIC_FIELDS): editing it creates a NEW MonitorRule row and disables
+  /// the old one, so a historical monitor_match row keeps pointing at the
+  /// exact intent text that was in force when the AI judged it. Editing it in
+  /// place would retroactively rewrite what past judgments appear to have
+  /// used - which is exactly what the audit trail must not allow.
+  semanticIntent String? @map("semantic_intent") @db.Text
 
   /// Optional grouping label, e.g. department or tumor-site category, for
   /// workbench filtering and rule-set curation. Free text, not an FK.
@@ -448,6 +520,13 @@ model MonitorRecord {
 ///
 /// Idempotency: re-matching the same report version must not duplicate a
 /// previously recorded hit - see the @@unique constraint below.
+///
+/// NOTE (issue #87): the judge's queue index is a hand-written PARTIAL index
+/// `uq_monitor_match_semantic_queue` ON (semantic_claimed_at, id) WHERE
+/// semantic_resolved_at IS NULL - Prisma @@index cannot express a WHERE
+/// clause, so it is NOT representable here. If `prisma migrate dev` ever
+/// proposes dropping it as drift, re-apply it by hand (same caveat as
+/// PushLog's uq_push_log_scheduled_dedup).
 model MonitorMatch {
   id String @id @default(uuid()) @db.Uuid
 
@@ -481,6 +560,69 @@ model MonitorMatch {
 
   matchedAt DateTime @default(now()) @map("matched_at") @db.Timestamptz(6)
 
+  // --- Issue #87: AI semantic judgement of THIS hit ------------------------
+  //
+  // These columns are ADDITIVE. The keyword evidence above (keyword / level /
+  // matchedField / contextSnippet / matchedAt) is the immutable record of what
+  // the DETERMINISTIC engine found and is never rewritten by the AI path. The
+  // AI judgement lives in its own audit table (MonitorMatchSemantic, one row
+  // per attempt); the columns below are only the CURRENT verdict denormalized
+  // onto the match so that (a) the effective-level query is a single indexed
+  // GROUP BY and (b) the workbench detail can show the verdict without a join.
+  //
+  // SEMANTICS ARE INTENTIONALLY ONE-SIDED: `semanticFiltered` may only ever be
+  // set to true by packages/ai-semantic's decision matrix (NEGATED+HIGH, or
+  // HISTORY+HIGH with an intent that excludes history). Every failure mode -
+  // model error, timeout, unparseable output, unverifiable evidence, LOW/
+  // MEDIUM confidence, unknown enum, judge disabled - leaves it at its default
+  // `false`, i.e. the original keyword hit stands. There is no code path that
+  // can turn a failure into a filter.
+
+  /// Anchor occurrence this judgement was made on: start offset (inclusive,
+  /// UTF-16 code unit index) into the ORIGINAL field text identified by
+  /// matchedField. NULL for rows written before #87 (or when matching produced
+  /// no usable offset) - the judge then re-derives occurrences from the rule +
+  /// report text instead. Note the row is per (record, rule, field, version),
+  /// so a keyword occurring several times keeps only ONE row (see the dedup
+  /// constraint below); sibling occurrences are re-derived and folded into the
+  /// same context window rather than being stored here.
+  matchStart Int? @map("match_start")
+
+  /// Exclusive end offset of the anchor occurrence (see matchStart).
+  matchEnd Int? @map("match_end")
+
+  /// Latest model verdict (NULL = not judged yet, or a rule with no
+  /// semanticIntent). Denormalized from the newest OK MonitorMatchSemantic row.
+  semanticStatus SemanticStatus? @map("semantic_status")
+
+  /// Latest model confidence, denormalized alongside semanticStatus.
+  semanticConfidence SemanticConfidence? @map("semantic_confidence")
+
+  /// The DECISION, not the model's opinion: true = this hit must not count as
+  /// an effective attention result (excluded from monitor_record.current_level
+  /// and from every effective-hit read path). Only ever set by deterministic
+  /// code. Default false = the original keyword hit stands.
+  semanticFiltered Boolean @default(false) @map("semantic_filtered")
+
+  /// When this match's semantic judgement reached a TERMINAL state and left the
+  /// judge queue. Set for OK, ERROR, and for "skipped because the rule has no
+  /// semanticIntent" alike - the queue is defined as `semantic_resolved_at IS
+  /// NULL`, so this column (not a status) is what drains it. NULL = still
+  /// pending. Never cleared once set (no automatic re-judging; use the
+  /// semantic:once CLI with --rejudge for a deliberate re-run).
+  semanticResolvedAt DateTime? @map("semantic_resolved_at") @db.Timestamptz(6)
+
+  /// Optimistic claim lease: when a judge worker picked this row up. Combined
+  /// with semanticAttempts to let a crashed worker's claims expire (see
+  /// SemanticJudgeStore.claimBatch).
+  semanticClaimedAt DateTime? @map("semantic_claimed_at") @db.Timestamptz(6)
+
+  /// Number of judge attempts spent on this row, incremented at claim time.
+  /// Bounded by config so a poison row cannot consume model calls forever.
+  semanticAttempts Int @default(0) @map("semantic_attempts")
+
+  semanticJudgements MonitorMatchSemantic[]
+
   /// Idempotency guard: the same rule hitting the same keyword/field on the
   /// same report version of the same record must not be recorded twice.
   @@unique([monitorRecordId, ruleId, matchedField, keyword, reportVersion], name: "uq_monitor_match_dedup")
@@ -488,7 +630,146 @@ model MonitorMatch {
   @@index([ruleId])
   @@index([level])
   @@index([matchedAt])
+  /// Effective-hit reads (workbench list/detail, keyword filter, push summary)
+  /// all filter on semantic_filtered = false, so it leads this composite.
+  @@index([monitorRecordId, semanticFiltered])
   @@map("monitor_match")
+}
+
+// ---------------------------------------------------------------------------
+// monitor_match_semantic - AI judgement audit trail (issue #87, append-only)
+// ---------------------------------------------------------------------------
+
+/// One AI semantic judge ATTEMPT against one MonitorMatch (issue #87).
+/// Append-only: rows are never updated or deleted, and one match may have
+/// several (a retry after a timeout has its own row). The current verdict is
+/// denormalized onto MonitorMatch; this table is the audit trail that explains
+/// HOW that verdict was reached.
+///
+/// PRIVACY (owner decision, 2026-09-25): the raw report text sent to the model
+/// is NOT stored here - neither the prompt, nor the context window, nor the
+/// model's raw response, nor the `evidence` excerpt verbatim. What is stored is
+/// everything needed to (a) prove a check happened and (b) recompute it:
+/// content hashes plus the exact offsets into monitor_record's report body
+/// (which is already stored, and already gated behind patientDetail rights).
+/// `reason` is the model's own explanatory sentence, kept because the issue
+/// requires the judgement to be explainable; it is length-bounded and nulled
+/// for masked callers. The raw response is discarded once parsed, and `error`
+/// records only a machine code + HTTP status - never model output, which could
+/// echo the report body back.
+///
+/// Retention follows its parent match (onDelete: Cascade).
+model MonitorMatchSemantic {
+  id String @id @default(uuid()) @db.Uuid
+
+  matchId String       @map("match_id") @db.Uuid
+  match   MonitorMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  /// Which task produced this row (issue #87 = VALIDATE_MATCH).
+  task SemanticTask
+
+  /// Version of the task's prompt/contract, from PROMPT_VERSION in
+  /// packages/ai-semantic. Bumped whenever the prompt or output schema changes,
+  /// so an old judgement is always attributable to the exact contract that
+  /// produced it.
+  taskVersion String @map("task_version") @db.VarChar(50)
+
+  /// Whether the CALL succeeded - independent of what it concluded.
+  outcome SemanticJudgeOutcome
+
+  // --- Raw model verdict (NULL when outcome = ERROR) ----------------------
+
+  /// The model's semantic status for the hit's context. NOT a monitor level.
+  semanticStatus SemanticStatus? @map("semantic_status")
+
+  /// The model's `matched` boolean (false = the hit's context does not express
+  /// what the rule watches for). Recorded for audit; the disposition matrix
+  /// reads semanticStatus/confidence, not this flag.
+  matched Boolean?
+
+  confidence SemanticConfidence?
+
+  /// Model-generated explanation of the verdict. Bounded (300 chars) and
+  /// treated as report-adjacent free text: masked for callers without
+  /// patientDetail rights, and never logged.
+  reason String? @db.VarChar(300)
+
+  /// Whether the model read the rule's semanticIntent as excluding a mere
+  /// past history. The disposition matrix requires this to be true before a
+  /// HISTORY verdict may filter (issue #87 §7) - the model interprets the
+  /// doctor's natural-language intent, the CODE decides the outcome.
+  intentExcludesHistory Boolean? @map("intent_excludes_history")
+
+  // --- Evidence: verified in memory, never stored verbatim ----------------
+
+  /// sha256 (hex) of the evidence string the model returned, AFTER it was
+  /// verified to be locatable in the exact context sent to the model. NULL when
+  /// the model returned no evidence, or when verification failed (in which case
+  /// the judge fails open - see decisionReason).
+  evidenceHash String? @map("evidence_hash") @db.VarChar(64)
+
+  /// Absolute start offset of the evidence inside the SAME field text as the
+  /// match (inclusive, UTF-16 code units). Lets an auditor recompute the
+  /// excerpt from monitor_record without this table storing it.
+  evidenceStart Int? @map("evidence_start")
+
+  /// Exclusive end offset of the evidence (see evidenceStart).
+  evidenceEnd Int? @map("evidence_end")
+
+  // --- Provenance ---------------------------------------------------------
+
+  /// Model identifier as configured (e.g. the gateway's model name).
+  model String @db.VarChar(100)
+
+  /// Model version/revision as reported by the gateway, when it reports one.
+  modelVersion String? @map("model_version") @db.VarChar(100)
+
+  /// sha256 (hex) of the canonical JSON of the exact task input sent to the
+  /// model (rule snapshot + matched text/field + context). Two judgements with
+  /// the same inputHash were made from byte-identical inputs, whatever the
+  /// model then answered - this is what makes "which input produced this
+  /// verdict" answerable without storing the input.
+  inputHash String @map("input_hash") @db.VarChar(64)
+
+  /// sha256 (hex) of the context window alone (a sub-hash of inputHash), so an
+  /// auditor can reconstruct and check just the excerpt.
+  contextHash String @map("context_hash") @db.VarChar(64)
+
+  /// Offsets of the context window inside the field text identified by the
+  /// match's matchedField (inclusive start / exclusive end). Reconstructing
+  /// monitor_record's text over this range reproduces exactly what the model
+  /// was shown.
+  contextStart Int @map("context_start")
+
+  contextEnd Int @map("context_end")
+
+  /// Wall-clock duration of the model call, ms. NULL when no call was made
+  /// (validation failed before dispatch).
+  latencyMs Int? @map("latency_ms")
+
+  /// Machine-readable failure code: TIMEOUT | NETWORK | HTTP_<status> |
+  /// INVALID_JSON | SCHEMA_INVALID | UNKNOWN_ENUM | EVIDENCE_UNVERIFIED |
+  /// MODEL_ERROR | EMPTY_CONTEXT. NEVER free-form model output or report text.
+  error String? @db.VarChar(255)
+
+  // --- The deterministic decision this attempt resulted in ----------------
+
+  /// Whether this attempt filtered the hit. Mirrors the value written to
+  /// monitor_match.semanticFiltered by the same transaction.
+  filtered Boolean @default(false)
+
+  /// Machine-readable reason for the decision: one of the
+  /// SemanticDecisionReason values in packages/ai-semantic (e.g.
+  /// NEGATED_HIGH_CONFIDENCE, PRESENT_KEEP, EVIDENCE_UNVERIFIED_KEEP,
+  /// MODEL_ERROR_KEEP). This is why "kept" rows are kept.
+  decisionReason String @map("decision_reason") @db.VarChar(50)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([matchId, createdAt])
+  @@index([outcome])
+  @@index([decisionReason])
+  @@map("monitor_match_semantic")
 }
 
 // ---------------------------------------------------------------------------

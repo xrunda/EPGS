@@ -19,9 +19,12 @@
     "sync:once": "ts-node --transpile-only -r tsconfig-paths/register src/sync/run-once.ts",
     "push:once": "ts-node --transpile-only -r tsconfig-paths/register src/notification-push/run-once.ts",
     "reclassify:once": "ts-node --transpile-only -r tsconfig-paths/register src/sync/reclassify-once.ts",
+    "semantic:once": "ts-node --transpile-only -r tsconfig-paths/register src/semantic/run-once.ts",
+    "semantic:probe": "ts-node --transpile-only -r tsconfig-paths/register src/semantic/probe.ts",
     "mock:convert": "ts-node --transpile-only -r tsconfig-paths/register src/pacs-adapter/mock-csv-convert.ts"
   },
   "dependencies": {
+    "@epgs/ai-semantic": "workspace:*",
     "@epgs/matching-engine": "workspace:*",
     "@epgs/notification-push": "workspace:*",
     "@epgs/shared-types": "workspace:*",

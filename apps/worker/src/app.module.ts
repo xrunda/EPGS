@@ -8,6 +8,7 @@ import { PacsAdapterModule } from './pacs-adapter/pacs-adapter.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { NotificationPushModule } from './notification-push/notification-push.module';
 import { AssistantModule } from './assistant/assistant.module';
+import { SemanticModule } from './semantic/semantic.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AssistantModule } from './assistant/assistant.module';
     PacsAdapterModule,
     NotificationPushModule,
     AssistantModule,
+    SemanticModule,
   ],
 })
 export class AppModule {}

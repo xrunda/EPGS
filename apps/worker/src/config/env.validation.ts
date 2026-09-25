@@ -135,4 +135,47 @@ export const envValidationSchema = Joi.object({
     .optional(),
   // Issue #72: link lifetime in hours (default 24, max a week).
   ALERT_LINK_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
+
+  // Issue #87: the AI semantic judge (Validate Match). OFF unless explicitly
+  // switched on, so deploying this branch changes nothing until someone opts in.
+  //
+  // NOTE the deliberate departure from the PACS_* block above: the model
+  // variables are NOT `required` when the judge is enabled. Joi's
+  // required-when-enabled would fail the boot, and this process also runs the
+  // sync job that feeds patient monitoring (issue #6) - refusing to start over
+  // an optional AI layer's config would make the AI a single point of failure
+  // for the whole system, which #87 forbids. readSemanticModelSettings()
+  // reports what is missing and the service disables itself with an error log.
+  // Format and range are still validated here, so a typo fails loudly at boot.
+  SEMANTIC_JUDGE_ENABLED: Joi.boolean().default(false),
+  // e.g. http://10.0.0.5:8000/v1 - no real value exists in this repo/CI.
+  SEMANTIC_MODEL_BASE_URL: Joi.string()
+    .uri({ scheme: [/https?/] })
+    .allow('')
+    .optional(),
+  // Never logged, never persisted. No real value exists in this repo/CI.
+  SEMANTIC_MODEL_API_KEY: Joi.string().allow('').optional(),
+  SEMANTIC_MODEL_NAME: Joi.string().max(100).allow('').optional(),
+  // The seam for the hospital's own gateway, whose compatibility is still an
+  // open question. Only openai-chat is implemented today.
+  SEMANTIC_MODEL_API_STYLE: Joi.string().valid('openai-chat').default('openai-chat'),
+  // One judging call's ceiling. The task adds nothing of its own, so this is
+  // the whole worst case a tick can spend on a single hit.
+  SEMANTIC_MODEL_TIMEOUT_MS: Joi.number().integer().min(1000).max(60000).default(10000),
+  SEMANTIC_MODEL_MAX_TOKENS: Joi.number().integer().min(64).max(4096).default(512),
+  // Context window budget. Large enough for a full sentence plus neighbours,
+  // small enough that the whole report is never sent (issue #87 requirement).
+  SEMANTIC_CONTEXT_CHAR_BUDGET: Joi.number().integer().min(50).max(4000).default(400),
+  // Tick cadence. Unlike the push scheduler this is not bound to a cron minute;
+  // 30s keeps the judge responsive without competing with the 3-minute sync.
+  SEMANTIC_JUDGE_INTERVAL_SECONDS: Joi.number().integer().min(5).max(3600).default(30),
+  // Hits per tick. Bounded so a large backlog cannot make one tick hold the
+  // process for minutes; `semantic:once` is the tool for draining a backlog.
+  SEMANTIC_JUDGE_BATCH_SIZE: Joi.number().integer().min(1).max(50).default(10),
+  // Attempts before a hit is resolved terminally, fail-open. Bounds what a
+  // poison row can cost in model calls.
+  SEMANTIC_JUDGE_MAX_ATTEMPTS: Joi.number().integer().min(1).max(10).default(3),
+  // Claim lease. Must comfortably exceed the worst-case batch duration
+  // (batchSize x timeout) or a slow run's own rows could be stolen from it.
+  SEMANTIC_JUDGE_LEASE_SECONDS: Joi.number().integer().min(30).max(3600).default(300),
 });

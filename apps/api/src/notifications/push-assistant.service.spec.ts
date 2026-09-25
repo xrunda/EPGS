@@ -55,7 +55,11 @@ describe('PushAssistantService', () => {
     } as unknown as MonitorService;
   }
 
-  async function build(prisma: any, monitor: MonitorService, config = makeConfig()): Promise<PushAssistantService> {
+  async function build(
+    prisma: any,
+    monitor: MonitorService,
+    config = makeConfig(),
+  ): Promise<PushAssistantService> {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PushAssistantService,
@@ -70,13 +74,20 @@ describe('PushAssistantService', () => {
   it('reports OFFLINE when there is no heartbeat row', async () => {
     const service = await build(makeFakePrisma(), makeFakeMonitor());
     const status = await service.getStatus(NOW);
-    expect(status).toMatchObject({ phase: 'OFFLINE', online: false, lastSeenAt: null, preview: null });
+    expect(status).toMatchObject({
+      phase: 'OFFLINE',
+      online: false,
+      lastSeenAt: null,
+      preview: null,
+    });
   });
 
   it('reports OFFLINE when the heartbeat is older than staleAfterMs', async () => {
     const stale = new Date(NOW.getTime() - 120_000); // 2 min old, threshold 90s
     const service = await build(
-      makeFakePrisma({ heartbeat: { lastSeenAt: stale, nextTriggerAt: null, runningSince: stale } }),
+      makeFakePrisma({
+        heartbeat: { lastSeenAt: stale, nextTriggerAt: null, runningSince: stale },
+      }),
       makeFakeMonitor(),
     );
     const status = await service.getStatus(NOW);
@@ -88,14 +99,16 @@ describe('PushAssistantService', () => {
     const fresh = new Date(NOW.getTime() - 10_000);
     const nextTrigger = new Date('2026-09-03T10:00:00Z'); // today 18:00 Shanghai
     const monitor = makeFakeMonitor({ red: 2, yellow: 5, total: 7 });
-    const service = await build(
-      makeFakePrisma({
-        heartbeat: { lastSeenAt: fresh, nextTriggerAt: nextTrigger, runningSince: new Date('2026-09-01T00:00:00Z') },
-        keywordGroups: [{ keyword: '恶性肿瘤', level: 'RED', _count: { _all: 1 } }],
-        runnableRules: [{ id: 'rule-1', name: '每日关注' }],
-      }),
-      monitor,
-    );
+    const prisma = makeFakePrisma({
+      heartbeat: {
+        lastSeenAt: fresh,
+        nextTriggerAt: nextTrigger,
+        runningSince: new Date('2026-09-01T00:00:00Z'),
+      },
+      keywordGroups: [{ keyword: '恶性肿瘤', level: 'RED', _count: { _all: 1 } }],
+      runnableRules: [{ id: 'rule-1', name: '每日关注' }],
+    });
+    const service = await build(prisma, monitor);
 
     const status = await service.getStatus(NOW);
 
@@ -113,6 +126,17 @@ describe('PushAssistantService', () => {
       redKeywords: '恶性肿瘤 ×1',
       yellowKeywords: '—',
     });
+    // Issue #87: the preview counts EFFECTIVE hits only, so it matches the push
+    // that will actually render and the 监控看板 the operator is comparing to.
+    expect(prisma.monitorMatch.groupBy).toHaveBeenCalledWith({
+      by: ['keyword', 'level'],
+      where: {
+        record: { examTime: { gte: expect.any(Date), lt: expect.any(Date) } },
+        rule: { isEnabled: true },
+        semanticFiltered: false,
+      },
+      _count: { _all: true },
+    });
     // runningDays: 2026-09-01 -> 2026-09-03 = 2 days.
     expect(status.runningDays).toBe(2);
     expect(status.runnableRules).toEqual([{ id: 'rule-1', name: '每日关注' }]);
@@ -122,7 +146,9 @@ describe('PushAssistantService', () => {
     const fresh = new Date(NOW.getTime() - 10_000);
     const monitor = makeFakeMonitor();
     const service = await build(
-      makeFakePrisma({ heartbeat: { lastSeenAt: fresh, nextTriggerAt: null, runningSince: fresh } }),
+      makeFakePrisma({
+        heartbeat: { lastSeenAt: fresh, nextTriggerAt: null, runningSince: fresh },
+      }),
       monitor,
     );
     const status = await service.getStatus(NOW);
@@ -137,7 +163,11 @@ describe('PushAssistantService', () => {
     const finishedAt = new Date(NOW.getTime() - 5 * 60 * 1000); // 5 min ago
     const service = await build(
       makeFakePrisma({
-        heartbeat: { lastSeenAt: fresh, nextTriggerAt: new Date('2026-09-04T10:00:00Z'), runningSince: fresh },
+        heartbeat: {
+          lastSeenAt: fresh,
+          nextTriggerAt: new Date('2026-09-04T10:00:00Z'),
+          runningSince: fresh,
+        },
         lastLog: {
           id: 'log-1',
           windowDate: '2026-09-03',
@@ -149,7 +179,12 @@ describe('PushAssistantService', () => {
           deliveries: [{ status: 'SUCCESS' }, { status: 'SUCCESS' }],
         },
         pushDoneEvent: {
-          payload: { type: 'PUSH_DONE', ruleName: '每日关注', elapsedMs: 3200, stages: [{ name: 'deliver', elapsedMs: 3200 }] },
+          payload: {
+            type: 'PUSH_DONE',
+            ruleName: '每日关注',
+            elapsedMs: 3200,
+            stages: [{ name: 'deliver', elapsedMs: 3200 }],
+          },
         },
       }),
       makeFakeMonitor({ red: 3, total: 42 }),
@@ -179,13 +214,25 @@ describe('PushAssistantService', () => {
             id: 'e1',
             type: 'PUSH_DONE',
             occurredAt: new Date('2026-09-02T10:00:00Z'),
-            payload: { type: 'PUSH_DONE', ruleName: '每日关注', status: 'SUCCESS', groupCount: 2, elapsedMs: 3200, stages: [] },
+            payload: {
+              type: 'PUSH_DONE',
+              ruleName: '每日关注',
+              status: 'SUCCESS',
+              groupCount: 2,
+              elapsedMs: 3200,
+              stages: [],
+            },
           },
           {
             id: 'e2',
             type: 'KEYWORD_HIT',
             occurredAt: new Date('2026-09-02T02:24:00Z'),
-            payload: { type: 'KEYWORD_HIT', keyword: '食管裂孔疝', level: 'RED', examItem: '电子胃镜检查' },
+            payload: {
+              type: 'KEYWORD_HIT',
+              keyword: '食管裂孔疝',
+              level: 'RED',
+              examItem: '电子胃镜检查',
+            },
           },
         ],
       }),
@@ -203,7 +250,7 @@ describe('PushAssistantService', () => {
     }
   });
 
-  it('surfaces today\'s sync progress as state (todaySyncCount / lastSyncAt), not feed rows', async () => {
+  it("surfaces today's sync progress as state (todaySyncCount / lastSyncAt), not feed rows", async () => {
     const fresh = new Date(NOW.getTime() - 10_000);
     const service = await build(
       makeFakePrisma({

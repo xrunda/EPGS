@@ -417,6 +417,16 @@ async function upsertReport(
             level: matched.level,
             matchedField: matched.field,
             contextSnippet: occurrence.contextSnippet,
+            // Issue #87: exact offsets of this hit, so the semantic judge
+            // anchors on the occurrence the engine actually found instead of
+            // re-deriving one. Note only the FIRST row per (record, rule,
+            // field, keyword, version) survives the dedup constraint below, so
+            // what is stored is the first occurrence - which is what the judge
+            // expects (see MonitorMatch.matchStart doc). Null for every row
+            // written before this migration; the judge falls back to
+            // re-derivation for those.
+            matchStart: occurrence.start,
+            matchEnd: occurrence.end,
             reportVersion,
             matchedAt,
           });

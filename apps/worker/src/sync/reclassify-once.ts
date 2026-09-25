@@ -85,6 +85,11 @@ async function main(): Promise<void> {
                   level: matched.level,
                   matchedField: matched.field,
                   contextSnippet: occurrence.contextSnippet,
+                  // Issue #87: same offsets sync-runner writes, so a
+                  // reclassified record's hits are judged from the same
+                  // anchor a normally-synced one would use.
+                  matchStart: occurrence.start,
+                  matchEnd: occurrence.end,
                   reportVersion: record.reportVersion,
                   matchedAt,
                 });

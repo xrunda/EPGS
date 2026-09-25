@@ -120,9 +120,9 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    fireEvent.click(screen.getByRole('button', { name: '监测规则' }));
+    fireEvent.click(screen.getByRole('button', { name: '关键词监控' }));
 
-    expect(screen.getByRole('dialog', { name: '监测规则配置' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '关键词监控' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
     expect(await screen.findByText('没有符合条件的监测规则')).toBeInTheDocument();
   });
@@ -140,9 +140,7 @@ describe('App', () => {
       vi.fn().mockImplementation((input: RequestInfo | URL) => {
         const url = String(input);
         if (url.includes('/api/auth/me')) {
-          return Promise.resolve(
-            jsonResponse({ user: { ...authUser, roles: ['USER_ADMIN'] } }),
-          );
+          return Promise.resolve(jsonResponse({ user: { ...authUser, roles: ['USER_ADMIN'] } }));
         }
         return defaultResponse(url);
       }),

@@ -242,13 +242,18 @@ jobs:
 
       - name: Roll back migration
         run: |
-          # Newest-first: #72's alert-link rollback (alert_link has a FK to
-          # push_log, so it must precede the push-rule rollback), then #70's
-          # push-assistant rollback (standalone tables), then #61's push-rule
-          # rollback, #53's notification rollback, #14's index rollback, and
-          # the #13 -> #31 -> #3 chain, so the migration sequence is unwound
-          # in the same order it was applied (see docs/go-live.md §7.2 for
-          # the full runbook).
+          # Newest-first: #87's semantic-judge rollback must come first, and
+          # not only because it is the newest migration - monitor_match_semantic
+          # has an FK to monitor_match, and the #3 rollback below drops
+          # monitor_match WITHOUT CASCADE, so leaving #87's table in place makes
+          # that statement fail outright. Then #72's alert-link rollback
+          # (alert_link has a FK to push_log, so it must precede the push-rule
+          # rollback), then #70's push-assistant rollback (standalone tables),
+          # then #61's push-rule rollback, #53's notification rollback, #14's
+          # index rollback, and the #13 -> #31 -> #3 chain, so the migration
+          # sequence is unwound in the same order it was applied (see
+          # docs/go-live.md §7.2 for the full runbook).
+          psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260925000000_add_semantic_judge/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260905060000_add_alert_link/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260903000000_add_push_assistant/rollback.sql
           psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260823055843_add_notification_push_rules/rollback.sql

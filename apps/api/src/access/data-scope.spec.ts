@@ -3,6 +3,8 @@ import {
   MonitorExamDto,
   MonitorExamHitDto,
   MonitorLevelDto,
+  SemanticConfidenceDto,
+  SemanticStatusDto,
 } from '@epgs/shared-types';
 import { buildDepartmentScopeWhere, maskExamDetail, maskExamRow, maskName } from './data-scope';
 
@@ -70,6 +72,16 @@ describe('data-scope helpers (issue #13)', () => {
       matchedField: 'REPORT_TEXT',
       contextSnippet: '…黏膜内腺癌…',
       matchedAt: '2026-08-20T08:15:30.000Z',
+      semanticFiltered: false,
+      semantic: {
+        status: 'PRESENT' as SemanticStatusDto,
+        confidence: 'HIGH' as SemanticConfidenceDto,
+        // Report-adjacent free text: the model's own sentence. Nulled by the
+        // masking below, so this fixture proves the nulling rather than
+        // asserting on an already-null value.
+        reason: '报告中明确描述该病变。',
+        judgedAt: '2026-08-20T08:16:00.000Z',
+      },
     };
     const detail: MonitorExamDetailDto = {
       ...baseRow,
@@ -84,10 +96,42 @@ describe('data-scope helpers (issue #13)', () => {
     expect(masked.reportContent).toBeNull();
     expect(masked.diagnosis).toBeNull();
     expect(masked.hits[0].contextSnippet).toBeNull();
+    // Issue #87: the model's explanation is report-adjacent free text and is
+    // nulled with the rest...
+    expect(masked.hits[0].semantic?.reason).toBeNull();
+    // ...but the verdict it belongs to is not patient data - it describes the
+    // keyword rule and the hit, both of which this caller can already see.
+    expect(masked.hits[0].semantic?.status).toBe('PRESENT');
+    expect(masked.hits[0].semantic?.confidence).toBe('HIGH');
     // Non-sensitive hit fields survive masking.
     expect(masked.hits[0].keyword).toBe('腺癌');
     expect(masked.hits[0].matchedField).toBe('REPORT_TEXT');
     expect(masked.dataAccess).toEqual({ masked: true });
+  });
+
+  it('maskExamDetail keeps an unjudged hit unjudged (no invented verdict)', () => {
+    const unjudged: MonitorExamDetailDto = {
+      ...baseRow,
+      reportContent: null,
+      diagnosis: null,
+      hits: [
+        {
+          ruleId: '00000000-0000-0000-0000-000000000010',
+          ruleVersion: 1,
+          keyword: '腺癌',
+          level: 'RED' as MonitorLevelDto,
+          matchedField: 'REPORT_TEXT',
+          contextSnippet: null,
+          matchedAt: '2026-08-20T08:15:30.000Z',
+          semanticFiltered: false,
+          semantic: null,
+        },
+      ],
+    };
+
+    const masked = maskExamDetail(unjudged);
+    expect(masked.hits[0].semantic).toBeNull();
+    expect(masked.hits[0].semanticFiltered).toBe(false);
   });
 
   it('maskExamDetail on an unmasked detail has no dataAccess flag (redaction distinguishable from empty body)', () => {

@@ -104,7 +104,10 @@ describe('MonitorService', () => {
             currentLevel: 'RED',
             examItem: { contains: '电子胃镜', mode: 'insensitive' },
             patientName: { contains: '张三', mode: 'insensitive' },
-            matches: { some: { keyword: '腺癌' } },
+            // Issue #87: the keyword filter selects EFFECTIVE hits only, so a
+            // hit the AI semantic judge removed cannot put its record back in
+            // the result - the same rule the list's keyword chips follow.
+            matches: { some: { keyword: '腺癌', semanticFiltered: false } },
           },
         }),
       );
@@ -250,6 +253,15 @@ describe('MonitorService', () => {
             matchedField: 'REPORT_TEXT',
             contextSnippet: '…见腺癌…',
             matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: false,
+            semanticJudgements: [
+              {
+                semanticStatus: 'PRESENT',
+                confidence: 'HIGH',
+                reason: '报告中明确描述该病变。',
+                createdAt: new Date('2026-08-20T01:30:05Z'),
+              },
+            ],
           },
         ],
       });
@@ -258,12 +270,28 @@ describe('MonitorService', () => {
 
       // Issue #8: the detail query must pull the versioned rule so each hit
       // is auditable back to the exact rule version that produced it.
+      // Issue #87: and the newest SUCCESSFUL judgement, so the drawer can
+      // explain the verdict - a failed attempt has no verdict to show, hence
+      // the outcome filter and take: 1.
       expect(prisma.monitorRecord.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
           include: {
             matches: {
               orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
-              include: { rule: { select: { version: true } } },
+              include: {
+                rule: { select: { version: true } },
+                semanticJudgements: {
+                  where: { outcome: 'OK' },
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                  select: {
+                    semanticStatus: true,
+                    confidence: true,
+                    reason: true,
+                    createdAt: true,
+                  },
+                },
+              },
             },
           },
         }),
@@ -279,8 +307,117 @@ describe('MonitorService', () => {
         matchedField: 'REPORT_TEXT',
         contextSnippet: '…见腺癌…',
         matchedAt: '2026-08-20T01:30:01.000Z',
+        semanticFiltered: false,
+        semantic: {
+          status: 'PRESENT',
+          confidence: 'HIGH',
+          reason: '报告中明确描述该病变。',
+          judgedAt: '2026-08-20T01:30:05.000Z',
+        },
       });
       expect(dto.matchedKeywords).toEqual(['腺癌']);
+    });
+
+    it('reports an unjudged hit as semantic: null rather than inventing a verdict', async () => {
+      // The common case when the judge is off or the rule has no
+      // semanticIntent: the hit stands on the keyword engine's authority, and
+      // the drawer must not imply a model looked at it.
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow(),
+        reportContent: null,
+        diagnosis: null,
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1 },
+            keyword: '腺癌',
+            level: 'RED',
+            matchedField: 'REPORT_TEXT',
+            contextSnippet: null,
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: false,
+            semanticJudgements: [],
+          },
+        ],
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      expect(dto.hits[0].semantic).toBeNull();
+      expect(dto.hits[0].semanticFiltered).toBe(false);
+    });
+
+    it('reports a failed attempt as no verdict, keeping the hit', async () => {
+      // A judgement row that exists but carries no status/confidence is a
+      // recorded FAILURE, not a verdict. Rendering it would put words in the
+      // model's mouth; the decision it produced is "keep", which is what the
+      // hit's semanticFiltered already says.
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow(),
+        reportContent: null,
+        diagnosis: null,
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1 },
+            keyword: '腺癌',
+            level: 'RED',
+            matchedField: 'REPORT_TEXT',
+            contextSnippet: null,
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: false,
+            semanticJudgements: [
+              {
+                semanticStatus: null,
+                confidence: null,
+                reason: null,
+                createdAt: new Date('2026-08-20T01:30:05Z'),
+              },
+            ],
+          },
+        ],
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      expect(dto.hits[0].semantic).toBeNull();
+    });
+
+    it('surfaces a filtered hit with its verdict (the hit is never hidden)', async () => {
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow(),
+        reportContent: null,
+        diagnosis: null,
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1 },
+            keyword: '腺癌',
+            level: 'RED',
+            matchedField: 'REPORT_TEXT',
+            contextSnippet: '…未见腺癌…',
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: true,
+            semanticJudgements: [
+              {
+                semanticStatus: 'NEGATED',
+                confidence: 'HIGH',
+                reason: '该句为否定描述。',
+                createdAt: new Date('2026-08-20T01:30:05Z'),
+              },
+            ],
+          },
+        ],
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      expect(dto.hits).toHaveLength(1);
+      expect(dto.hits[0].semanticFiltered).toBe(true);
+      expect(dto.hits[0].semantic?.status).toBe('NEGATED');
+      // The raw keyword evidence is untouched by the AI path.
+      expect(dto.hits[0].contextSnippet).toBe('…未见腺癌…');
+      expect(dto.hits[0].level).toBe('RED');
     });
 
     it('throws MONITOR_RECORD_NOT_FOUND for an unknown id', async () => {

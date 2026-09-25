@@ -116,43 +116,54 @@ pnpm --filter @epgs/api auth:assign-access --username <账号> --roles SYSTEM_AD
 
 - 预警卡片（#72/#76）：从 api 与 worker 的 `.env` 删除/清空 `ALERT_LINK_BASE_URL`
   并 `bash start.sh nopull`，推送即回到只发文本；已发出的卡片链接仍可在其
-  24 小时有效期内打开（要立刻全部失效，执行 §7.2 第 1 步删除 `alert_link` 表，或
+  24 小时有效期内打开（要立刻全部失效，执行 §7.2 第 2 步删除 `alert_link` 表，或
   `DELETE FROM alert_link;`）。
 - 定时推送（#61）：在配置页停用对应规则即可，不需要改配置或重启。
+- **AI 语义判读（#87）**：worker 的 `.env` 设 `SEMANTIC_JUDGE_ENABLED=false` 并
+  `bash start.sh nopull`。判读循环立即停止调用模型，**已判读的结论保留**（仍按原
+  结论展示），后续命中一律计入关注——等于回到 #87 之前的行为。这是最快的止血开关，
+  不需要回滚代码，也不需要回滚数据库。要连"AI 调用"这件事本身一起停掉（例如怀疑
+  网关被限流），把 `SEMANTIC_MODEL_BASE_URL` 清空亦可：此时判读会自我禁用并打一条
+  错误日志，同步与推送不受影响。
 
 ### 7.2 数据库迁移回滚（新到旧）
 
 迁移链（新 → 旧，每个目录都自带 `rollback.sql`）：
 
-| 顺序 | 迁移目录                                                      | 回滚脚本作用                                                                                               |
-| ---- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| 1    | `20260905060000_add_alert_link`（#72）                        | 删除 `alert_link`（已发出的企微卡片链接立即失效）。**必须先于第 3 步**：它对 `push_log` 有外键             |
-| 2    | `20260903000000_add_push_assistant`（#70）                    | 删除 `assistant_heartbeat` / `assistant_event` 与枚举 `AssistantEventType`（推送助理心跳与活动流，可重建） |
-| 3    | `20260823055843_add_notification_push_rules`（#61）           | 删除 `push_delivery` / `push_log` / `notification_rule_channel` / `notification_rule` 与相关枚举           |
-| 4    | `20260823032959_add_notification_channel_template`（#53）     | 删除 `notification_channel` / `notification_template`（含加密的 Webhook 地址）与枚举                       |
-| 5    | `20260821110858_add_monitor_record_patient_type_index`（#14） | 删除 `monitor_record_patient_type_code_idx` 索引                                                           |
-| 6    | `20260821103732_add_auth_access_and_audit_log`（#13）         | 删除 `app_user_access` / `audit_log` 与相关枚举                                                            |
-| 7    | `20260821093500_add_local_auth`（#31）                        | 删除 `app_user`（全部本地账号）                                                                            |
-| 8    | `20260821073851_remove_closed_loop_readonly`（#26）           | **破坏性**：恢复闭环模型，数据不还原，见脚本头部 WARNING                                                   |
-| 9    | `20260821040339_init_monitoring_schema`（#3）                 | 删除全部 `monitor_*` 表与枚举                                                                              |
+| 顺序 | 迁移目录                                                      | 回滚脚本作用                                                                                                                                                                                                                            |
+| ---- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `20260925000000_add_semantic_judge`（#87）                    | 删除 `monitor_match_semantic`、`monitor_match` 的 8 个 `semantic_*`/`match_*` 列、`monitor_rule.semantic_intent` 与 4 个枚举。**必须先于第 10 步**：该表对 `monitor_match` 有外键，而第 10 步的 `DROP TABLE monitor_match` 不带 CASCADE |
+| 2    | `20260905060000_add_alert_link`（#72）                        | 删除 `alert_link`（已发出的企微卡片链接立即失效）。**必须先于第 4 步**：它对 `push_log` 有外键                                                                                                                                          |
+| 3    | `20260903000000_add_push_assistant`（#70）                    | 删除 `assistant_heartbeat` / `assistant_event` 与枚举 `AssistantEventType`（推送助理心跳与活动流，可重建）                                                                                                                              |
+| 4    | `20260823055843_add_notification_push_rules`（#61）           | 删除 `push_delivery` / `push_log` / `notification_rule_channel` / `notification_rule` 与相关枚举                                                                                                                                        |
+| 5    | `20260823032959_add_notification_channel_template`（#53）     | 删除 `notification_channel` / `notification_template`（含加密的 Webhook 地址）与枚举                                                                                                                                                    |
+| 6    | `20260821110858_add_monitor_record_patient_type_index`（#14） | 删除 `monitor_record_patient_type_code_idx` 索引                                                                                                                                                                                        |
+| 7    | `20260821103732_add_auth_access_and_audit_log`（#13）         | 删除 `app_user_access` / `audit_log` 与相关枚举                                                                                                                                                                                         |
+| 8    | `20260821093500_add_local_auth`（#31）                        | 删除 `app_user`（全部本地账号）                                                                                                                                                                                                         |
+| 9    | `20260821073851_remove_closed_loop_readonly`（#26）           | **破坏性**：恢复闭环模型，数据不还原，见脚本头部 WARNING                                                                                                                                                                                |
+| 10   | `20260821040339_init_monitoring_schema`（#3）                 | 删除全部 `monitor_*` 表与枚举                                                                                                                                                                                                           |
 
 ```bash
-# 单步回滚示例（第 1 步：撤掉 #72 的 alert_link 表）
+# 单步回滚示例（第 2 步：撤掉 #72 的 alert_link 表）
 psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260905060000_add_alert_link/rollback.sql
 DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_alert_link';
 ```
 
 - **只回退单一特性**：按上表只执行到该迁移为止（新到旧依次）。例：仅撤销预警
-  卡片 → 只执行第 1 步；撤销整个推送模块 → 执行 1→4。
+  卡片 → 只执行第 2 步；撤销整个推送模块 → 执行 2→5。
 - **枚举值不可逆**：#53/#61 向 `AuditAction` 追加的 `CONFIG_CHANGE` 触发点、
   `NOTIFICATION_TEST_SEND`、`NOTIFICATION_RULE_RUN` 无法用 `ALTER TYPE` 删除；
   对应 `rollback.sql` 头部给出了"先确认 `audit_log` 无该值再重建枚举"的手工 SQL，
   默认不自动执行。
-- **完全重置到空库**：执行 1→9 全部回滚，再 `DELETE FROM "_prisma_migrations";`
+- **完全重置到空库**：执行 1→10 全部回滚，再 `DELETE FROM "_prisma_migrations";`
   清空历史（否则 re-deploy 会跳过"看似已应用"的迁移），最后按需
   `prisma migrate deploy` 重建。CI 的 db-migrations job 即按此流程验证：
-  #72→#70→#61→#53→#14→#13→#31→#3 回滚（#26 因 #3 已全量清表而省略其破坏性
+  #87→#72→#70→#61→#53→#14→#13→#31→#3 回滚（#26 因 #3 已全量清表而省略其破坏性
   回滚）→ 清空历史 → 重新正向迁移。
+- **#87 判读回滚是"少一层注解"，不是"丢命中"**：回滚只删除 AI 判读的审计行与状态列，
+  `monitor_match` 的关键词证据（keyword/level/matched_at/context_snippet）一字不动。
+  列一旦删除，worker 的判读循环查不到队列、自动停止调用模型，行为立即回到 #87 之前。
+  **代码先回滚、数据库后回滚**可避免"半删状态的 schema 仍被写入"的窗口。
 - **#26 特别警告**：该回滚会重建 `monitor_action` 与 `handling_status` 等已被
   删除的字段（数据不还原），仅当明确需要回到旧闭环模型时执行；否则靠 #3 清表
   即可。
@@ -235,4 +246,5 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
 
 - 只关卡片：删 `ALERT_LINK_BASE_URL` → `bash start.sh nopull`（§7.1）。
 - 回退代码：revert 对应 PR 后重启；两张新表可留存不影响旧代码。
-- 回退数据库：§7.2 第 1、2 步（先 `alert_link`，再 `assistant_*`）。
+- 回退数据库：§7.2 第 2、3 步（先 `alert_link`，再 `assistant_*`；若 #87 也已上线，
+  需连第 1 步一起按 1→3 顺序执行）。

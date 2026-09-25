@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { MonitorExamDetailDto } from '@epgs/shared-types';
+import type {
+  MonitorExamDetailDto,
+  SemanticConfidenceDto,
+  SemanticStatusDto,
+} from '@epgs/shared-types';
 import { getExamDetail, MonitorApiError } from './monitorApi';
 import {
   DIAGNOSIS_TEXT_FIELDS,
@@ -16,6 +20,26 @@ interface DetailDrawerProps {
   onClose: () => void;
 }
 
+/**
+ * 命中处上下文判读结果的医生语言（issue #87）。
+ *
+ * 刻意不提「模型 / 提示词 / 分类器」这类实现词：医生要判断的是「这条命中该不该
+ * 算」，不是一个 AI 系统的内部构造。措辞也只描述报告里那句话，不描述病情。
+ */
+const SEMANTIC_STATUS_LABELS: Record<SemanticStatusDto, string> = {
+  PRESENT: '报告里明确写了这个情况',
+  NEGATED: '报告是否定这个情况',
+  SUSPECTED: '报告只是疑似/需考虑',
+  HISTORY: '只是既往史或背景描述',
+  UNCERTAIN: '上下文不足以判断',
+};
+
+const SEMANTIC_CONFIDENCE_LABELS: Record<SemanticConfidenceDto, string> = {
+  HIGH: '把握高',
+  MEDIUM: '把握中',
+  LOW: '把握低',
+};
+
 function friendlyError(error: unknown): string {
   if (error instanceof MonitorApiError && error.status === 404) {
     return '未找到该检查记录，可能已被移除。';
@@ -31,29 +55,43 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
   const [reloadKey, setReloadKey] = useState(0);
   const dialogRef = useRef<HTMLElement>(null);
 
-  /** Distinct keywords to highlight inside 报告内容, from the hits that matched there. */
+  /**
+   * Distinct keywords to highlight inside 报告内容, from the hits that matched
+   * there. Issue #87: only EFFECTIVE hits - highlighting marks "this is why
+   * the patient is on the watch list", and a hit that was judged not to
+   * express the rule's intent is precisely not that. The filtered hit still
+   * appears in 命中证据 below, with its own annotation.
+   */
   const reportKeywords = useMemo(() => {
     if (!detail) return [];
     return Array.from(
       new Set(
         detail.hits
-          .filter((hit) => REPORT_TEXT_FIELDS.includes(hit.matchedField))
+          .filter((hit) => !hit.semanticFiltered && REPORT_TEXT_FIELDS.includes(hit.matchedField))
           .map((hit) => hit.keyword),
       ),
     );
   }, [detail]);
 
-  /** Distinct keywords to highlight inside 诊断, from the hits that matched there. */
+  /** Distinct keywords to highlight inside 诊断, from the effective hits there. */
   const diagnosisKeywords = useMemo(() => {
     if (!detail) return [];
     return Array.from(
       new Set(
         detail.hits
-          .filter((hit) => DIAGNOSIS_TEXT_FIELDS.includes(hit.matchedField))
+          .filter(
+            (hit) => !hit.semanticFiltered && DIAGNOSIS_TEXT_FIELDS.includes(hit.matchedField),
+          )
           .map((hit) => hit.keyword),
       ),
     );
   }, [detail]);
+
+  /** How many hits were judged not to count - shown next to the hit count. */
+  const filteredCount = useMemo(
+    () => (detail ? detail.hits.filter((hit) => hit.semanticFiltered).length : 0),
+    [detail],
+  );
 
   useEffect(() => {
     if (!recordId) {
@@ -212,6 +250,9 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
             <section className="drawer__section">
               <h3>
                 命中证据 <span className="drawer__count">{detail.hits.length}</span>
+                {filteredCount > 0 && (
+                  <span className="drawer__count-note">其中 {filteredCount} 条未计入关注</span>
+                )}
               </h3>
               {detail.hits.length === 0 ? (
                 <p className="drawer__placeholder">暂无命中记录</p>
@@ -219,7 +260,9 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                 <ul className="drawer__hits">
                   {detail.hits.map((hit) => (
                     <li
-                      className="drawer__hit"
+                      className={
+                        hit.semanticFiltered ? 'drawer__hit drawer__hit--filtered' : 'drawer__hit'
+                      }
                       key={`${hit.ruleId}-${hit.matchedField}-${hit.keyword}`}
                     >
                       <div className="drawer__hit-head">
@@ -230,8 +273,29 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                         <span className="drawer__field-label">
                           {FIELD_LABELS[hit.matchedField]}
                         </span>
+                        {/*
+                          未计入关注的命中不隐藏：关键词引擎命中过是事实，医生需要
+                          看到它、看到为什么不算数，再自己决定要不要留意。
+                        */}
+                        {hit.semanticFiltered && (
+                          <span className="drawer__hit-flag">未计入关注</span>
+                        )}
                       </div>
                       <blockquote className="drawer__snippet">{hit.contextSnippet}</blockquote>
+                      {hit.semantic && (
+                        <p className="drawer__hit-semantic">
+                          <span className="drawer__hit-semantic-label">上下文判读</span>
+                          {SEMANTIC_STATUS_LABELS[hit.semantic.status]}
+                          <span className="drawer__hit-semantic-confidence">
+                            （{SEMANTIC_CONFIDENCE_LABELS[hit.semantic.confidence]}）
+                          </span>
+                          {hit.semantic.reason && (
+                            <span className="drawer__hit-semantic-reason">
+                              {hit.semantic.reason}
+                            </span>
+                          )}
+                        </p>
+                      )}
                       <p className="drawer__hit-meta">
                         规则 {hit.ruleId.slice(0, 8)} · v{hit.ruleVersion}
                       </p>

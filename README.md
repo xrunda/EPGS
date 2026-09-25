@@ -159,6 +159,12 @@ broken state.
 | `WEB_ORIGIN`              | api              | 允许携带 Cookie 调用 API 的前端来源                                 | `http://localhost:5173`                      |
 | `ALERT_LINK_BASE_URL`     | api, worker      | 企微客户端打开 `/alert` 患者列表页的地址；未设置则不追加卡片（#72） | 无默认值（关闭）                             |
 | `ALERT_LINK_TTL_HOURS`    | api, worker      | 预警链接有效期（小时，1-168）                                       | `24`                                         |
+| `SEMANTIC_JUDGE_ENABLED`  | worker           | AI 语义判读总开关（#87）；关闭时不联系任何模型，行为与上线前一致    | `false`                                      |
+
+> AI 语义判读（#87）其余变量（模型地址 / 名称 / 超时 / 批量 / 重试 / 上下文预算）
+> 见 [apps/worker/.env.example](apps/worker/.env.example) 与
+> [docs/semantic-judge-design.md](docs/semantic-judge-design.md)。模型相关变量**刻意
+> 不是"启用时必填"**：缺配置时判读自我禁用并打日志，患者监测同步与推送照常运行。
 
 See `.env.example` (root) and `apps/*/.env.example` for the full, commented list.
 

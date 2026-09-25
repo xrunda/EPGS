@@ -69,6 +69,12 @@ export class MonitorService {
     examTime: true,
     currentLevel: true,
     matches: {
+      // Issue #87: the list's keyword chips are EFFECTIVE hits. A hit the AI
+      // judged not to express the rule's intent is not one of "the keywords
+      // that fired for this patient", so it must not appear in a row's
+      // matchedKeywords - otherwise the chip count would contradict the
+      // record's level, which is computed from unfiltered hits only.
+      where: { semanticFiltered: false },
       select: { keyword: true, matchedAt: true },
       // Ascending so distinctKeywords (first-appearance order) == earliest-match order.
       orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
@@ -91,7 +97,27 @@ export class MonitorService {
       // it (ruleId is a scalar on the match row; version lives on the
       // versioned, never-deleted rule). list() never needs this - only
       // the detail endpoint surfaces hit evidence.
-      include: { rule: { select: { version: true } } },
+      include: {
+        rule: { select: { version: true } },
+        // Issue #87: the NEWEST successful judgement, for the explainability
+        // line in the drawer. Filtered to outcome OK because a failed attempt
+        // wrote no verdict (its row exists to record the failure, and pairing
+        // it with the denormalized columns would show a verdict fetched from a
+        // different attempt). take: 1 keeps this a bounded join, and the
+        // (matchId, createdAt) index backs it. A hit that was never judged
+        // simply has no rows here - the mapper then reports semantic: null.
+        semanticJudgements: {
+          where: { outcome: 'OK' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            semanticStatus: true,
+            confidence: true,
+            reason: true,
+            createdAt: true,
+          },
+        },
+      },
     },
   } as const satisfies Prisma.MonitorRecordInclude;
 
@@ -138,7 +164,11 @@ export class MonitorService {
     if (ids.length === 0) return [];
     const rows = await this.prisma.monitorRecord.findMany({
       where: { id: { in: ids } },
-      orderBy: [{ examTime: { sort: 'desc', nulls: 'last' } }, { currentLevel: 'asc' }, { id: 'asc' }],
+      orderBy: [
+        { examTime: { sort: 'desc', nulls: 'last' } },
+        { currentLevel: 'asc' },
+        { id: 'asc' },
+      ],
       select: MonitorService.LIST_SELECT,
     });
     return rows.map((row) => toExamDto(row));
@@ -220,7 +250,14 @@ export class MonitorService {
       ...(query.patientName
         ? { patientName: { contains: query.patientName, mode: 'insensitive' } }
         : {}),
-      ...(query.keyword ? { matches: { some: { keyword: query.keyword } } } : {}),
+      // Issue #87: filtering by a keyword means "show me the patients this
+      // keyword actually flagged". A hit the AI judged to be a non-expression
+      // of the rule's intent was not flagged, so it must not put its record in
+      // the result - the same effective-hit rule LIST_SELECT applies to the
+      // chips, so the two can never disagree about the same record.
+      ...(query.keyword
+        ? { matches: { some: { keyword: query.keyword, semanticFiltered: false } } }
+        : {}),
     };
   }
 

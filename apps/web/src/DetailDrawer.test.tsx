@@ -25,6 +25,8 @@ const detail: MonitorExamDetailDto = {
       matchedField: 'REPORT_TEXT',
       contextSnippet: '…胃体见多发隆起型病变，考虑腺癌。…',
       matchedAt: '2026-08-21T00:00:00.000Z',
+      semanticFiltered: false,
+      semantic: null,
     },
   ],
 };
@@ -117,6 +119,8 @@ describe('DetailDrawer', () => {
           matchedField: 'REPORT_TEXT',
           contextSnippet: '…胃体见多发息肉样隆起…',
           matchedAt: '2026-08-21T00:00:00.000Z',
+          semanticFiltered: false,
+          semantic: null,
         },
       ],
     };
@@ -159,6 +163,75 @@ describe('DetailDrawer', () => {
     const dialog = await screen.findByRole('dialog', { name: '检查详情' });
     expect(dialog.querySelectorAll('mark.hit-highlight')).toHaveLength(0);
     expect(within(dialog).getByText('暂无命中记录')).toBeInTheDocument();
+  });
+
+  // Issue #87: a hit the AI judged not to express the rule's intent stays
+  // visible (the keyword engine did fire) but is marked 未计入关注 and carries
+  // the 上下文判读 line; it must NOT be highlighted as a reason for the visit.
+  it('shows a filtered hit with its verdict but keeps it out of the highlights', async () => {
+    const filteredDetail: MonitorExamDetailDto = {
+      ...detail,
+      reportContent: '胃窦黏膜光滑，未见明显溃疡。',
+      diagnosis: '慢性胃炎。',
+      hits: [
+        {
+          ruleId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          ruleVersion: 2,
+          keyword: '溃疡',
+          level: 'RED',
+          matchedField: 'REPORT_TEXT',
+          contextSnippet: '…未见明显溃疡…',
+          matchedAt: '2026-08-21T00:00:00.000Z',
+          semanticFiltered: true,
+          semantic: {
+            status: 'NEGATED',
+            confidence: 'HIGH',
+            reason: '该句是否认句，报告没有写存在溃疡。',
+            judgedAt: '2026-08-21T00:05:00.000Z',
+          },
+        },
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/monitor/exams/')) {
+          return jsonResponse(filteredDetail);
+        }
+        return jsonResponse({ error: { message: '未找到' } }, 404);
+      }),
+    );
+    render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+    const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+    // Highlighting means "this is why the patient is on the list" - a filtered
+    // hit is precisely not that.
+    expect(dialog.querySelectorAll('mark.hit-highlight')).toHaveLength(0);
+    expect(dialog.querySelectorAll('p.drawer__text')[0].textContent).toBe(
+      '胃窦黏膜光滑，未见明显溃疡。',
+    );
+    // The hit itself, and the count note, are still shown.
+    expect(within(dialog).getByText('其中 1 条未计入关注')).toBeInTheDocument();
+    expect(within(dialog).getByText('未计入关注')).toBeInTheDocument();
+    const hit = dialog.querySelector('li.drawer__hit--filtered');
+    expect(hit).not.toBeNull();
+    expect(within(hit as HTMLElement).getByText('溃疡')).toBeInTheDocument();
+    expect(within(hit as HTMLElement).getByText('报告是否定这个情况')).toBeInTheDocument();
+    expect(within(hit as HTMLElement).getByText('（把握高）')).toBeInTheDocument();
+    expect(
+      within(hit as HTMLElement).getByText('该句是否认句，报告没有写存在溃疡。'),
+    ).toBeInTheDocument();
+    expect(dialog.querySelector('.drawer__hit-semantic-label')?.textContent).toBe('上下文判读');
+  });
+
+  it('does not invent a verdict for a hit that was never judged', async () => {
+    render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+    const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+    expect(within(dialog).queryByText('上下文判读')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/未计入关注/)).not.toBeInTheDocument();
+    expect(dialog.querySelectorAll('li.drawer__hit--filtered')).toHaveLength(0);
   });
 
   it('shows a loading state while fetching the detail', () => {

@@ -10,8 +10,28 @@ import { RuleNotFoundException } from './errors/rule-not-found.exception';
 import { RuleVersionConflictException } from './errors/rule-version-conflict.exception';
 import { PaginatedMonitorRules, MonitorRuleDto } from '@epgs/shared-types';
 
-/** Fields that change matching semantics - editing any of these creates a new versioned row (see schema.prisma doc on MonitorRule.version). */
-const SEMANTIC_FIELDS = ['keyword', 'level', 'matchField', 'matchMode'] as const;
+/**
+ * Fields that change a rule's meaning - editing any of these creates a new
+ * versioned row (see schema.prisma doc on MonitorRule.version).
+ *
+ * Issue #87 added `semanticIntent`. It changes no matching behaviour, but it
+ * does change what a hit MEANS: the AI judge reads the versioned row's text as
+ * the intent a hit is validated against, and the audit trail records which
+ * intent was in force. Editing it in place would retroactively rewrite what
+ * past judgements appear to have used, so it versions like the rest.
+ */
+const SEMANTIC_FIELDS = ['keyword', 'level', 'matchField', 'matchMode', 'semanticIntent'] as const;
+
+/**
+ * Blank and whitespace-only both mean "not configured" (the judge skips such
+ * rules entirely), so they are stored as NULL rather than as an empty string -
+ * one representation, checkable with a single `IS NULL`.
+ */
+function normalizeSemanticIntent(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
 
 @Injectable()
 export class RulesService {
@@ -86,6 +106,7 @@ export class RulesService {
           matchMode,
           category: dto.category ?? null,
           notes: dto.notes ?? null,
+          semanticIntent: normalizeSemanticIntent(dto.semanticIntent),
           isEnabled,
           version: 1,
           ruleGroupId: '00000000-0000-0000-0000-000000000000',
@@ -145,6 +166,13 @@ export class RulesService {
       const nextMatchMode = dto.matchMode ?? current.matchMode;
       const nextCategory = dto.category !== undefined ? dto.category : current.category;
       const nextNotes = dto.notes !== undefined ? dto.notes : current.notes;
+      // `undefined` (omitted) = leave unchanged; null/blank = clear. Compared
+      // AFTER normalization so clearing an already-empty intent is not a
+      // semantic change and therefore does not spawn a pointless new version.
+      const nextSemanticIntent =
+        dto.semanticIntent !== undefined
+          ? normalizeSemanticIntent(dto.semanticIntent)
+          : current.semanticIntent;
       const nextEnabled = dto.isEnabled ?? current.isEnabled;
 
       const semanticChange = SEMANTIC_FIELDS.some((field) => {
@@ -157,6 +185,8 @@ export class RulesService {
             return nextMatchField !== current.matchField;
           case 'matchMode':
             return nextMatchMode !== current.matchMode;
+          case 'semanticIntent':
+            return nextSemanticIntent !== current.semanticIntent;
           default:
             return false;
         }
@@ -227,6 +257,7 @@ export class RulesService {
           matchMode: nextMatchMode,
           category: nextCategory,
           notes: nextNotes,
+          semanticIntent: nextSemanticIntent,
           isEnabled: nextEnabled,
           version: current.version + 1,
           ruleGroupId: current.ruleGroupId,

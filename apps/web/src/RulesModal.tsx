@@ -674,7 +674,7 @@ export function RulesModal({
                 />
                 <span>保存后立即启用</span>
               </label>
-              <div className="panel-actions">
+              <div className="panel-actions panel-actions--sticky">
                 <button
                   className="button"
                   type="button"

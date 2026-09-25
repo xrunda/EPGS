@@ -473,6 +473,19 @@ textarea:focus {
   margin-top: 22px;
   justify-content: flex-end;
 }
+/* 语义判读关注情况（issue #87）把规则编辑栏抬高了约 190px，1440×900 与 1920×1080
+   下「保存规则/取消」都落到了可视区外（1080 高度下是本 Issue 引入的回退：
+   加这个字段前刚好放得下）。改为吸附在编辑栏底部：面板不需要滚动时与原来的
+   静态位置完全一致，需要滚动时保存按钮始终可见，医生填完就能直接保存。 */
+.panel-actions--sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin: 22px -22px -22px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
 .panel-copy {
   color: var(--ink-300);
   font-size: 13px;

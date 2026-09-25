@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { LEVEL_PRIORITY, MatchField, MatchMode, MonitorLevel } from '@epgs/matching-engine';
+import { MatchField, MatchMode } from '@epgs/matching-engine';
 import type { ValidateMatchResult } from '@epgs/ai-semantic';
 import { PrismaService } from '../prisma/prisma.service';
+import { recomputeRecordLevels } from '../monitor/record-level';
 
 /**
  * The database half of the semantic judge (issue #87). Everything here is
@@ -279,52 +280,24 @@ export class SemanticJudgeStore {
   }
 
   /**
-   * Recompute `monitor_record.current_level` from the record's EFFECTIVE hits -
-   * the ones the decision matrix did not filter.
+   * Recompute `monitor_record.current_level` for the given records.
    *
-   * This is the one place #87 changes what the rest of the system displays:
+   * Issue #87 used to own this calculation; issue #88 moved it to
+   * `monitor/record-level.ts` because #88 is a second influence on the same
+   * column (an AI classification can carry a level where no keyword matched),
+   * and two implementations of "what is this record's level" would eventually
+   * disagree. This method now delegates, so #87's behaviour is byte-identical
+   * while the rule itself lives in exactly one place.
+   *
    * `current_level` is the single denormalized driver of the workbench list,
-   * the push rules' summaries, and every level-based count, so a filtered hit
-   * must not keep contributing to it. The rule is unchanged from issue #5 -
-   * highest level wins, RED > YELLOW > GREEN > UNCLASSIFIED - applied over the
-   * surviving subset; a record whose every hit was filtered falls back to
-   * UNCLASSIFIED, which is the honest answer (it has no effective hits) and is
-   * why this recomputes downward as well as upward.
+   * the push summaries and every level-based count, which is why a filtered hit
+   * must stop contributing to it - and why a record whose every hit was
+   * filtered drops to its AI level, or to UNCLASSIFIED when it has none.
    *
-   * NOT touched: firstMatchedAt / lastMatchedAt. Those record when the keyword
-   * engine matched, which is a true statement about the raw hits and stays true
-   * after a filter; they drive no level and no notification, only the
-   * workbench's sort options. Rewriting them would be a behaviour change #87
-   * did not ask for, and "when did this record first match a keyword" is not a
-   * question the AI verdict should be allowed to answer differently.
-   *
-   * Bounded by `recordIds`, so a tick costs one GROUP BY per affected record
-   * rather than a table scan. Returns the number of records whose level moved.
+   * Returns the number of records whose level moved.
    */
   async recomputeLevels(recordIds: readonly string[]): Promise<number> {
-    let changed = 0;
-    for (const recordId of new Set(recordIds)) {
-      const grouped = await this.prisma.monitorMatch.groupBy({
-        by: ['level'],
-        where: { monitorRecordId: recordId, semanticFiltered: false },
-      });
-      const survivors = grouped.map((row) => row.level as MonitorLevel);
-      const level: MonitorLevel =
-        LEVEL_PRIORITY.find((candidate) => survivors.includes(candidate)) ?? 'UNCLASSIFIED';
-
-      const record = await this.prisma.monitorRecord.findUnique({
-        where: { id: recordId },
-        select: { currentLevel: true },
-      });
-      if (record === null || record.currentLevel === level) continue;
-
-      await this.prisma.monitorRecord.update({
-        where: { id: recordId },
-        data: { currentLevel: level },
-      });
-      changed += 1;
-    }
-    return changed;
+    return recomputeRecordLevels(this.prisma, recordIds);
   }
 
   /**

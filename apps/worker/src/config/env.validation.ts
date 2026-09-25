@@ -178,4 +178,42 @@ export const envValidationSchema = Joi.object({
   // Claim lease. Must comfortably exceed the worst-case batch duration
   // (batchSize x timeout) or a slow run's own rows could be stolen from it.
   SEMANTIC_JUDGE_LEASE_SECONDS: Joi.number().integer().min(30).max(3600).default(300),
+
+  // Issue #88: the AI report classifier. Its own switch, INDEPENDENT of
+  // SEMANTIC_JUDGE_ENABLED above - a hospital can run either, both or neither,
+  // and the two failure directions differ (the judge can remove a keyword hit;
+  // the classifier can only add a finding).
+  //
+  // It reuses the SEMANTIC_MODEL_* variables above rather than defining its own
+  // gateway settings: one hospital has ONE model gateway, and duplicating the
+  // connection settings would mean two places to configure and a deployment
+  // where one task works and the other silently does not.
+  SEMANTIC_REPORT_ENABLED: Joi.boolean().default(false),
+  // Ceiling for one WHOLE-REPORT call. Larger than the judge's per-sentence
+  // timeout by default, because the input is a whole report rather than one
+  // sentence. Still a hard ceiling: the classifier must never hold a slot open
+  // indefinitely on a gateway that has stopped answering.
+  SEMANTIC_REPORT_TIMEOUT_MS: Joi.number().integer().min(1000).max(120000).default(20000),
+  // Larger than the judge's cap because a classification answers with several
+  // matches, each carrying an excerpt and a short reason (issue #88 §8).
+  SEMANTIC_REPORT_MAX_TOKENS: Joi.number().integer().min(64).max(4096).default(1024),
+  // Whole-report size cap. A report longer than this is NOT truncated and sent
+  // anyway - the task reports REPORT_TOO_LONG and produces no finding, so a
+  // partial report can never be judged as if it were the whole thing. The
+  // default is generously above a real endoscopy report; the bound exists so a
+  // pathological row cannot blow up the prompt or the gateway bill.
+  SEMANTIC_REPORT_MAX_CHARS: Joi.number().integer().min(1000).max(100000).default(20000),
+  // Tick cadence. Not bound to a cron minute (nothing here is scheduled per
+  // minute); 60s is a deliberately lazier default than the judge's 30s because
+  // each unit of work is a whole report rather than one sentence.
+  SEMANTIC_REPORT_INTERVAL_SECONDS: Joi.number().integer().min(5).max(3600).default(60),
+  // Records per tick. Smaller than the judge's batch, for the same reason.
+  SEMANTIC_REPORT_BATCH_SIZE: Joi.number().integer().min(1).max(50).default(5),
+  // Attempts before a record is resolved terminally with NO AI finding (the
+  // fail-safe direction - see packages/ai-semantic).
+  SEMANTIC_REPORT_MAX_ATTEMPTS: Joi.number().integer().min(1).max(10).default(3),
+  // Claim lease. Must comfortably exceed the worst-case batch duration
+  // (batchSize x timeout) or a slow run's own rows could be stolen from it -
+  // hence a larger default than the judge's 300s.
+  SEMANTIC_REPORT_LEASE_SECONDS: Joi.number().integer().min(30).max(3600).default(600),
 });

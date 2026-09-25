@@ -6,6 +6,7 @@ import { PacsRisAdapter } from '../pacs-adapter/pacs-ris-adapter.interface';
 import { resolveCursor, encodeCursor, SYNC_JOB_NAME } from './sync-cursor';
 import { withRetry } from './retry';
 import { formatShanghai } from './time-format';
+import { recomputeRecordLevels } from '../monitor/record-level';
 
 export interface SyncRunnerOptions {
   pageSize: number;
@@ -446,7 +447,21 @@ async function upsertReport(
     await tx.monitorRecord.update({
       where: { id: record.id },
       data: {
-        currentLevel: matchResult.level,
+        // Issue #88: the previous AI classification describes the PREVIOUS
+        // report text, so it is invalidated here, in the same write that
+        // replaces that text - not merely left to be overwritten later, which
+        // would leave a window where a changed report still shows its old AI
+        // level. `aiAttempts` resets with it so the new content gets its full
+        // allowance of attempts rather than inheriting an exhausted count.
+        //
+        // Deliberately NOT `currentLevel`: the level is no longer assigned by
+        // whoever happens to be writing. It is recomputed below from the
+        // effective hits - see monitor/record-level.ts.
+        aiAttentionLevel: null,
+        aiMatchedAt: null,
+        aiResolvedAt: null,
+        aiClaimedAt: null,
+        aiAttempts: 0,
         firstMatchedAt:
           matchResult.matchedRules.length > 0
             ? (record.firstMatchedAt ?? matchedAtOrNow())
@@ -454,6 +469,12 @@ async function upsertReport(
         lastMatchedAt: matchResult.matchedRules.length > 0 ? new Date() : record.lastMatchedAt,
       },
     });
+
+    // The ONE place a record's level is decided (issue #88). Called here - after
+    // the matches and the AI reset are both written, inside the same
+    // transaction - so the row never becomes visible with a level that does not
+    // match its own hits.
+    await recomputeRecordLevels(tx, [record.id]);
   });
 }
 

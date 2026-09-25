@@ -205,12 +205,31 @@ enum SemanticJudgeOutcome {
   ERROR
 }
 
-/// Issue #87: which AI task produced an audit row. VALIDATE_MATCH is the only
-/// value implemented today. Issue #88's "Classify Report" task will add its own
-/// value (and its own table shape) when it lands - do not add values here
-/// without that task's implementation and tests.
+/// Which AI task produced an audit row.
+///   VALIDATE_MATCH  issue #87 - judge the local context of ONE keyword hit
+///   CLASSIFY_REPORT issue #88 - read the WHOLE report and match it against the
+///                   hospital's configured attention semantics. Its audit table
+///                   is monitor_report_ai (NOT monitor_match_semantic, which is
+///                   scoped to a single keyword hit).
+/// Do not add values here without that task's implementation and tests.
 enum SemanticTask {
   VALIDATE_MATCH
+  CLASSIFY_REPORT
+}
+
+/// Issue #88: the attention level a hospital assigns to one attention semantic.
+///
+/// Deliberately does NOT contain UNCLASSIFIED (unlike MonitorLevel): a semantic
+/// entry always carries an explicit colour - "unclassified" is a property of a
+/// REPORT (nothing matched it), not of a configured semantic.
+///
+/// The level a report ends up with is computed by deterministic code as the
+/// maximum configured level across its verified matches (RED > YELLOW > GREEN);
+/// the model never sets it. See MonitorReportAi.modelAttentionLevel.
+enum AttentionLevel {
+  RED
+  YELLOW
+  GREEN
 }
 
 /// Outcome status of one sync_job_log run.
@@ -269,6 +288,13 @@ enum AuditAction {
   USER_ENABLE
   USER_DELETE
   USER_PASSWORD_RESET
+  /// AI attention-semantic configuration writes (issue #88), mirroring
+  /// RULE_CREATE/RULE_UPDATE for keyword rules. A semantic edit that changes
+  /// name/description/attentionLevel creates a NEW versioned row and disables
+  /// the old one, so these actions are what makes "which version of the
+  /// hospital's attention semantics was in force" answerable from the audit log.
+  ATTENTION_SEMANTIC_CREATE
+  ATTENTION_SEMANTIC_UPDATE
 }
 
 /// Message shape for a notification_template. Deliberately mirrors what the
@@ -483,6 +509,55 @@ model MonitorRecord {
   /// after a report amendment).
   lastMatchedAt DateTime? @map("last_matched_at") @db.Timestamptz(6)
 
+  // --- Issue #88: AI report classification (Classify Report) --------------
+  //
+  // The AI path ADDS findings; it never removes any. All four failure modes
+  // (timeout, invalid output, unverifiable evidence, unknown semantic) leave
+  // every column here untouched, so the keyword result - and #87's filtering -
+  // is exactly what it would have been without #88.
+  //
+  // These columns are a denormalized cache of the newest successful attempt.
+  // The audit trail lives in MonitorReportAi (one row per attempt).
+
+  /// The level deterministic code computed for the newest SUCCESSFUL AI
+  /// classification, as the maximum configured AttentionLevel across the
+  /// attempt's verified matches. NULL = never classified, every attempt failed,
+  /// or the classifier is disabled. There is no "NONE" member: a successful
+  /// classification that matched nothing also leaves this NULL, and the two are
+  /// told apart by looking at MonitorReportAi (outcome OK with zero matches vs.
+  /// no OK row at all).
+  ///
+  /// Never allowed to LOWER currentLevel - see the shared level recompute.
+  aiAttentionLevel AttentionLevel? @map("ai_attention_level")
+
+  /// Latest time an AI classification produced at least one verified match.
+  /// Deliberately separate from first/lastMatchedAt, which record the KEYWORD
+  /// path only and must stay a faithful keyword fact.
+  aiMatchedAt DateTime? @map("ai_matched_at") @db.Timestamptz(6)
+
+  /// When this record's AI classification reached a TERMINAL state and left the
+  /// classifier queue. The queue is defined as `ai_resolved_at IS NULL` - this
+  /// column (not a status) is what drains it, exactly like #87's
+  /// semanticResolvedAt. Reset to NULL when the report content changes, so an
+  /// amended report is re-classified rather than keeping a verdict about text
+  /// that no longer exists.
+  aiResolvedAt DateTime? @map("ai_resolved_at") @db.Timestamptz(6)
+
+  /// Optimistic claim lease: when a classifier worker picked this record up.
+  aiClaimedAt DateTime? @map("ai_claimed_at") @db.Timestamptz(6)
+
+  /// Number of classification attempts spent on this record, incremented at
+  /// claim time. Bounded by config so a poison record cannot consume model
+  /// calls forever.
+  aiAttempts Int @default(0) @map("ai_attempts")
+
+  /// NOTE (issue #88): the classifier's queue index is a hand-written PARTIAL
+  /// index `uq_monitor_record_ai_queue` ON (ai_claimed_at, id) WHERE
+  /// ai_resolved_at IS NULL - Prisma @@index cannot express a WHERE clause, so
+  /// it is NOT representable here (same caveat as
+  /// MonitorMatch.uq_monitor_match_semantic_queue). If `prisma migrate dev`
+  /// ever proposes dropping it as drift, re-apply it by hand.
+
   // --- Report content snapshot (read-only display) ------------------------
 
   /// Full report findings/body text (RISR_ExamDesc 原文). Read-only display
@@ -496,6 +571,9 @@ model MonitorRecord {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   matches MonitorMatch[]
+
+  /// Every AI classification attempt against this record (issue #88).
+  reportAiAttempts MonitorReportAi[]
 
   /// Idempotency guard: the same source record/report/version must never
   /// produce two rows. Sync jobs upsert on this key.
@@ -770,6 +848,300 @@ model MonitorMatchSemantic {
   @@index([outcome])
   @@index([decisionReason])
   @@map("monitor_match_semantic")
+}
+
+// ---------------------------------------------------------------------------
+// attention_semantic - hospital-configured "attention semantics" (issue #88)
+// ---------------------------------------------------------------------------
+
+/// Report fields the CLASSIFY_REPORT task sends to the model, and therefore the
+/// only fields an AI evidence offset can point into.
+///
+/// Deliberately a NEW enum rather than a reuse of MatchField: MatchField is the
+/// KEYWORD engine's vocabulary (FINDINGS/IMPRESSION/REPORT_TEXT/STUDY_DESCRIPTION/
+/// OTHER), and its STUDY_DESCRIPTION means "检查描述" and has no dedicated text
+/// source in monitor_record. The AI task's three fields map to real columns:
+///   EXAM_ITEM  -> monitor_record.exam_item     (检查项目)
+///   FINDINGS   -> monitor_record.report_content (报告正文 / 检查所见)
+///   IMPRESSION -> monitor_record.diagnosis      (诊断意见)
+/// Overloading MatchField would make "检查项目" unrepresentable and would tie an
+/// AI-only concept to the keyword engine's semantics.
+enum ReportAiField {
+  EXAM_ITEM
+  FINDINGS
+  IMPRESSION
+}
+
+/// One hospital-configured "attention semantic" (关注语义) - issue #88.
+///
+/// This is NOT a keyword rule and NOT a prompt snippet. It is a short piece of
+/// natural language in which the hospital says WHICH MEANINGS it wants the AI to
+/// watch for, plus the colour that meaning should carry. The keyword path asks
+/// "what characters are present"; this asks "what does the report mean".
+///
+/// VERSIONING (mirrors MonitorRule exactly - see rules.service.ts
+/// SEMANTIC_FIELDS): editing name/description/attentionLevel - including MOVING
+/// an entry between red/yellow/green - creates a NEW row with version+1 and the
+/// same semanticGroupId, and disables the old row. In-place editing would
+/// retroactively rewrite what a historical AI judgement appears to have used,
+/// which is precisely what issue #88 §5 forbids. Enabling/disabling is the one
+/// edit that stays in place (it does not change what the semantic MEANS), so it
+/// bumps `version` only as an optimistic-lock token - identical to
+/// rules.service.ts.
+///
+/// Rows are never deleted: monitor_report_ai_match.semanticId references the
+/// exact version row an AI judgement was made against, so a delete would destroy
+/// the answer to "依据的是医院哪一版关注语义".
+model AttentionSemantic {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Stable identifier shared by all versions of the "same" logical semantic.
+  /// Defaults to this row's own id when first created (the first version is its
+  /// own group anchor). Mirrors MonitorRule.ruleGroupId.
+  semanticGroupId String @map("semantic_group_id") @db.Uuid
+
+  /// Short display name, e.g. "高度疑似恶性病变".
+  name String @db.VarChar(100)
+
+  /// The doctor's natural-language statement of the meaning to watch for, e.g.
+  /// "本次内镜检查发现明确或高度疑似的重要恶性、占位或浸润性病变，需要优先关注。"
+  ///
+  /// Sent to the model VERBATIM as part of the semantic configuration. Bounded
+  /// (see ATTENTION_SEMANTIC_DESCRIPTION_MAX_LENGTH) to keep one entry to one
+  /// intent - issue #88 §6 wants entries short and split rather than conditional
+  /// trees.
+  description String @db.Text
+
+  /// The colour this meaning carries. Chosen by the hospital; never by the
+  /// model. The final level of a report is the MAXIMUM of these across its
+  /// verified matches.
+  attentionLevel AttentionLevel @map("attention_level")
+
+  /// Soft enable/disable. Disabled entries are excluded from new
+  /// classifications; historical monitor_report_ai_match rows still reference
+  /// them.
+  isEnabled Boolean @default(true) @map("is_enabled")
+
+  /// Monotonically increasing version for this logical semantic. Written into
+  /// the classification audit as a snapshot, so a judgement stays attributable
+  /// to the exact text in force at the time.
+  version Int @default(1)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// Operator account who created this version. Not a FK - mirrors
+  /// MonitorRule.createdBy.
+  createdBy String @map("created_by") @db.VarChar(100)
+
+  /// Operator account who last modified this version.
+  updatedBy String @map("updated_by") @db.VarChar(100)
+
+  matches MonitorReportAiMatch[]
+
+  @@index([semanticGroupId])
+  @@index([attentionLevel, isEnabled])
+  @@map("attention_semantic")
+}
+
+// ---------------------------------------------------------------------------
+// monitor_report_ai - AI report classification audit trail (issue #88)
+// ---------------------------------------------------------------------------
+
+/// One CLASSIFY_REPORT ATTEMPT against one MonitorReport (issue #88).
+/// Append-only, exactly like MonitorMatchSemantic: rows are never updated or
+/// deleted, and a retry after a timeout gets its own row. The current result is
+/// denormalized onto MonitorRecord (aiAttentionLevel / aiMatchedAt); this table
+/// is the audit trail that answers issue #88 §13:
+///
+///   "这份报告当时为什么被 AI 判成红色？依据的是医院哪一版关注语义？"
+///
+/// WHY THIS IS NOT monitor_match_semantic: that table is scoped to ONE keyword
+/// hit and carries a NOT NULL match_id. #88's subject is a REPORT, which may
+/// have no keyword hit at all - that is the whole point of the feature. Reusing
+/// it would require inventing a phantom match row and would break #87's audit
+/// contract.
+///
+/// PRIVACY (same owner decision as #87, 2026-09-25): the report text sent to the
+/// model is NOT stored - neither the prompt, nor the model's raw response, nor
+/// the evidence excerpts verbatim. What is stored is what is needed to prove a
+/// check happened and to recompute it: content hashes, plus (on the evidence
+/// rows) offsets into monitor_record's report body, which is already stored and
+/// already gated behind patientDetail rights. `matches[].reason` is the model's
+/// own explanatory sentence, kept because the judgement must be explainable;
+/// it is length-bounded and nulled for masked callers.
+///
+/// Retention follows its parent record (onDelete: Cascade).
+model MonitorReportAi {
+  id String @id @default(uuid()) @db.Uuid
+
+  monitorRecordId String        @map("monitor_record_id") @db.Uuid
+  record          MonitorRecord @relation(fields: [monitorRecordId], references: [id], onDelete: Cascade)
+
+  /// Report version this attempt was made against. Part of the answer to "which
+  /// report"; a re-sync that changes the text resets the record's AI state so a
+  /// verdict about superseded text cannot survive.
+  reportVersion Int @map("report_version")
+
+  /// Always CLASSIFY_REPORT for this table.
+  task SemanticTask
+
+  /// Version of the task's prompt/contract, from
+  /// CLASSIFY_REPORT_PROMPT_VERSION in packages/ai-semantic (issue #88 §13's
+  /// "task/prompt_version").
+  taskVersion String @map("task_version") @db.VarChar(50)
+
+  /// Whether the CALL produced a usable, fully verified result - independent of
+  /// what it concluded. ERROR covers timeout/network/HTTP/JSON/schema/unknown
+  /// semantic/evidence/level-coherence, i.e. issue #88 §11's failure list.
+  outcome SemanticJudgeOutcome
+
+  // --- Result ------------------------------------------------------------
+
+  /// The level DETERMINISTIC CODE computed for this attempt: the maximum
+  /// configured AttentionLevel across the verified matches below (RED > YELLOW
+  /// > GREEN). NULL when outcome is ERROR, or when an OK attempt verified zero
+  /// matches - i.e. a genuine "NONE" (issue #88 §8).
+  ///
+  /// The model never writes this column. It is not the model's opinion.
+  attentionLevel AttentionLevel? @map("attention_level")
+
+  /// What the MODEL claimed the level was, recorded for audit and for measuring
+  /// model drift. Never read by any level computation: if it disagrees with the
+  /// code-computed level above, the attempt is rejected wholesale as
+  /// INCOHERENT_LEVEL and NO match is written - so a model that says "RED" here
+  /// cannot raise a report's level, and a model that says "NONE" cannot lower it.
+  modelAttentionLevel AttentionLevel? @map("model_attention_level")
+
+  /// How many enabled attention semantics were sent to the model, and how many
+  /// verified matches came back. Together with outcome these make "the model saw
+  /// nothing" distinguishable from "the model was never asked" .
+  semanticCount Int @map("semantic_count")
+  matchCount    Int @map("match_count")
+
+  /// Machine-readable failure code from the shared SemanticErrorCode taxonomy
+  /// (plus #88's own), or NULL when outcome is OK. NEVER free-form model output
+  /// or report text.
+  error String? @db.VarChar(64)
+
+  // --- Provenance --------------------------------------------------------
+
+  /// Model identifier as configured.
+  model String @db.VarChar(100)
+
+  /// Model version/revision as reported by the gateway, when it reports one.
+  modelVersion String? @map("model_version") @db.VarChar(100)
+
+  /// sha256 of the canonical JSON of everything sent (task + taskVersion + model
+  /// + reportHash + configHash). Two attempts with equal inputHash were made
+  /// from byte-identical inputs, whatever the model then answered.
+  inputHash String @map("input_hash") @db.VarChar(64)
+
+  /// sha256 of the canonical report snapshot alone (exam item + body +
+  /// diagnosis). An auditor entitled to read the report body recomputes this and
+  /// checks that the same text was read.
+  reportHash String @map("report_hash") @db.VarChar(64)
+
+  /// sha256 of the canonical attention-semantic configuration snapshot alone
+  /// (id + version + level + name + description of every enabled entry, sorted
+  /// by id). THIS is the column that answers "依据的是医院哪一版关注语义" for the
+  /// configuration as a whole, just as each match row's semanticId/Version
+  /// answers it for one entry.
+  configHash String @map("config_hash") @db.VarChar(64)
+
+  /// Wall-clock duration of the model call, ms. NULL when no call was made
+  /// (the attempt failed before dispatch, e.g. no report text).
+  latencyMs Int? @map("latency_ms")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  matches MonitorReportAiMatch[]
+
+  @@index([monitorRecordId, createdAt])
+  @@index([outcome])
+  @@index([attentionLevel])
+  @@map("monitor_report_ai")
+}
+
+/// One attention semantic that a CLASSIFY_REPORT attempt verified as matching
+/// (issue #88 §8: save ALL matches, never only the highest).
+///
+/// The colour stored here is the CONFIGURED level of the semantic at the time,
+/// snapshotted. It is what the final level is computed from.
+model MonitorReportAiMatch {
+  id String @id @default(uuid()) @db.Uuid
+
+  reportAiId String          @map("report_ai_id") @db.Uuid
+  reportAi   MonitorReportAi @relation(fields: [reportAiId], references: [id], onDelete: Cascade)
+
+  /// The exact AttentionSemantic VERSION row this match was made against, i.e.
+  /// the precise text of the hospital's semantic at that moment. Restrict (not
+  /// Cascade) because semantics are soft-disabled, never deleted - a delete
+  /// would orphan the audit trail (same reasoning as MonitorMatch.rule).
+  semanticId String            @map("semantic_id") @db.Uuid
+  semantic   AttentionSemantic @relation(fields: [semanticId], references: [id], onDelete: Restrict)
+
+  /// Snapshot of the semantic at match time, so this row stays a faithful,
+  /// immutable record even if the entry is later renamed or moved between
+  /// colours. Denormalized for the same reason monitor_match.keyword is.
+  semanticVersion Int            @map("semantic_version")
+  semanticName    String         @map("semantic_name") @db.VarChar(100)
+  attentionLevel  AttentionLevel @map("attention_level")
+
+  /// The model's confidence. Descriptive only - #87 filters on confidence, #88
+  /// never does: an AI match is either backed by verifiable evidence or it does
+  /// not exist.
+  confidence SemanticConfidence
+
+  /// The model's short Chinese explanation of why this semantic applies.
+  /// Bounded (300 chars) and treated as report-adjacent free text: masked for
+  /// callers without patientDetail rights, and never logged.
+  reason String @db.VarChar(300)
+
+  /// Position of this match in the model's response, so the audit reads back in
+  /// the order the model produced it.
+  ordinal Int
+
+  evidence MonitorReportAiEvidence[]
+
+  /// One row per (attempt, semantic). The model returning the same semantic_id
+  /// twice is a contract violation the parser rejects before any write.
+  @@unique([reportAiId, semanticId], name: "uq_report_ai_match_semantic")
+  @@index([reportAiId])
+  @@index([semanticId])
+  @@map("monitor_report_ai_match")
+}
+
+/// One verified evidence excerpt backing a MonitorReportAiMatch (issue #88 §9).
+///
+/// The excerpt itself is NOT stored verbatim - only its hash and where it sits
+/// in the report body, exactly as #87 does for MonitorMatchSemantic. An auditor
+/// entitled to read monitor_record recomputes the excerpt from those offsets.
+model MonitorReportAiEvidence {
+  id String @id @default(uuid()) @db.Uuid
+
+  matchId String               @map("match_id") @db.Uuid
+  match   MonitorReportAiMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  /// Position of this evidence within its match's `evidence` array.
+  ordinal Int
+
+  /// Which of the three report fields the excerpt was located in. The offsets
+  /// below are into THAT field's text.
+  field ReportAiField
+
+  /// sha256 (hex) of the evidence string the model returned, after it was
+  /// verified to be locatable in the exact text sent.
+  evidenceHash String @map("evidence_hash") @db.VarChar(64)
+
+  /// Inclusive start / exclusive end offsets of the excerpt inside the
+  /// monitor_record column named by `field` (UTF-16 code units).
+  evidenceStart Int @map("evidence_start")
+  evidenceEnd   Int @map("evidence_end")
+
+  @@unique([matchId, ordinal], name: "uq_report_ai_evidence_ordinal")
+  @@index([matchId])
+  @@map("monitor_report_ai_evidence")
 }
 
 // ---------------------------------------------------------------------------

@@ -9,3 +9,4 @@ export * from './notification';
 export * from './push-assistant';
 export * from './alert-link';
 export * from './users';
+export * from './attention-semantics';

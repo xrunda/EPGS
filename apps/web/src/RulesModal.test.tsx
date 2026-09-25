@@ -10,6 +10,7 @@ const redRule: MonitorRuleDto = {
   matchField: 'REPORT_TEXT',
   matchMode: 'CONTAINS',
   category: null,
+  semanticIntent: null,
   isEnabled: true,
   version: 1,
   ruleGroupId: '11111111-1111-4111-8111-111111111111',
@@ -67,6 +68,7 @@ describe('RulesModal', () => {
               matchMode: payload.matchMode,
               notes: payload.notes,
               isEnabled: payload.isEnabled,
+              semanticIntent: payload.semanticIntent ?? null,
             },
             201,
           );
@@ -94,6 +96,97 @@ describe('RulesModal', () => {
     expect(within(row).getByText('红色')).toBeInTheDocument();
     expect(within(row).getByText('启用')).toBeInTheDocument();
     expect(screen.getByText('规则修改仅影响后续新数据，不自动重算历史数据。')).toBeInTheDocument();
+  });
+
+  // Issue #87 mandated copy: the doctor-facing entry is 关键词监控 and must not
+  // mention prompts, models, classifiers or JSON schemas.
+  it('presents the keyword-monitoring wording', async () => {
+    render(<RulesModal open onClose={vi.fn()} />);
+    await screen.findByText('癌');
+
+    expect(screen.getByRole('heading', { name: '关键词监控' })).toBeInTheDocument();
+    expect(screen.getByText('捕捉报告里写了什么「字」。')).toBeInTheDocument();
+    expect(screen.getByText('关键词监控看「字」 · AI 语义监控看「意思」')).toBeInTheDocument();
+    // The mandated placeholder sits on the keyword the doctor types into the
+    // rule form, not on the search box above the table.
+    fireEvent.click(screen.getByRole('button', { name: '新增规则' }));
+    expect(screen.getByLabelText('规则关键词')).toHaveAttribute(
+      'placeholder',
+      '请输入疾病名称或关键词，例如：溃疡、肿物、癌……',
+    );
+    expect(screen.getByLabelText('这个关键词想关注什么情况（选填）')).toBeInTheDocument();
+    for (const leak of ['Prompt', '提示词', 'Semantic', 'LLM', 'JSON', '模型']) {
+      expect(screen.queryByText(new RegExp(leak, 'i'))).not.toBeInTheDocument();
+    }
+  });
+
+  it('stores the semantic intent with the rule and shows it in the table', async () => {
+    render(<RulesModal open onClose={vi.fn()} actorId="rule-admin" />);
+    await screen.findByText('癌');
+
+    // A rule with no intent is shown as 未设置, never as a blank cell.
+    const firstRow = screen.getByRole('row', { name: /癌/ });
+    expect(within(firstRow).getByText('未设置')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '新增规则' }));
+    fireEvent.change(screen.getByLabelText('规则关键词'), { target: { value: '溃疡' } });
+    fireEvent.change(screen.getByLabelText('这个关键词想关注什么情况（选填）'), {
+      target: { value: '  本次检查明确或疑似存在的病变；否认句和既往史不算。  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存规则' }));
+
+    expect(await screen.findByText('规则已新增')).toBeInTheDocument();
+    const postCall = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
+      keyword: '溃疡',
+      semanticIntent: '本次检查明确或疑似存在的病变；否认句和既往史不算。',
+    });
+    expect(
+      screen.getByText('本次检查明确或疑似存在的病变；否认句和既往史不算。'),
+    ).toBeInTheDocument();
+  });
+
+  it('sends null when the semantic intent is left blank', async () => {
+    render(<RulesModal open onClose={vi.fn()} />);
+    await screen.findByText('癌');
+
+    fireEvent.click(screen.getByRole('button', { name: '新增规则' }));
+    fireEvent.change(screen.getByLabelText('规则关键词'), { target: { value: '溃疡' } });
+    fireEvent.change(screen.getByLabelText('这个关键词想关注什么情况（选填）'), {
+      target: { value: '   ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存规则' }));
+
+    await screen.findByText('规则已新增');
+    const postCall = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(JSON.parse(String(postCall?.[1]?.body)).semanticIntent).toBeNull();
+  });
+
+  it('prefills the intent when editing a rule that already has one', async () => {
+    vi.mocked(fetch).mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const rule: MonitorRuleDto = {
+        ...redRule,
+        keyword: '溃疡',
+        semanticIntent: '本次检查明确或疑似存在的病变。',
+      };
+      if (init?.method === 'PUT') {
+        const payload = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return jsonResponse({ ...rule, ...payload, version: rule.version + 1 });
+      }
+      return jsonResponse({ items: [rule], total: 1, page: 1, pageSize: 20 });
+    });
+    render(<RulesModal open onClose={vi.fn()} />);
+    await screen.findByText('溃疡');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    const intent = screen.getByLabelText('这个关键词想关注什么情况（选填）');
+    expect(intent).toHaveValue('本次检查明确或疑似存在的病变。');
+
+    fireEvent.change(intent, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存规则' }));
+    await screen.findByText('规则已保存');
+    const putCall = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'PUT');
+    expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({ semanticIntent: null });
   });
 
   it('queries by keyword, attention level, and status', async () => {
@@ -246,7 +339,7 @@ describe('RulesModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新增规则' }));
     fireEvent.change(screen.getByLabelText('规则关键词'), { target: { value: '肿物' } });
-    fireEvent.click(screen.getByRole('button', { name: '关闭监测规则配置' }));
+    fireEvent.click(screen.getByRole('button', { name: '关闭关键词监控' }));
     expect(confirmSpy).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
 
@@ -259,7 +352,7 @@ describe('RulesModal', () => {
   it('moves keyboard focus into the dialog and supports Escape to close', async () => {
     const onClose = vi.fn();
     render(<RulesModal open onClose={onClose} />);
-    const dialog = screen.getByRole('dialog', { name: '监测规则配置' });
+    const dialog = screen.getByRole('dialog', { name: '关键词监控' });
     expect(dialog).toHaveFocus();
     await screen.findByText('癌');
 

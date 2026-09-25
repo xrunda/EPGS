@@ -105,6 +105,26 @@ button:disabled {
   color: var(--ink-800);
 }
 
+/* 关键词监控的一句话说明（页面主描述 + 辅助说明 + 与 AI 语义监控的分工）。 */
+.rules-modal__lead {
+  margin: 12px 28px 0;
+  color: var(--ink-800);
+  font-size: 16px;
+  font-weight: 600;
+}
+.rules-modal__sublead {
+  margin: 6px 28px 0;
+  color: var(--ink-300);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.rules-modal__crosssell {
+  margin: 8px 28px 0;
+  color: var(--teal-700);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .rules-modal__notice {
   display: flex;
   align-items: center;
@@ -313,6 +333,21 @@ textarea:focus {
   max-width: 210px;
   color: #687b7e !important;
 }
+/* 关注情况（issue #87）：整句展示会撑宽表格，截断并用 title 提供全文。 */
+.rules-table__intent {
+  max-width: 200px;
+  color: #687b7e !important;
+}
+.rules-table__intent span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.rules-table__intent--none {
+  color: #9aa9ab !important;
+  font-style: normal;
+}
 .rules-pagination {
   display: flex;
   align-items: center;
@@ -514,6 +549,9 @@ textarea:focus {
     padding-left: 16px;
   }
   .rules-modal__notice,
+  .rules-modal__lead,
+  .rules-modal__sublead,
+  .rules-modal__crosssell,
   .feedback {
     margin-right: 16px;
     margin-left: 16px;

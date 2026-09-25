@@ -354,7 +354,7 @@ export function Workbench({
             立即刷新
           </button>
           <button className="button button--primary" type="button" onClick={onOpenRules}>
-            监测规则
+            关键词监控
           </button>
           {onOpenNotifications && (
             <button className="button" type="button" onClick={onOpenNotifications}>

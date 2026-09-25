@@ -106,6 +106,13 @@
   font-size: 12px;
   font-weight: 700;
 }
+/* 未计入关注的条数提示，跟在命中总数后面（issue #87）。 */
+.drawer__count-note {
+  margin-left: 8px;
+  color: #8a7a52;
+  font-size: 12px;
+  font-weight: 600;
+}
 .drawer__text {
   margin: 0;
   padding: 14px;
@@ -146,6 +153,31 @@
 .drawer__hit:hover {
   box-shadow: var(--shadow-xs);
 }
+/*
+  未计入关注（issue #87）：弱化但仍然可读。灰色左边框 + 降低对比度表达「这条
+  不算数」，而不是隐藏或禁用——关键词命中过是事实，医生要能看见并自己判断。
+*/
+.drawer__hit--filtered {
+  border-left-color: #c3cbcc;
+  background: #fafbfb;
+}
+.drawer__hit--filtered .drawer__hit-head strong {
+  color: var(--ink-400);
+}
+.drawer__hit--filtered .level-tag {
+  opacity: 0.55;
+}
+.drawer__hit-flag {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid #cfd6d6;
+  border-radius: var(--radius-pill);
+  background: #f1f3f3;
+  color: #6d7b7d;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .drawer__hit-head {
   display: flex;
   align-items: center;
@@ -167,6 +199,31 @@
   color: var(--ink-400);
   font-size: 13px;
   line-height: 1.7;
+}
+/* 上下文判读一行（issue #87）：说清「这句话被读成了什么意思」。 */
+.drawer__hit-semantic {
+  margin: 8px 0 0;
+  color: #4a6266;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.drawer__hit-semantic-label {
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eaf4f5;
+  color: #315b62;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.drawer__hit-semantic-confidence {
+  color: var(--ink-300);
+}
+.drawer__hit-semantic-reason {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-300);
 }
 .drawer__hit-meta {
   margin: 8px 0 0;

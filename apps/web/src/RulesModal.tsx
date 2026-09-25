@@ -6,6 +6,7 @@ import type {
   MonitorLevelDto,
   MonitorRuleDto,
 } from '@epgs/shared-types';
+import { SEMANTIC_INTENT_MAX_LENGTH } from '@epgs/shared-types';
 import {
   confirmRulesImport,
   createRule,
@@ -36,6 +37,8 @@ interface RuleDraft {
   matchMode: MatchModeDto;
   category: string;
   notes: string;
+  /** Issue #87: 这个关键词想关注什么情况（医生自己的话，可为空）。 */
+  semanticIntent: string;
   isEnabled: boolean;
 }
 
@@ -47,6 +50,7 @@ const EMPTY_RULE: RuleDraft = {
   matchMode: 'CONTAINS',
   category: '',
   notes: '',
+  semanticIntent: '',
   isEnabled: true,
 };
 
@@ -79,6 +83,7 @@ function toDraft(rule: MonitorRuleDto): RuleDraft {
     matchMode: rule.matchMode,
     category: rule.category ?? '',
     notes: rule.notes ?? '',
+    semanticIntent: rule.semanticIntent ?? '',
     isEnabled: rule.isEnabled,
   };
 }
@@ -208,6 +213,9 @@ export function RulesModal({
         matchMode: draft.matchMode,
         category: draft.category.trim() || null,
         notes: draft.notes.trim() || null,
+        // Blank means "not configured" rather than an empty intent - the
+        // server stores it as null, and such a rule is never sent to the AI.
+        semanticIntent: draft.semanticIntent.trim() || null,
         isEnabled: draft.isEnabled,
         actorId,
       };
@@ -309,18 +317,24 @@ export function RulesModal({
       >
         <header className="rules-modal__header">
           <div>
-            <p className="rules-modal__eyebrow">内镜中心 · 关注等级配置</p>
-            <h2 id="rules-modal-title">监测规则配置</h2>
+            <p className="rules-modal__eyebrow">内镜中心 · 关键词与关注等级</p>
+            <h2 id="rules-modal-title">关键词监控</h2>
           </div>
           <button
             className="icon-button"
             type="button"
-            aria-label="关闭监测规则配置"
+            aria-label="关闭关键词监控"
             onClick={requestClose}
           >
             ×
           </button>
         </header>
+
+        <p className="rules-modal__lead">捕捉报告里写了什么「字」。</p>
+        <p className="rules-modal__sublead">
+          配置需要关注的疾病名称或关键词，系统会在报告里查找这些字，并把命中的患者按关注等级列到工作台。
+        </p>
+        <p className="rules-modal__crosssell">关键词监控看「字」 · AI 语义监控看「意思」</p>
 
         <div className="rules-modal__notice">
           <span aria-hidden="true">i</span>
@@ -459,6 +473,7 @@ export function RulesModal({
                   <tr>
                     <th>关键词</th>
                     <th>关注等级</th>
+                    <th>关注情况</th>
                     <th>匹配范围</th>
                     <th>匹配方式</th>
                     <th>状态</th>
@@ -477,6 +492,16 @@ export function RulesModal({
                         <span className={`level-tag level-tag--${rule.level.toLowerCase()}`}>
                           {LEVEL_LABELS[rule.level]}
                         </span>
+                      </td>
+                      <td className="rules-table__intent">
+                        {rule.semanticIntent ? (
+                          <span title={rule.semanticIntent}>{rule.semanticIntent}</span>
+                        ) : (
+                          // Not having one is a visible, actionable state rather
+                          // than a blank: it is exactly the set of rules that
+                          // are not being checked against their context.
+                          <span className="rules-table__intent--none">未设置</span>
+                        )}
                       </td>
                       <td>{FIELD_LABELS[rule.matchField]}</td>
                       <td>{MODE_LABELS[rule.matchMode]}</td>
@@ -564,6 +589,7 @@ export function RulesModal({
                   autoFocus
                   value={draft.keyword}
                   onChange={(event) => updateDraft('keyword', event.target.value)}
+                  placeholder="请输入疾病名称或关键词，例如：溃疡、肿物、癌……"
                   maxLength={255}
                 />
               </label>
@@ -611,6 +637,19 @@ export function RulesModal({
                   <option value="OTHER">其他</option>
                 </select>
               </label>
+              <label>
+                这个关键词想关注什么情况（选填）
+                <textarea
+                  value={draft.semanticIntent}
+                  onChange={(event) => updateDraft('semanticIntent', event.target.value)}
+                  placeholder="例如：本次检查明确或疑似存在的病变；单独出现的否认句或既往史不算。"
+                  rows={3}
+                  maxLength={SEMANTIC_INTENT_MAX_LENGTH}
+                />
+              </label>
+              <p className="panel-copy">
+                用一句话说明这个关键词想抓的情况。填写后，系统会看报告里命中处的上下文，判断这句话是不是真的在说这个情况；留空则不判断，命中即计入关注。
+              </p>
               <label>
                 分类（选填）
                 <input

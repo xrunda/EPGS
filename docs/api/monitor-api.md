@@ -119,15 +119,15 @@
 以下参数在列表与汇总两个接口上**完全一致**（`MonitorFiltersDto` 被两个 DTO 复用），
 多个筛选条件之间是 **AND** 关系。
 
-| 参数              | 类型                                  | 语义                                                                             |
-| ----------------- | ------------------------------------- | -------------------------------------------------------------------------------- |
-| `examDateFrom`    | `YYYY-MM-DD`                          | Shanghai 自然日包含下界（见上）                                                  |
-| `examDateTo`      | `YYYY-MM-DD`                          | Shanghai 自然日排他上界（见上）                                                  |
-| `department`      | 字符串                                | 科室，**大小写不敏感精确匹配**（`equals` + `insensitive`）                       |
-| `patientTypeCode` | 字符串                                | 患者类型源编码**精确匹配**（如 `I`/`O`）                                         |
-| `level`           | `RED`/`YELLOW`/`GREEN`/`UNCLASSIFIED` | 关注等级精确匹配                                                                 |
-| `examItem`        | 字符串                                | 检查项目**子串匹配**（大小写不敏感）                                             |
-| `patientName`     | 字符串                                | 姓名**子串匹配**（大小写不敏感）                                                 |
+| 参数              | 类型                                  | 语义                                                                                   |
+| ----------------- | ------------------------------------- | -------------------------------------------------------------------------------------- |
+| `examDateFrom`    | `YYYY-MM-DD`                          | Shanghai 自然日包含下界（见上）                                                        |
+| `examDateTo`      | `YYYY-MM-DD`                          | Shanghai 自然日排他上界（见上）                                                        |
+| `department`      | 字符串                                | 科室，**大小写不敏感精确匹配**（`equals` + `insensitive`）                             |
+| `patientTypeCode` | 字符串                                | 患者类型源编码**精确匹配**（如 `I`/`O`）                                               |
+| `level`           | `RED`/`YELLOW`/`GREEN`/`UNCLASSIFIED` | 关注等级精确匹配                                                                       |
+| `examItem`        | 字符串                                | 检查项目**子串匹配**（大小写不敏感）                                                   |
+| `patientName`     | 字符串                                | 姓名**子串匹配**（大小写不敏感）                                                       |
 | `keyword`         | 字符串                                | 命中关键词 `monitor_match.keyword` **精确匹配**（来自 `GET /api/rules`），**不含正文** |
 
 ### 排序
@@ -253,7 +253,9 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "level": "RED",
       "matchedField": "REPORT_TEXT",
       "contextSnippet": "…黏膜内腺癌…",
-      "matchedAt": "2026-08-20T08:15:30.000Z"
+      "matchedAt": "2026-08-20T08:15:30.000Z",
+      "semanticFiltered": false,
+      "semantic": null
     },
     {
       "ruleId": "11111111-1111-4111-8111-0000000000bb",
@@ -262,7 +264,14 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "level": "YELLOW",
       "matchedField": "FINDINGS",
       "contextSnippet": "…息肉样隆起…",
-      "matchedAt": "2026-08-20T08:15:45.000Z"
+      "matchedAt": "2026-08-20T08:15:45.000Z",
+      "semanticFiltered": false,
+      "semantic": {
+        "status": "PRESENT",
+        "confidence": "HIGH",
+        "reason": "报告中明确描述该病变。",
+        "judgedAt": "2026-08-20T08:20:11.000Z"
+      }
     }
   ]
 }
@@ -271,6 +280,29 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
 - `hits` 即 issue #8 的 `matches`（本 API 命名为 `hits`）。按
   `matchedAt asc, id asc` 排序；`matchedKeywords` 为去重后的关键词列表，按最早命中
   顺序排列。
+
+### 命中上的 AI 语义判读字段（issue #87）
+
+详情接口**返回全部命中**，包括被判定"未计入关注"的那些——关键词引擎命中过是事实，
+隐藏它等于隐藏一次真实事件。判读只是附加在这条命中上的注解：
+
+| 字段                  | 取值                                                  | 说明                                                                                    |
+| --------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `semanticFiltered`    | boolean                                               | 判读结论是否为"不计入关注"。**只有确定性的处置矩阵能置 true**，任何 AI 失败都保持 false |
+| `semantic`            | object \| null                                        | 最近一次**成功**判读的结论；从未判读、判读失败、或规则未配置关注情况时为 `null`         |
+| `semantic.status`     | `PRESENT`/`NEGATED`/`SUSPECTED`/`HISTORY`/`UNCERTAIN` | 报告里那句话是肯定/否定/疑似/既往史/无法判断。**不是关注等级**，与红黄绿无映射          |
+| `semantic.confidence` | `HIGH`/`MEDIUM`/`LOW`                                 | 把握程度；只有 `HIGH` 才可能触发过滤                                                    |
+| `semantic.reason`     | string \| null                                        | 给医生看的解释句。调用方没有 `patientDetail` 权限时置 `null`（结论与把握仍返回）        |
+| `semantic.judgedAt`   | ISO 时间                                              | 该结论的写入时间                                                                        |
+
+- `level` **永远不变**：它是匹配时刻规则给的等级，判读不会调整它，也不会产生新等级。
+  是否计入关注由 `semanticFiltered` 表达，两者互不覆盖。
+- 列表接口（`GET /api/monitor/exams`）**不返回** `semantic`，但它的口径是"有效命中"：
+  `matchedKeywords`、关键词筛选与汇总计数都只统计 `semanticFiltered = false` 的命中，
+  与 `monitor_record.currentLevel`（判读后按有效命中重算）保持一致。
+- 审计字段（模型、版本、耗时、证据哈希、错误码）在 `monitor_match_semantic` 表，
+  不对医生端返回；见 [data-dictionary.md](../data-dictionary.md) 与
+  [semantic-judge-design.md](../semantic-judge-design.md)。
 - **`ruleId` + `ruleVersion`**（issue #8）：命中由哪条 `monitor_rule` 的哪个版本
   产生。规则是版本化、只软禁用的（FK RESTRICT，永不物理删除），因此该引用永远
   可解析——命中证据可审计回产生它的确切规则版本。

@@ -44,6 +44,12 @@
 > 知晓、处理、误报、日报等入口或可调用 API"，且该断言有 CI 门禁兜底
 > （`apps/api/src/security/closed-loop-absence.spec.ts`）。
 > **凡 PRD 与 [acceptance.md](./acceptance.md) 冲突之处，一律以 acceptance.md 为准。**
+>
+> 另有一处被后续 issue **部分更新**（不是被取消）：`Doc/PRD.md` §7.3 末条
+> "否定语义（如'未见肿瘤'）在当前 UI 中仅通过备注提示人工复核，V1.0 不自动识别
+> 否定关系"。issue #87 已实现"对命中处上下文做语义判读"，其中包含高把握的否定识别，
+> 见 [semantic-judge-design.md](./semantic-judge-design.md)；但**关注等级仍只来自
+> 关键词规则**，判读只会让某条命中"不计入关注"，不会产生任何等级，也不做诊断。
 
 ## 2. 文档索引
 
@@ -76,11 +82,12 @@
 
 ### 设计与配置界面
 
-| 文档                                               | 内容                                           |
-| -------------------------------------------------- | ---------------------------------------------- |
-| [user-admin-design.md](./user-admin-design.md)     | 用户管理模块的设计草案（背景、目标、职责分离） |
-| [notification-design.md](./notification-design.md) | 消息推送模块设计，含 Webhook URL 加密方案      |
-| [rules-config-ui.md](./rules-config-ui.md)         | 监测规则配置弹窗的功能与交互                   |
+| 文档                                                   | 内容                                                                            |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| [user-admin-design.md](./user-admin-design.md)         | 用户管理模块的设计草案（背景、目标、职责分离）                                  |
+| [notification-design.md](./notification-design.md)     | 消息推送模块设计，含 Webhook URL 加密方案                                       |
+| [rules-config-ui.md](./rules-config-ui.md)             | 关键词监控（原"监测规则配置"）弹窗的功能与交互                                  |
+| [semantic-judge-design.md](./semantic-judge-design.md) | AI 语义判读（issue #87）：分层、决策矩阵、fail-open、审计与隐私、上线前手工验证 |
 
 ### 数据源与适配
 

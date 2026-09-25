@@ -43,16 +43,27 @@ export function maskExamRow(dto: MonitorExamDto): MonitorExamDto {
 /**
  * Masks a detail DTO for a user without patientDetail rights: patientName/
  * bedNo are masked as in the list, and the HIGH-sensitivity free text
- * (reportContent / diagnosis / each hit's contextSnippet) is nulled. The
- * dataAccess.masked flag lets the client distinguish redaction from a report
- * that genuinely has no body.
+ * (reportContent / diagnosis / each hit's contextSnippet / each hit's AI
+ * explanation) is nulled. The dataAccess.masked flag lets the client
+ * distinguish redaction from a report that genuinely has no body.
  */
 export function maskExamDetail(dto: MonitorExamDetailDto): MonitorExamDetailDto {
   return {
     ...maskExamRow(dto),
     reportContent: null,
     diagnosis: null,
-    hits: dto.hits.map((hit) => ({ ...hit, contextSnippet: null })),
+    hits: dto.hits.map((hit) => ({
+      ...hit,
+      contextSnippet: null,
+      // Issue #87: the model's explanation is report-adjacent free text - a
+      // model asked why it thought a sentence was negative will often quote
+      // that sentence - so it is nulled with the rest of the HIGH-sensitivity
+      // text. The verdict itself (status/confidence/filtered) is NOT patient
+      // data: it describes the keyword rule and the hit, which this caller can
+      // already see, so it stays and the drawer can still explain why a hit
+      // does not count.
+      semantic: hit.semantic ? { ...hit.semantic, reason: null } : null,
+    })),
     dataAccess: { masked: true },
   };
 }

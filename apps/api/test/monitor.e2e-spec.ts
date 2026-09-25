@@ -869,6 +869,9 @@ describe('Monitor API (e2e, real Postgres)', () => {
     expect(res.body.reportContent).toBe('胃窦见一处隆起性病变，病理提示黏膜内腺癌。');
     expect(res.body.diagnosis).toBe('胃腺癌（早期）。');
     expect(res.body.hits).toHaveLength(2);
+    // Issue #87 adds two fields to every hit: the AI verdict (null when the
+    // hit was never judged) and the disposition flag. The keyword evidence
+    // fields are unchanged - the raw hit stays exactly as the engine wrote it.
     expect(res.body.hits[0]).toEqual({
       ruleId: ruleIds['rule-1'],
       ruleVersion: 1,
@@ -877,6 +880,8 @@ describe('Monitor API (e2e, real Postgres)', () => {
       matchedField: 'REPORT_TEXT',
       contextSnippet: '…黏膜内腺癌…',
       matchedAt: '2026-08-20T08:15:30.000Z',
+      semanticFiltered: false,
+      semantic: null,
     });
     expect(res.body.hits[1]).toEqual(
       expect.objectContaining({
@@ -887,6 +892,169 @@ describe('Monitor API (e2e, real Postgres)', () => {
       }),
     );
     expect(res.body.matchedKeywords).toEqual(['腺癌', '息肉样']);
+  });
+
+  // Issue #87, end to end through the real API and Postgres: a hit the judge
+  // filtered is still returned by the detail (the keyword engine DID fire, and
+  // hiding that would hide a real event), carrying its verdict, its original
+  // level and its original snippet. What it is excluded from is every surface
+  // where a hit means "this is why the patient is on the watch list": the
+  // list's keyword chips and the keyword filter.
+  itWithDb('detail carries the AI verdict and filtered hits stay out of the list', async () => {
+    const ruleId = randomUUID();
+    await prisma.monitorRule.create({
+      data: {
+        id: ruleId,
+        keyword: 'AI-E2E-病灶',
+        level: 'RED' as never,
+        matchField: 'REPORT_TEXT' as never,
+        ruleGroupId: ruleId,
+        semanticIntent: '本次检查明确或疑似存在的病变；否认句不算。',
+        createdBy: 'tester',
+        updatedBy: 'tester',
+      },
+    });
+    const examTime = new Date('2026-08-22T02:30:00Z');
+    const record = await prisma.monitorRecord.create({
+      data: {
+        sourceRecordId: 'TEST-MON-AI1',
+        reportId: 'TEST-MON-AI1',
+        reportVersion: 1,
+        sourceUpdatedAt: examTime,
+        examTime,
+        examItem: '电子胃镜检查',
+        currentLevel: 'UNCLASSIFIED' as never,
+        reportContent: '胃窦黏膜光滑，未见 AI-E2E-病灶。',
+      },
+    });
+    const hit = await prisma.monitorMatch.create({
+      data: {
+        monitorRecordId: record.id,
+        ruleId,
+        keyword: 'AI-E2E-病灶',
+        level: 'RED' as never,
+        matchedField: 'REPORT_TEXT' as never,
+        contextSnippet: '…未见 AI-E2E-病灶…',
+        reportVersion: 1,
+        matchedAt: examTime,
+        semanticFiltered: true,
+        semanticStatus: 'NEGATED' as never,
+        semanticConfidence: 'HIGH' as never,
+        semanticResolvedAt: new Date('2026-08-22T02:31:00Z'),
+        semanticAttempts: 1,
+      },
+    });
+    // An earlier SUCCEEDED attempt that reached the opposite conclusion, so the
+    // test also proves the detail surfaces the NEWEST verdict, not the first.
+    await prisma.monitorMatchSemantic.create({
+      data: {
+        matchId: hit.id,
+        task: 'VALIDATE_MATCH' as never,
+        taskVersion: 'validate-match/1',
+        outcome: 'OK' as never,
+        semanticStatus: 'PRESENT' as never,
+        matched: true,
+        confidence: 'LOW' as never,
+        reason: '第一次判读，把握低。',
+        model: 'e2e-model',
+        inputHash: 'a'.repeat(64),
+        contextHash: 'b'.repeat(64),
+        contextStart: 0,
+        contextEnd: 18,
+        decisionReason: 'PRESENT_KEEP',
+        filtered: false,
+        createdAt: new Date('2026-08-22T02:30:30Z'),
+      },
+    });
+    const judgement = await prisma.monitorMatchSemantic.create({
+      data: {
+        matchId: hit.id,
+        task: 'VALIDATE_MATCH' as never,
+        taskVersion: 'validate-match/1',
+        outcome: 'OK' as never,
+        semanticStatus: 'NEGATED' as never,
+        matched: false,
+        confidence: 'HIGH' as never,
+        reason: '该句是否认句，报告没有写存在该病变。',
+        intentExcludesHistory: false,
+        evidenceHash: 'c'.repeat(64),
+        evidenceStart: 7,
+        evidenceEnd: 18,
+        model: 'e2e-model',
+        inputHash: 'd'.repeat(64),
+        contextHash: 'e'.repeat(64),
+        contextStart: 0,
+        contextEnd: 18,
+        latencyMs: 640,
+        decisionReason: 'NEGATED_HIGH_FILTER',
+        filtered: true,
+        createdAt: new Date('2026-08-22T02:31:00Z'),
+      },
+    });
+
+    try {
+      // The list: the keyword chip is gone, so the record is not discoverable
+      // by it, and no chip claims a hit that does not count.
+      const list = await agent.get('/api/monitor/exams').query({ keyword: 'AI-E2E-病灶' });
+      expect(list.body.total).toBe(0);
+      const clean = await agent.get('/api/monitor/exams').query({ keyword: 'AI-E2E' });
+      expect(clean.body.total).toBe(0);
+      const byId = await agent.get('/api/monitor/exams').query({ examDateFrom: '2026-08-22', examDateTo: '2026-08-22' });
+      expect(byId.body.items.map((item: { recordId: string }) => item.recordId)).toContain(record.id);
+      const listed = byId.body.items.find((item: { recordId: string }) => item.recordId === record.id);
+      expect(listed.matchedKeywords).toEqual([]);
+
+      // The detail: everything the engine recorded, plus the verdict.
+      const detail = await agent.get(`/api/monitor/exams/${record.id}`).expect(200);
+      expect(detail.body.hits).toHaveLength(1);
+      expect(detail.body.hits[0]).toEqual({
+        ruleId,
+        ruleVersion: 1,
+        keyword: 'AI-E2E-病灶',
+        level: 'RED', // the rule's level, untouched by the verdict
+        matchedField: 'REPORT_TEXT',
+        contextSnippet: '…未见 AI-E2E-病灶…',
+        matchedAt: '2026-08-22T02:30:00.000Z',
+        semanticFiltered: true,
+        semantic: {
+          status: 'NEGATED',
+          confidence: 'HIGH',
+          reason: '该句是否认句，报告没有写存在该病变。',
+          judgedAt: judgement.createdAt.toISOString(),
+        },
+      });
+      // The raw hit is still there in full - filtering is an annotation on it,
+      // never a deletion.
+      const raw = await prisma.monitorMatch.findUniqueOrThrow({ where: { id: hit.id } });
+      expect(raw.keyword).toBe('AI-E2E-病灶');
+      expect(raw.semanticFiltered).toBe(true);
+
+      // A later failed attempt is not a verdict: the newest OK row still wins.
+      await prisma.monitorMatchSemantic.create({
+        data: {
+          matchId: hit.id,
+          task: 'VALIDATE_MATCH' as never,
+          taskVersion: 'validate-match/1',
+          outcome: 'ERROR' as never,
+          model: 'e2e-model',
+          inputHash: 'f'.repeat(64),
+          contextHash: 'g'.repeat(64),
+          contextStart: 0,
+          contextEnd: 18,
+          error: 'TIMEOUT (HTTP 504)',
+          decisionReason: 'TIMEOUT_KEEP',
+          filtered: false,
+          createdAt: new Date('2026-08-22T02:32:00Z'),
+        },
+      });
+      const afterFailure = await agent.get(`/api/monitor/exams/${record.id}`).expect(200);
+      expect(afterFailure.body.hits[0].semantic.status).toBe('NEGATED');
+      expect(afterFailure.body.hits[0].semanticFiltered).toBe(true);
+    } finally {
+      // Delete the record first: its matches (and their judgements) cascade.
+      await prisma.monitorRecord.delete({ where: { id: record.id } });
+      await prisma.monitorRule.delete({ where: { id: ruleId } });
+    }
   });
 
   itWithDb('detail dedupes keywords that matched via multiple rules (R9)', async () => {

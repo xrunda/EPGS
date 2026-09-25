@@ -11,7 +11,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { MonitorLevel, MatchField, MatchMode } from '@prisma/client';
-import { UpdateMonitorRuleBody } from '@epgs/shared-types';
+import { SEMANTIC_INTENT_MAX_LENGTH, UpdateMonitorRuleBody } from '@epgs/shared-types';
 
 export class UpdateRuleDto implements UpdateMonitorRuleBody {
   @ApiPropertyOptional({ example: '肿瘤' })
@@ -50,6 +50,20 @@ export class UpdateRuleDto implements UpdateMonitorRuleBody {
   @IsOptional()
   @IsString()
   notes?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: SEMANTIC_INTENT_MAX_LENGTH,
+    description:
+      'Issue #87: 这个关键词想关注什么情况。省略 = 不修改；null 或空白 = 清空（清空后该规则不再做语义判断）。修改它会生成新版本规则。',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(SEMANTIC_INTENT_MAX_LENGTH, {
+    message: `semanticIntent must be at most ${SEMANTIC_INTENT_MAX_LENGTH} characters`,
+  })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  semanticIntent?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

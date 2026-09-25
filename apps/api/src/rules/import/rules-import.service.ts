@@ -153,6 +153,13 @@ export class RulesImportService {
             matchMode: row.matchMode,
             category: row.category,
             notes: row.notes,
+            // Issue #87: CSV import deliberately does NOT carry a
+            // semanticIntent - the import format is the pre-#87 column set,
+            // and an intent is the doctor's own sentence rather than a
+            // spreadsheet cell. Imported rules land in the documented
+            // "not configured" state and are skipped by the AI judge until
+            // someone fills the field in on the rule config screen.
+            semanticIntent: null,
             isEnabled: true,
             version: 1,
             ruleGroupId: '00000000-0000-0000-0000-000000000000',

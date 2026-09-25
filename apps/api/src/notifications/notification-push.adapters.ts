@@ -68,7 +68,9 @@ export class PrismaNotificationPushStore implements NotificationPushStore {
   }
 
   async getTemplate(templateId: string): Promise<PushTemplate | null> {
-    const template = await this.prisma.notificationTemplate.findUnique({ where: { id: templateId } });
+    const template = await this.prisma.notificationTemplate.findUnique({
+      where: { id: templateId },
+    });
     return template ? toPushTemplate(template) : null;
   }
 
@@ -107,7 +109,11 @@ export class PrismaNotificationPushStore implements NotificationPushStore {
   async completePushLog(input: CompletePushLogInput): Promise<void> {
     await this.prisma.pushLog.update({
       where: { id: input.pushLogId },
-      data: { status: input.status, finishedAt: input.finishedAt, errorSummary: input.errorSummary },
+      data: {
+        status: input.status,
+        finishedAt: input.finishedAt,
+        errorSummary: input.errorSummary,
+      },
     });
   }
 }
@@ -127,14 +133,19 @@ export class MonitorSummaryProvider implements NotificationSummaryProvider {
 
   async get(input: { date?: string; scope?: string[] }): Promise<PushSummary> {
     const summary = input.date
-      ? await this.monitor.summary({ examDateFrom: input.date, examDateTo: input.date }, { scope: input.scope })
+      ? await this.monitor.summary(
+          { examDateFrom: input.date, examDateTo: input.date },
+          { scope: input.scope },
+        )
       : await this.monitor.summary({}, { scope: input.scope });
 
     // Issue #69: keyword hits in the same window as the counts, honoring the
     // same department scope MonitorService.summary applies. Counts MATCHES
     // (monitor_match rows), not records - a record matching two keywords
     // contributes one hit to each. Matches referencing a since-superseded or
-    // disabled rule version are excluded (active classification only).
+    // disabled rule version are excluded (active classification only), and so
+    // are hits the AI semantic judge filtered (issue #87) - a push must count
+    // the same effective hits the 监控看板 shows, or the two would disagree.
     const range = input.date !== undefined ? resolveShanghaiDayRange(input.date) : undefined;
     const keywordHits = await this.aggregateKeywordHits(range, input.scope);
 
@@ -160,6 +171,8 @@ export class MonitorSummaryProvider implements NotificationSummaryProvider {
           ...(scope && scope.length > 0 ? { department: { in: scope } } : {}),
         },
         rule: { isEnabled: true },
+        // Issue #87: effective hits only (see the caller's comment).
+        semanticFiltered: false,
       },
       _count: { _all: true },
     });
@@ -277,8 +290,5 @@ function toPushLogRow(row: PushLog): PushLogRow {
 }
 
 function isUniqueViolation(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2002'
-  );
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }

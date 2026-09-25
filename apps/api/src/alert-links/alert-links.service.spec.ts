@@ -45,6 +45,10 @@ function makeDetail(overrides: Partial<MonitorExamDetailDto> = {}): MonitorExamD
         matchedField: 'FINDINGS',
         contextSnippet: '…息肉待复核。',
         matchedAt: '2026-09-05T01:05:00.000Z',
+        // Issue #87 fields: the alert-link path reads record ids/levels only,
+        // never hits, so this is just a complete DTO.
+        semanticFiltered: false,
+        semantic: null,
       },
     ],
     ...overrides,

@@ -8,7 +8,8 @@ import { PrismaService } from '../prisma/prisma.service';
  * shared via resolveShanghaiDayRange, so here we only assert the Prisma where
  * shape and the level-key mapping. Issue #69 adds the keyword-hit aggregation
  * (monitor_match grouped by keyword+level in the same window, enabled rules
- * only).
+ * only); issue #87 adds `semanticFiltered: false` to it, so a push counts the
+ * same effective hits the 监控看板 shows.
  */
 describe('WorkerSummaryProvider', () => {
   let prisma: {
@@ -56,6 +57,8 @@ describe('WorkerSummaryProvider', () => {
       where: {
         record: { examTime: DAY_RANGE },
         rule: { isEnabled: true },
+        // Issue #87: hits the AI semantic judge removed are not hits.
+        semanticFiltered: false,
       },
       _count: { _all: true },
     });
@@ -83,6 +86,7 @@ describe('WorkerSummaryProvider', () => {
     expect(matchWhere).toEqual({
       record: { examTime: DAY_RANGE },
       rule: { isEnabled: true },
+      semanticFiltered: false,
     });
   });
 
@@ -96,7 +100,7 @@ describe('WorkerSummaryProvider', () => {
     });
     expect(prisma.monitorMatch.groupBy).toHaveBeenCalledWith({
       by: ['keyword', 'level'],
-      where: { rule: { isEnabled: true } },
+      where: { rule: { isEnabled: true }, semanticFiltered: false },
       _count: { _all: true },
     });
   });

@@ -86,16 +86,38 @@ describe('AssistantEventsService', () => {
     expect(prisma.monitorMatch.groupBy).not.toHaveBeenCalled();
   });
 
-  it('only counts matches from enabled rules within the sync window', async () => {
+  it('only counts effective matches from enabled rules within the sync window', async () => {
     const prisma = makeFakePrisma();
     const since = new Date('2026-09-03T10:00:00Z');
+    prisma.monitorMatch.groupBy.mockResolvedValue([
+      { keyword: '恶性肿瘤', level: MonitorLevel.RED, _count: { _all: 1 } },
+    ]);
     const service = (await build(prisma)).get(AssistantEventsService);
 
     await service.recordSyncMatches(2, since);
 
     expect(prisma.monitorMatch.groupBy).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { matchedAt: { gte: since }, rule: { isEnabled: true } },
+        // Issue #87: a hit the AI semantic judge removed did not put anyone on
+        // the watch list, so it must not appear in the duty-room feed.
+        where: {
+          matchedAt: { gte: since },
+          rule: { isEnabled: true },
+          semanticFiltered: false,
+        },
+      }),
+    );
+    // The exam item quoted in the feed line comes from a hit that counted -
+    // same effective-hit condition, or the line could name a report whose only
+    // hit was filtered.
+    expect(prisma.monitorMatch.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          keyword: '恶性肿瘤',
+          matchedAt: { gte: since },
+          rule: { isEnabled: true },
+          semanticFiltered: false,
+        },
       }),
     );
   });

@@ -87,6 +87,36 @@ export interface WorkerConfig {
   semanticJudgeMaxAttempts: number;
   /** How long a claim is held before another worker may take the row (30-3600s, default 300). */
   semanticJudgeLeaseSeconds: number;
+  /**
+   * Issue #88: the AI report classifier. FALSE by default, and INDEPENDENT of
+   * SEMANTIC_JUDGE_ENABLED - the two tasks can be switched on separately in
+   * either order. With it off, every `ai_*` column stays NULL and
+   * `monitor_record.current_level` is exactly the keyword level, i.e. the
+   * pre-#88 system.
+   *
+   * It shares #87's gateway variables (SEMANTIC_MODEL_*) - one hospital, one
+   * gateway - and adds only the settings that describe the SHAPE of a
+   * classification call, which differs from a judging call because a whole
+   * report is a far larger input than one sentence.
+   *
+   * Nothing below is validated as required-when-enabled, for the same reason as
+   * the judge: this process also runs the sync job.
+   */
+  semanticReportEnabled: boolean;
+  /** One classification call's ceiling in ms (1000-120000, default 20000). */
+  semanticReportTimeoutMs: number;
+  /** Generated-token cap per classification (64-4096, default 1024). */
+  semanticReportMaxTokens: number;
+  /** Whole-report size cap in characters (1000-100000, default 20000). */
+  semanticReportMaxChars: number;
+  /** Classifier tick cadence in seconds (5-3600, default 60). */
+  semanticReportIntervalSeconds: number;
+  /** Records claimed per tick (1-50, default 5). Smaller than the judge's: a report is a bigger prompt. */
+  semanticReportBatchSize: number;
+  /** Attempts per record before it is resolved terminally with no AI finding (1-10, default 3). */
+  semanticReportMaxAttempts: number;
+  /** How long a claim is held before another worker may take the row (30-3600s, default 600). */
+  semanticReportLeaseSeconds: number;
 }
 
 export default (): WorkerConfig => ({
@@ -131,4 +161,15 @@ export default (): WorkerConfig => ({
   semanticJudgeBatchSize: parseInt(process.env.SEMANTIC_JUDGE_BATCH_SIZE ?? '10', 10),
   semanticJudgeMaxAttempts: parseInt(process.env.SEMANTIC_JUDGE_MAX_ATTEMPTS ?? '3', 10),
   semanticJudgeLeaseSeconds: parseInt(process.env.SEMANTIC_JUDGE_LEASE_SECONDS ?? '300', 10),
+  semanticReportEnabled: process.env.SEMANTIC_REPORT_ENABLED === 'true',
+  semanticReportTimeoutMs: parseInt(process.env.SEMANTIC_REPORT_TIMEOUT_MS ?? '20000', 10),
+  semanticReportMaxTokens: parseInt(process.env.SEMANTIC_REPORT_MAX_TOKENS ?? '1024', 10),
+  semanticReportMaxChars: parseInt(process.env.SEMANTIC_REPORT_MAX_CHARS ?? '20000', 10),
+  semanticReportIntervalSeconds: parseInt(
+    process.env.SEMANTIC_REPORT_INTERVAL_SECONDS ?? '60',
+    10,
+  ),
+  semanticReportBatchSize: parseInt(process.env.SEMANTIC_REPORT_BATCH_SIZE ?? '5', 10),
+  semanticReportMaxAttempts: parseInt(process.env.SEMANTIC_REPORT_MAX_ATTEMPTS ?? '3', 10),
+  semanticReportLeaseSeconds: parseInt(process.env.SEMANTIC_REPORT_LEASE_SECONDS ?? '600', 10),
 });

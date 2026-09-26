@@ -3,6 +3,7 @@ import { AuthGate } from './AuthGate';
 import type { AuthUser } from './authApi';
 import { NotificationModal } from './NotificationModal';
 import { RulesModal } from './RulesModal';
+import { SemanticMonitorModal } from './SemanticMonitorModal';
 import { UsersModal } from './UsersModal';
 import { Workbench } from './Workbench';
 import { PushAssistantWidget } from './PushAssistantWidget';
@@ -25,6 +26,7 @@ function AuthenticatedApp({
   openChangePassword,
 }: AuthenticatedAppProps): JSX.Element {
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [aiSemanticsOpen, setAiSemanticsOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   // The push-assistant「推送日志」link opens the notification modal straight on
@@ -61,10 +63,17 @@ function AuthenticatedApp({
       </header>
       <Workbench
         onOpenRules={() => setRulesOpen(true)}
+        onOpenAiSemantics={() => setAiSemanticsOpen(true)}
         onOpenNotifications={() => openNotifications()}
         onOpenUsers={user.roles.includes('USER_ADMIN') ? () => setUsersOpen(true) : undefined}
       />
       <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} actorId={user.username} />
+      <SemanticMonitorModal
+        open={aiSemanticsOpen}
+        onClose={() => setAiSemanticsOpen(false)}
+        canManageAiSemantics={user.roles.includes('RULE_ADMIN')}
+        actorId={user.username}
+      />
       <UsersModal open={usersOpen} onClose={() => setUsersOpen(false)} />
       <NotificationModal
         open={notificationsOpen}

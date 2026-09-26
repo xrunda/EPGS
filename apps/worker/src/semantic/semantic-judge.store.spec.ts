@@ -38,8 +38,9 @@ function makePrisma(
     rows?: ReturnType<typeof matchRow>[];
     /** What every monitorMatch.updateMany call reports as affected. */
     updateManyCount?: number;
-    grouped?: { level: string }[];
-    currentLevel?: string;
+    /** Rows the shared level recompute's GROUP BY reports (issue #88). */
+    grouped?: { monitorRecordId: string; level: string }[];
+    records?: { id: string; currentLevel: string; aiAttentionLevel: string | null }[];
   } = {},
 ) {
   const tx = {
@@ -55,17 +56,17 @@ function makePrisma(
       updateMany: jest.fn(async (_args: unknown) => ({ count: options.updateManyCount ?? 1 })),
     },
     monitorRecord: {
-      findUnique: jest.fn(async (_args: unknown): Promise<{ currentLevel: string } | null> => ({
-        currentLevel: options.currentLevel ?? 'RED',
-      })),
-      update: jest.fn(async (_args: unknown) => ({ id: 'rec1' })),
+      findMany: jest.fn(async (_args: unknown) =>
+        options.records ?? [{ id: 'rec1', currentLevel: 'RED', aiAttentionLevel: null }],
+      ),
+      updateMany: jest.fn(async (_args: unknown) => ({ count: 1 })),
     },
     $transaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => fn(tx)),
-    _grouped: options.grouped ?? [{ level: 'GREEN' }],
+    _grouped: options.grouped ?? [],
   };
 }
 
-/** The store calls prisma.monitorMatch.groupBy directly (not through $transaction). */
+/** The shared level recompute calls groupBy/count on the top-level client, not through $transaction. */
 function withGroupBy(prisma: ReturnType<typeof makePrisma>) {
   return Object.assign(prisma, {
     monitorMatch: Object.assign(prisma.monitorMatch, {
@@ -333,63 +334,62 @@ describe('SemanticJudgeStore.resolveSkipped', () => {
   });
 });
 
+/**
+ * Issue #88 moved the level calculation out of this store into
+ * `monitor/record-level.ts`, because the classifier is now a second influence
+ * on the same column and two implementations of "what is this record's level"
+ * would eventually disagree. The rule itself is tested exhaustively in
+ * record-level.spec.ts; what is worth asserting HERE is that the judge still
+ * goes through it - with #87's filtering as an input - rather than having kept
+ * a private copy.
+ */
 describe('SemanticJudgeStore.recomputeLevels', () => {
-  it('takes the highest level among UNFILTERED hits', async () => {
+  it('delegates to the shared entry point, keeping filtered hits out of the level', async () => {
+    const prisma = withGroupBy(makePrisma({}));
+    const store = new SemanticJudgeStore(prisma as unknown as PrismaService);
+
+    await store.recomputeLevels(['rec1']);
+
+    // The read is the shared one: grouped by RECORD as well as by level, and
+    // scoped to non-filtered hits - a hit this judge filtered stays in
+    // monitor_match as evidence but must stop driving the workbench.
+    expect(prisma.monitorMatch.groupBy).toHaveBeenCalledWith({
+      by: ['monitorRecordId', 'level'],
+      where: { monitorRecordId: { in: ['rec1'] }, semanticFiltered: false },
+    });
+  });
+
+  it('lets an AI level raise a record whose hits were all filtered', async () => {
+    // Reachable from #87's own path: filtering the last keyword hit of a record
+    // drops it to UNCLASSIFIED - unless #88's classifier found something, in
+    // which case the record keeps a level instead of vanishing from the counts.
     const prisma = withGroupBy(
-      makePrisma({ grouped: [{ level: 'YELLOW' }, { level: 'GREEN' }], currentLevel: 'RED' }),
+      makePrisma({
+        grouped: [],
+        records: [{ id: 'rec1', currentLevel: 'RED', aiAttentionLevel: 'YELLOW' }],
+      }),
     );
     const store = new SemanticJudgeStore(prisma as unknown as PrismaService);
 
     expect(await store.recomputeLevels(['rec1'])).toBe(1);
 
-    expect(prisma.monitorMatch.groupBy).toHaveBeenCalledWith({
-      by: ['level'],
-      where: { monitorRecordId: 'rec1', semanticFiltered: false },
-    });
-    expect(prisma.monitorRecord.update).toHaveBeenCalledWith({
-      where: { id: 'rec1' },
+    expect(prisma.monitorRecord.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['rec1'] } },
       data: { currentLevel: 'YELLOW' },
     });
   });
 
-  it('falls back to UNCLASSIFIED when every hit was filtered', async () => {
-    // Filtering the last hit of a record must take the record down with it -
-    // otherwise a filtered hit would keep driving the workbench.
-    const prisma = withGroupBy(makePrisma({ grouped: [], currentLevel: 'RED' }));
-    const store = new SemanticJudgeStore(prisma as unknown as PrismaService);
-
-    await store.recomputeLevels(['rec1']);
-
-    expect(prisma.monitorRecord.update).toHaveBeenCalledWith({
-      where: { id: 'rec1' },
-      data: { currentLevel: 'UNCLASSIFIED' },
-    });
-  });
-
   it('writes nothing when the level already agrees', async () => {
-    const prisma = withGroupBy(makePrisma({ grouped: [{ level: 'RED' }], currentLevel: 'RED' }));
+    const prisma = withGroupBy(
+      makePrisma({
+        grouped: [{ monitorRecordId: 'rec1', level: 'RED' }],
+        records: [{ id: 'rec1', currentLevel: 'RED', aiAttentionLevel: null }],
+      }),
+    );
     const store = new SemanticJudgeStore(prisma as unknown as PrismaService);
 
     expect(await store.recomputeLevels(['rec1'])).toBe(0);
-    expect(prisma.monitorRecord.update).not.toHaveBeenCalled();
-  });
-
-  it('visits each record once even when a batch names it several times', async () => {
-    const prisma = withGroupBy(makePrisma({ grouped: [{ level: 'RED' }], currentLevel: 'RED' }));
-    const store = new SemanticJudgeStore(prisma as unknown as PrismaService);
-
-    await store.recomputeLevels(['rec1', 'rec1', 'rec1']);
-
-    expect(prisma.monitorMatch.groupBy).toHaveBeenCalledTimes(1);
-  });
-
-  it('does nothing for a record that has since been deleted', async () => {
-    const prisma = withGroupBy(makePrisma({ grouped: [{ level: 'RED' }] }));
-    prisma.monitorRecord.findUnique.mockResolvedValueOnce(null);
-    const store = new SemanticJudgeStore(prisma as unknown as PrismaService);
-
-    expect(await store.recomputeLevels(['gone'])).toBe(0);
-    expect(prisma.monitorRecord.update).not.toHaveBeenCalled();
+    expect(prisma.monitorRecord.updateMany).not.toHaveBeenCalled();
   });
 });
 

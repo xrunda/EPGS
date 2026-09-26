@@ -9,6 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { NotificationPushModule } from './notification-push/notification-push.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { SemanticModule } from './semantic/semantic.module';
+import { SemanticReportModule } from './semantic-report/semantic-report.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { SemanticModule } from './semantic/semantic.module';
     NotificationPushModule,
     AssistantModule,
     SemanticModule,
+    SemanticReportModule,
   ],
 })
 export class AppModule {}

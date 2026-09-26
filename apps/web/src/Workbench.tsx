@@ -14,6 +14,8 @@ import './Workbench.css';
 interface WorkbenchProps {
   /** Opens the read-only rule-configuration modal (owned by App). */
   onOpenRules: () => void;
+  /** Opens the AI attention-semantic configuration modal (owned by App, issue #88). */
+  onOpenAiSemantics?: () => void;
   /** Opens the notification-configuration modal (owned by App). Optional for compat. */
   onOpenNotifications?: () => void;
   /** Opens the user-management modal (owned by App). undefined when the current user lacks USER_ADMIN - button hidden (server still enforces via RolesGuard). */
@@ -180,6 +182,7 @@ function friendlyError(error: unknown): string {
 
 export function Workbench({
   onOpenRules,
+  onOpenAiSemantics,
   onOpenNotifications,
   onOpenUsers,
 }: WorkbenchProps): JSX.Element {
@@ -356,6 +359,11 @@ export function Workbench({
           <button className="button button--primary" type="button" onClick={onOpenRules}>
             关键词监控
           </button>
+          {onOpenAiSemantics && (
+            <button className="button" type="button" onClick={onOpenAiSemantics}>
+              AI 语义监控
+            </button>
+          )}
           {onOpenNotifications && (
             <button className="button" type="button" onClick={onOpenNotifications}>
               消息推送

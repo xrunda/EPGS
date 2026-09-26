@@ -14,6 +14,7 @@ import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AlertLinksModule } from './alert-links/alert-links.module';
 import { UsersModule } from './users/users.module';
+import { AttentionSemanticsModule } from './attention-semantics/attention-semantics.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module';
     NotificationsModule,
     AlertLinksModule,
     RulesModule,
+    AttentionSemanticsModule,
     SystemModule,
     UsersModule,
   ],

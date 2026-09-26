@@ -48,8 +48,16 @@
 > 另有一处被后续 issue **部分更新**（不是被取消）：`Doc/PRD.md` §7.3 末条
 > "否定语义（如'未见肿瘤'）在当前 UI 中仅通过备注提示人工复核，V1.0 不自动识别
 > 否定关系"。issue #87 已实现"对命中处上下文做语义判读"，其中包含高把握的否定识别，
-> 见 [semantic-judge-design.md](./semantic-judge-design.md)；但**关注等级仍只来自
-> 关键词规则**，判读只会让某条命中"不计入关注"，不会产生任何等级，也不做诊断。
+> 见 [semantic-judge-design.md](./semantic-judge-design.md)。#87 的判读**只做减法**
+> ——让某条命中"不计入关注"，不产生任何等级，也不做诊断。
+>
+> **注意 #88 之后的等级口径**：只读展示、无上报动作、不做诊断这些 PRD 范围内的
+> 约束没有变，但"关注等级**只**来自关键词规则"这句话自 issue #88 起不再成立——
+> 医院可以配置"关注语义"，AI 读整份报告，命中的语义会把报告等级**往上**调
+> （见 [ai-semantic-monitor-design.md](./ai-semantic-monitor-design.md)）。AI **永远
+> 不能降低**关键词已经给出的等级，也**永远不产生诊断结论**；等级是管理上的关注
+> 等级（需要多快看到），不是病情严重程度。该功能默认关闭
+> （`SEMANTIC_REPORT_ENABLED=false`），未配置任何关注语义时行为与 #88 之前完全一致。
 
 ## 2. 文档索引
 
@@ -88,6 +96,7 @@
 | [notification-design.md](./notification-design.md)     | 消息推送模块设计，含 Webhook URL 加密方案                                       |
 | [rules-config-ui.md](./rules-config-ui.md)             | 关键词监控（原"监测规则配置"）弹窗的功能与交互                                  |
 | [semantic-judge-design.md](./semantic-judge-design.md) | AI 语义判读（issue #87）：分层、决策矩阵、fail-open、审计与隐私、上线前手工验证 |
+| [ai-semantic-monitor-design.md](./ai-semantic-monitor-design.md) | AI 语义监控（issue #88）：关注语义配置、等级唯一重算入口、证据校验、fail-safe 与上线门禁 |
 
 ### 数据源与适配
 

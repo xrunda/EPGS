@@ -21,6 +21,7 @@
     "reclassify:once": "ts-node --transpile-only -r tsconfig-paths/register src/sync/reclassify-once.ts",
     "semantic:once": "ts-node --transpile-only -r tsconfig-paths/register src/semantic/run-once.ts",
     "semantic:probe": "ts-node --transpile-only -r tsconfig-paths/register src/semantic/probe.ts",
+    "classify:once": "ts-node --transpile-only -r tsconfig-paths/register src/semantic-report/run-once.ts",
     "mock:convert": "ts-node --transpile-only -r tsconfig-paths/register src/pacs-adapter/mock-csv-convert.ts"
   },
   "dependencies": {

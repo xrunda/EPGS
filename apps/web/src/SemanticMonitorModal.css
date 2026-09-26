@@ -1,0 +1,224 @@
+/* AI 语义监控弹窗 chrome（issue #88）。
+   共享原语（.button / .icon-button / .feedback--* / .rules-filters /
+   .rules-content / .rules-table-wrap / .rules-table / .rules-pagination /
+   .rules-state / .rules-toolbar / .rule-editor / .panel-* / .level-tag /
+   .status / .readonly-label / .table-actions）定义于 RulesModal.css，
+   经 App.tsx 引入 RulesModal 模块副作用全局生效——本文件只定义 .semantic-*
+   命名空间，不复定义任何共享类。 */
+
+.semantic-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 31, 34, 0.58);
+  backdrop-filter: blur(3px);
+  animation: semantic-backdrop-in var(--dur-base) var(--ease-out);
+}
+
+.semantic-modal {
+  width: min(1240px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  outline: none;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-lg);
+  animation: semantic-modal-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes semantic-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes semantic-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+.semantic-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 28px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.semantic-modal__header h2 {
+  margin: 2px 0 0;
+  color: var(--ink-800);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.semantic-modal__eyebrow {
+  margin: 0;
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/* 一句话说明（页面主描述 + 辅助说明 + 与关键词监控的分工）。 */
+.semantic-modal__lead {
+  margin: 12px 28px 0;
+  color: var(--ink-800);
+  font-size: 16px;
+  font-weight: 600;
+}
+.semantic-modal__sublead {
+  margin: 6px 28px 0;
+  color: var(--ink-300);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.semantic-modal__crosssell {
+  margin: 8px 28px 0;
+  color: var(--teal-700);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 「仅用于监测，不作为正式诊断」——与 .rules-modal__notice 同款，但按 ADR 要求
+   常驻在页面顶部，不折叠、不可关闭。 */
+.semantic-modal__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 18px 28px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--teal-600);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: #eaf4f5;
+  color: #315b62;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.semantic-modal__notice span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  place-items: center;
+  border: 1px solid #70a7b1;
+  border-radius: 50%;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.semantic-modal__notice p {
+  margin: 0;
+}
+
+/* 三色关注池：当前生效的语义按颜色各有多少条。 */
+.semantic-pool {
+  margin: 14px 28px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.semantic-pool__title {
+  margin: 0 0 8px;
+  color: var(--ink-300);
+  font-size: 13px;
+}
+.semantic-pool__title strong {
+  color: var(--ink-800);
+}
+.semantic-pool__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.semantic-pool__chips li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.semantic-pool__chips li strong {
+  color: var(--ink-800);
+  font-variant-numeric: tabular-nums;
+}
+.semantic-pool__hint {
+  color: var(--ink-300);
+}
+.semantic-pool__footer {
+  margin: 10px 0 0;
+  color: var(--ink-300);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* 语义说明整段展示会撑宽表格，截断并用 title 提供全文（同 .rules-table__intent）。 */
+.semantic-table__description {
+  max-width: 320px;
+  color: #687b7e !important;
+}
+.semantic-table__description span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.semantic-table__version {
+  color: var(--ink-300);
+  font-variant-numeric: tabular-nums;
+}
+.semantic-table__meta {
+  color: #687b7e !important;
+  font-size: 12px;
+}
+
+/* 操作列（issue #88 目视验证发现）：编辑栏打开后表格可分配的宽度收窄，而
+   .table-actions 是 flex 行、按钮里只有两个汉字，浏览器会把按钮压到「一个字」
+   宽，出现「编／辑」「停／用」竖排，1920×1080 下 18 个按钮全部如此（关键词监控
+   同一 CSS 不触发，因为它的操作列还能分到宽度）。这里让按钮不许内部换行，
+   操作列便保住了最小宽度；表格本身已有 min-width: 820px + 横向滚动兜底。
+   作用域限定在 .semantic-modal 内，不改动 RulesModal.css 的共享类。 */
+.semantic-modal .table-actions {
+  flex-wrap: nowrap;
+}
+.semantic-modal .table-actions button {
+  white-space: nowrap;
+}
+
+/* 关注等级选择：三张卡并排，每种颜色都写清它在业务上意味着什么 —— 颜色本身
+   不能是唯一的信息载体。 */
+.semantic-level-picker {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+}
+.semantic-level-picker legend {
+  padding: 0 6px;
+  color: var(--ink-300);
+  font-size: 12px;
+}
+.semantic-level-picker__option {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.semantic-level-picker__option input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--teal-700);
+}
+.semantic-level-picker__hint {
+  color: #687b7e;
+}

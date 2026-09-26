@@ -6,10 +6,10 @@ import { SummaryQueryDto } from './dto/summary.query.dto';
 import { MonitorFiltersDto } from './dto/monitor-filters.query.dto';
 import { MonitorRecordNotFoundException } from './errors/monitor-record-not-found.exception';
 import { resolveDateRange } from './monitor-time';
-import { toExamDetailDto, toExamDto } from './monitor.mapper';
+import { toExamDetailDto, toExamDto, toWorkbenchExamDto } from './monitor.mapper';
 import {
-  MonitorExamDetailDto,
   MonitorExamDto,
+  MonitorExamWorkbenchDetailDto,
   MonitorSummaryDto,
   PaginatedMonitorExams,
 } from '@epgs/shared-types';
@@ -68,6 +68,12 @@ export class MonitorService {
     examItem: true,
     examTime: true,
     currentLevel: true,
+    // Issue #88: one scalar, so the row can say WHERE its level came from. It is
+    // deliberately the only AI column here - no relation, no reportVersion, no
+    // aiResolvedAt - because a list response must not carry AI text or audit
+    // fields, and this scalar is the same input the level itself was computed
+    // from, so the badge cannot disagree with the level.
+    aiAttentionLevel: true,
     matches: {
       // Issue #87: the list's keyword chips are EFFECTIVE hits. A hit the AI
       // judged not to express the rule's intent is not one of "the keywords
@@ -119,6 +125,53 @@ export class MonitorService {
         },
       },
     },
+    // Issue #88 (PR-B): the report-level AI findings behind the drawer's
+    // explanation. The display-only `select` below IS the privacy boundary, the
+    // same way LIST_SELECT refuses to select reportContent: model, modelVersion,
+    // inputHash, reportHash, configHash, taskVersion, latencyMs, error,
+    // modelAttentionLevel and the counts are absent, so no audit field can reach
+    // the doctor-facing wire even by accident (docs/api/monitor-api.md).
+    //
+    // Only outcome OK: a failed attempt has no verdict and no matches, and
+    // pairing it with a level it did not produce would put words in the model's
+    // mouth (the same reasoning as semanticJudgements above).
+    //
+    // take: 5 rather than 1 so the mapper can prefer the attempt whose createdAt
+    // equals the record's aiResolvedAt - the one actually in force. A concurrent
+    // attempt that loses the `aiResolvedAt: null` guard still writes its audit
+    // row without touching the record, so the newest row is not always the one
+    // the level came from. Backed by (monitor_record_id, created_at).
+    reportAiAttempts: {
+      where: { outcome: 'OK' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 5,
+      select: {
+        reportVersion: true,
+        createdAt: true,
+        matches: {
+          orderBy: { ordinal: 'asc' },
+          select: {
+            semanticId: true,
+            semanticVersion: true,
+            semanticName: true,
+            attentionLevel: true,
+            confidence: true,
+            reason: true,
+            ordinal: true,
+            evidence: {
+              orderBy: { ordinal: 'asc' },
+              select: {
+                ordinal: true,
+                field: true,
+                evidenceHash: true,
+                evidenceStart: true,
+                evidenceEnd: true,
+              },
+            },
+          },
+        },
+      },
+    },
   } as const satisfies Prisma.MonitorRecordInclude;
 
   async list(query: ListExamsQueryDto, opts?: MonitorQueryOptions): Promise<PaginatedMonitorExams> {
@@ -138,10 +191,10 @@ export class MonitorService {
       this.prisma.monitorRecord.count({ where }),
     ]);
 
-    const items = rows.map((row) => toExamDto(row));
+    const items = rows.map((row) => toWorkbenchExamDto(row));
     const masked = opts?.maskPatient ?? false;
     return {
-      items: masked ? items.map(maskExamRow) : items,
+      items: masked ? items.map((item) => maskExamRow(item)) : items,
       total,
       page,
       pageSize,
@@ -174,7 +227,7 @@ export class MonitorService {
     return rows.map((row) => toExamDto(row));
   }
 
-  async getDetail(id: string, opts?: MonitorQueryOptions): Promise<MonitorExamDetailDto> {
+  async getDetail(id: string, opts?: MonitorQueryOptions): Promise<MonitorExamWorkbenchDetailDto> {
     // Horizontal-escalation guard (issue #13): when the caller is scoped,
     // the lookup is narrowed to their departments, so an out-of-scope id
     // resolves to "not found" (404) rather than 403 - it never reveals that

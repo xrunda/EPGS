@@ -61,6 +61,16 @@
   background: #fff;
   box-shadow: var(--shadow-xs);
 }
+.drawer__level-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+.drawer__level-line .source-badge {
+  margin-left: 0;
+}
 .drawer__fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -246,4 +256,61 @@
   .drawer {
     animation: none;
   }
+}
+
+/*
+  AI 语义发现（issue #88）。沿用命中证据那一段的排版语言，让医生读到的是同一类
+  内容：等级标签 + 名称 + 证据引用。
+*/
+.drawer__ai-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.drawer__ai-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid #b9c6c7;
+  border-radius: 8px;
+  background: #fbfcfc;
+}
+.drawer__ai-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.drawer__ai-head strong {
+  color: var(--ink-700);
+  font-size: 14px;
+}
+.drawer__ai-confidence {
+  margin-left: auto;
+  color: var(--ink-300);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.drawer__ai-reason {
+  margin: 8px 0 0;
+  color: var(--ink-500);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.drawer__ai-evidence {
+  margin: 8px 0 0;
+}
+.drawer__ai-evidence-field {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 600;
+}
+.drawer__ai-note {
+  margin: 12px 0 0;
+  color: var(--ink-300);
+  font-size: 12px;
+  line-height: 1.6;
 }

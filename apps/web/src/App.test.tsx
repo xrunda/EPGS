@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { MonitorExamDto, SyncStatusDto } from '@epgs/shared-types';
+import type { MonitorExamWorkbenchDto, SyncStatusDto } from '@epgs/shared-types';
 import App from './App';
 
 const authUser = { id: 'user-1', username: 'doctor', displayName: '测试医生', roles: ['VIEWER'] };
 
-const examRow: MonitorExamDto = {
+const examRow: MonitorExamWorkbenchDto = {
   recordId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   monitorLevel: 'RED',
   patientName: '测试患者甲',
@@ -16,6 +16,7 @@ const examRow: MonitorExamDto = {
   examDate: '2026-08-20',
   examTime: '10:30:00',
   matchedKeywords: ['腺癌'],
+  attentionSource: 'RULE',
 };
 
 const syncStatus: SyncStatusDto = {
@@ -98,7 +99,8 @@ describe('App', () => {
 
     expect(await screen.findByText('测试患者甲')).toBeInTheDocument();
     const row = screen.getByRole('row', { name: /测试患者甲/ });
-    expect(within(row).getByText('红色')).toBeInTheDocument();
+    // Issue #92: the row tag spells the level out instead of a bare colour word.
+    expect(within(row).getByText('红色关注')).toBeInTheDocument();
     expect(within(row).getByText('住院（I）')).toBeInTheDocument();
     expect(within(row).getByText('腺癌')).toBeInTheDocument();
   });
@@ -187,6 +189,9 @@ describe('App', () => {
                   matchedAt: '2026-08-21T00:00:00.000Z',
                 },
               ],
+              attentionSource: 'RULE',
+              aiJudged: false,
+              aiSemantics: [],
             }),
           );
         }

@@ -5,6 +5,10 @@ import {
   ATTENTION_SEMANTIC_DESCRIPTION_MAX_LENGTH,
   ATTENTION_SEMANTIC_NAME_MAX_LENGTH,
 } from '@epgs/shared-types';
+// 等级文字只有一个来源（attentionSource.ts）：本页的池标题、表格行内标签、
+// 新增/编辑表单的等级卡片、筛选下拉，以及工作台列表与详情抽屉共用同一个映射。
+// 分开写多份字面量正是上一轮漏改三处的原因，所以这里只引用、不再声明。
+import { ATTENTION_LEVEL_LABELS as POOL_LABELS } from './attentionSource';
 import {
   AiSemanticsApiError,
   createAiSemantic,
@@ -60,12 +64,6 @@ const EMPTY_DRAFT: SemanticDraft = {
   isEnabled: true,
 };
 
-const LEVEL_LABELS: Record<AttentionLevelDto, string> = {
-  RED: '红色',
-  YELLOW: '黄色',
-  GREEN: '绿色',
-};
-
 /**
  * 每种颜色在业务上意味着什么。这是「关注等级」（要多久看到），不是病情严重程度，
  * 措辞必须与 docs/data-dictionary.md 一致。
@@ -74,17 +72,6 @@ const LEVEL_HINTS: Record<AttentionLevelDto, string> = {
   RED: '需要尽快人工确认',
   YELLOW: '需要留意或安排跟进',
   GREEN: '值得记录，暂不需要处理',
-};
-
-/**
- * 三色池的标题必须显式带「关注」二字（Issue #88 定稿文案）：RED / YELLOW / GREEN
- * 是管理上的「关注等级」（要多久看到），不是临床严重程度或诊断分级，只写颜色
- * 容易被医生读成病情轻重。
- */
-const POOL_LABELS: Record<AttentionLevelDto, string> = {
-  RED: '红色关注',
-  YELLOW: '黄色关注',
-  GREEN: '绿色关注',
 };
 
 const PAGE_SIZE = 20;
@@ -416,9 +403,11 @@ export function SemanticMonitorModal({
               }
             >
               <option value="">全部等级</option>
-              <option value="RED">红色</option>
-              <option value="YELLOW">黄色</option>
-              <option value="GREEN">绿色</option>
+              {ATTENTION_LEVELS_DTO.map((level) => (
+                <option key={level} value={level}>
+                  {POOL_LABELS[level]}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -535,7 +524,7 @@ export function SemanticMonitorModal({
                         <span
                           className={`level-tag level-tag--${semantic.attentionLevel.toLowerCase()}`}
                         >
-                          {LEVEL_LABELS[semantic.attentionLevel]}
+                          {POOL_LABELS[semantic.attentionLevel]}
                         </span>
                       </td>
                       <td className="semantic-table__description">
@@ -650,7 +639,7 @@ export function SemanticMonitorModal({
                       onChange={() => updateDraft('attentionLevel', level)}
                     />
                     <span className={`level-tag level-tag--${level.toLowerCase()}`}>
-                      {LEVEL_LABELS[level]}
+                      {POOL_LABELS[level]}
                     </span>
                     <span className="semantic-level-picker__hint">{LEVEL_HINTS[level]}</span>
                   </label>

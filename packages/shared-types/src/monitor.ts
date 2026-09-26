@@ -19,11 +19,21 @@
  * #26 model forbids: it says nothing about whether anyone read, acknowledged
  * or handled the report. The raw hit is still always present and its
  * deterministic `level` is unchanged.
+ *
+ * Issue #88 (PR-B) adds the report-level AI side: where the record's current
+ * attention level came FROM (`attentionSource`) and what the AI read out of the
+ * whole report (`aiSemantics` + `aiJudged`). Both live on WORKBENCH-ONLY
+ * extension interfaces (MonitorExamWorkbenchDto / MonitorExamWorkbenchDetailDto)
+ * rather than on the base DTOs, so the alert-link H5 surface - which aliases the
+ * base detail type - cannot name them. Levels and names here are configured
+ * values snapshotted at judge time, not a model's classification, and no audit
+ * field (hash, model, latency, error) ever crosses this boundary.
  */
 
+import { AttentionLevelDto } from './attention-semantics';
 import { MatchFieldDto, MonitorLevelDto, SemanticConfidenceDto, SemanticStatusDto } from './rules';
 
-export type { MatchFieldDto, MonitorLevelDto, SemanticConfidenceDto, SemanticStatusDto };
+export type { AttentionLevelDto, MatchFieldDto, MonitorLevelDto, SemanticConfidenceDto, SemanticStatusDto };
 
 /**
  * Patient type as shown in the workbench: the source code (PAADM_Type raw
@@ -37,7 +47,10 @@ export interface MonitorPatientTypeDto {
 }
 
 /**
- * One row of `GET /api/monitor/exams`. Read-only display snapshot - NO
+ * The read-only row snapshot shared by every surface that lists records - the
+ * workbench list (`GET /api/monitor/exams`, which serves the wider
+ * MonitorExamWorkbenchDto) and the alert-link H5 list (`GET
+ * /api/alert-links/me/exams`, which serves exactly this). NO
  * reportContent/diagnosis (detail endpoint only) and NO disposition/status.
  */
 export interface MonitorExamDto {
@@ -156,9 +169,117 @@ export interface MonitorExamDetailDto extends MonitorExamDto {
   dataAccess?: MonitorDataAccess;
 }
 
+/**
+ * Issue #88 (PR-B): WHERE this record's current attention level came from.
+ *
+ * A statement about PROVENANCE, never about severity, and it never influences a
+ * level - the level is already decided by `computeEffectiveLevel` in the worker.
+ * Derived deterministically in the API read path from data the record already
+ * carries; no extra column, no migration.
+ *
+ * | value       | condition                                          | badge            |
+ * | ----------- | -------------------------------------------------- | ---------------- |
+ * | `RULE`      | effective keyword hits, no AI finding              | 关键词           |
+ * | `AI_REPORT` | no effective keyword hit, AI finding               | AI 语义          |
+ * | `BOTH`      | both - regardless of which one is HIGHER           | 关键词 + AI 语义 |
+ * | `NONE`      | neither, i.e. the record is UNCLASSIFIED           | no badge         |
+ *
+ * `BOTH` deliberately does NOT mean "the AI raised the level": a keyword RED
+ * with an AI YELLOW is still `BOTH`, because both paths found something a
+ * doctor should read. `NONE` is a member rather than null because
+ * UNCLASSIFIED records are list-visible by design, so "neither path found
+ * anything" is a real state - a nullable field would re-create the ambiguous
+ * NULL that schema.prisma's attentionLevel comment warns about.
+ */
+export type MonitorAttentionSourceDto = 'RULE' | 'AI_REPORT' | 'BOTH' | 'NONE';
+
+/** Mirrors Prisma's ReportAiField enum: which report column an excerpt sits in. */
+export type ReportAiFieldDto = 'EXAM_ITEM' | 'FINDINGS' | 'IMPRESSION';
+
+/**
+ * Issue #88 (PR-B): one verbatim excerpt backing an AI finding.
+ *
+ * The excerpt is reconstructed SERVER-SIDE on every read, from
+ * `monitor_report_ai_evidence`'s stored offsets against the CURRENT report
+ * text - the audit tables deliberately store only the hash and the offsets,
+ * never the excerpt itself. `text` is therefore never the stored hash, and no
+ * audit vocabulary (hash, model, latency) reaches this shape.
+ */
+export interface MonitorAiEvidenceDto {
+  field: ReportAiFieldDto;
+  text: string;
+}
+
+/**
+ * Issue #88 (PR-B): one attention semantic the AI verified against this report.
+ *
+ * `name` and `attentionLevel` are the CONFIGURED values snapshotted at judge
+ * time (the semantic is versioned, so a later re-wording cannot rewrite what
+ * this finding meant) - they are not a second model opinion. `confidence` is
+ * the model's self-reported certainty and is descriptive only: #88 never
+ * filters or ranks on it.
+ */
+export interface MonitorAiSemanticDto {
+  /** The exact attention_semantic version row the finding was made against. */
+  semanticId: string;
+  semanticVersion: number;
+  /** Configured name snapshot, in the hospital's own words. */
+  name: string;
+  attentionLevel: AttentionLevelDto;
+  confidence: SemanticConfidenceDto;
+  /**
+   * The model's one-sentence Chinese explanation. Nulled when the server masks
+   * HIGH-sensitivity fields - the model may quote the report body into it, so
+   * it is report-adjacent text, exactly like a hit's `contextSnippet`.
+   */
+  reason: string | null;
+  /**
+   * Verified excerpts of the CURRENT report text, each labelled with the field
+   * it came from. Empty when masked, and also empty (never absent, never a
+   * 500) when a stored offset no longer lands on the text it was computed
+   * against - dropping the excerpt rather than the finding keeps the drawer
+   * consistent with a `monitorLevel` that still counts it.
+   */
+  evidence: MonitorAiEvidenceDto[];
+}
+
+/**
+ * Issue #88 (PR-B): the workbench list row. An EXTENSION of MonitorExamDto, not
+ * a change to it, so `AlertLinkExamListDto` (which keeps `MonitorExamDto[]`)
+ * is structurally incapable of carrying the new field to the alert-link H5
+ * page. Same reasoning for MonitorExamWorkbenchDetailDto below, which is why
+ * `AlertLinkExamDetailDto = MonitorExamDetailDto` stays byte-identical.
+ */
+export interface MonitorExamWorkbenchDto extends MonitorExamDto {
+  attentionSource: MonitorAttentionSourceDto;
+}
+
+/**
+ * Issue #88 (PR-B): the workbench detail row. Extends MonitorExamDetailDto for
+ * the same reason as the list extension above.
+ */
+export interface MonitorExamWorkbenchDetailDto extends MonitorExamDetailDto {
+  attentionSource: MonitorAttentionSourceDto;
+  /**
+   * True when the AI has judged THIS report version - an OK attempt whose
+   * `reportVersion` matches the record's. Carries no timestamp, model or
+   * latency: it only lets the doctor tell "the AI looked and found nothing"
+   * apart from "the AI never looked". Says nothing about whether it found
+   * anything; read `aiSemantics` for that.
+   */
+  aiJudged: boolean;
+  /**
+   * Ordered by attention level priority (RED -> YELLOW -> GREEN), then by the
+   * stored ordinal, so the doctor reads the most attention-worthy finding
+   * first - the same ordering the level itself was computed under. Empty when
+   * no current finding is showable; see aiJudged.
+   */
+  aiSemantics: MonitorAiSemanticDto[];
+}
+
 /** Paginated response envelope for `GET /api/monitor/exams`. */
 export interface PaginatedMonitorExams {
-  items: MonitorExamDto[];
+  items: MonitorExamWorkbenchDto[];
   total: number;
   page: number;
   pageSize: number;

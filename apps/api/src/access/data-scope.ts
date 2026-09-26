@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { MonitorExamDetailDto, MonitorExamDto } from '@epgs/shared-types';
+import { MonitorExamDto, MonitorExamWorkbenchDetailDto } from '@epgs/shared-types';
 
 /**
  * Pure helpers for issue #13's data-scope enforcement and patient-data
@@ -31,8 +31,16 @@ export function maskName(name: string | null): string | null {
   return trimmed[0] + '*'.repeat(trimmed.length - 1);
 }
 
-/** Masks a list row for a user without patientDetail rights. */
-export function maskExamRow(dto: MonitorExamDto): MonitorExamDto {
+/**
+ * Masks a list row for a user without patientDetail rights.
+ *
+ * Generic over the row shape so a caller holding a WIDER row (issue #88's
+ * workbench row, which adds `attentionSource`) keeps its type and its extra
+ * fields: masking is about patient identity, not about narrowing the DTO to the
+ * base type. The alert-link surface's own masking is a separate function on
+ * purpose - it keeps bed/department and the report body.
+ */
+export function maskExamRow<T extends MonitorExamDto>(dto: T): T {
   return {
     ...dto,
     patientName: maskName(dto.patientName),
@@ -44,10 +52,13 @@ export function maskExamRow(dto: MonitorExamDto): MonitorExamDto {
  * Masks a detail DTO for a user without patientDetail rights: patientName/
  * bedNo are masked as in the list, and the HIGH-sensitivity free text
  * (reportContent / diagnosis / each hit's contextSnippet / each hit's AI
- * explanation) is nulled. The dataAccess.masked flag lets the client
- * distinguish redaction from a report that genuinely has no body.
+ * explanation / each report-level finding's reason and evidence excerpts) is
+ * nulled. The dataAccess.masked flag lets the client distinguish redaction from
+ * a report that genuinely has no body.
  */
-export function maskExamDetail(dto: MonitorExamDetailDto): MonitorExamDetailDto {
+export function maskExamDetail(
+  dto: MonitorExamWorkbenchDetailDto,
+): MonitorExamWorkbenchDetailDto {
   return {
     ...maskExamRow(dto),
     reportContent: null,
@@ -63,6 +74,27 @@ export function maskExamDetail(dto: MonitorExamDetailDto): MonitorExamDetailDto 
       // already see, so it stays and the drawer can still explain why a hit
       // does not count.
       semantic: hit.semantic ? { ...hit.semantic, reason: null } : null,
+    })),
+    // Issue #88: same rule as #87 above, applied to the report-level findings.
+    // `reason` is the model's own sentence and an excerpt IS report text, so
+    // both go. What stays is what explains a level this caller can already see:
+    // which configured semantic fired, its configured colour, and how confident
+    // the model was - without those, a record with no keyword hit at all would
+    // be RED with nothing on screen to account for it.
+    //
+    // Every excerpt is dropped regardless of its field. An EXAM_ITEM excerpt is
+    // only MEDIUM by the dictionary while FINDINGS/IMPRESSION are HIGH, but one
+    // finding's array can mix fields, so per-field masking would produce a
+    // half-redacted list - and a snippet of the report is the same class of
+    // content this function already blankets via contextSnippet.
+    //
+    // `attentionSource` and `aiJudged` need no handling here: they are derived
+    // from the level this caller already sees, and the generic maskExamRow above
+    // preserves them.
+    aiSemantics: dto.aiSemantics.map((finding) => ({
+      ...finding,
+      reason: null,
+      evidence: [],
     })),
     dataAccess: { masked: true },
   };

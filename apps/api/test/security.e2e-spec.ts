@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module';
 import { GlobalExceptionFilter } from '../src/common/filters/global-exception.filter';
 import { hash, argon2id } from 'argon2';
@@ -41,9 +41,26 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
 
   /** record.id per fixture key (mutated in place by seedFixture). */
   const ids: Record<string, string> = {};
+  /** attention_semantic rows this suite created (issue #88), for cleanup. */
+  const semanticIds: string[] = [];
   let ruleId: string;
 
   const KEYWORD = '腺癌早期';
+
+  /**
+   * Issue #88 (PR-B): the report-level AI explanation attached to A1. Kept as
+   * constants because the masking assertions below have to name the exact
+   * strings that must NOT survive: the model's own sentence and two verbatim
+   * excerpts, both report-adjacent free text.
+   */
+  const AI_REASON = '报告描述了隆起性病变并提示黏膜内腺癌早期。';
+  const AI_EVIDENCE_FINDINGS = '一处隆起性病变'; // A1 reportContent.slice(3, 10)
+  const AI_EVIDENCE_IMPRESSION = '胃腺癌'; // A1 diagnosis.slice(0, 3)
+  const AI_SEMANTIC_NAME = '明确或高度疑似恶性病变';
+
+  function sha256Hex(value: string): string {
+    return createHash('sha256').update(value, 'utf8').digest('hex');
+  }
 
   async function seedFixture(): Promise<void> {
     // Two departments so the data-scope tests can distinguish in/out of scope.
@@ -137,6 +154,12 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
           lastMatchedAt: new Date('2026-08-20T08:15:30Z'),
           reportContent: row.reportContent,
           diagnosis: row.diagnosis,
+          // Issue #88: A1 carries a completed AI classification, so the
+          // masking and audit assertions below run against a record whose
+          // level has TWO contributors. The others stay unjudged.
+          ...(row.key === 'A1'
+            ? { aiAttentionLevel: 'RED' as never, aiResolvedAt: new Date('2026-08-20T08:16:00Z') }
+            : {}),
         },
       });
       ids[row.key] = record.id;
@@ -154,6 +177,72 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
         },
       });
     }
+
+    // Issue #88: the audit rows behind A1's AI level. Append-only and written
+    // here exactly as the worker writes them - the excerpt itself is NOT
+    // stored, only its hash and offsets, which is what makes the doctor-facing
+    // reconstruction a real test rather than a read-back.
+    const semantic = await prisma.attentionSemantic.create({
+      data: {
+        semanticGroupId: randomUUID(),
+        name: AI_SEMANTIC_NAME,
+        description: '报告描述了提示恶性或高度可疑恶性的表现。',
+        attentionLevel: 'RED',
+        createdBy: 'security-e2e',
+        updatedBy: 'security-e2e',
+      },
+    });
+    semanticIds.push(semantic.id);
+    const attempt = await prisma.monitorReportAi.create({
+      data: {
+        monitorRecordId: ids.A1,
+        reportVersion: 1,
+        task: 'CLASSIFY_REPORT',
+        taskVersion: 'security-e2e-1',
+        outcome: 'OK',
+        attentionLevel: 'RED',
+        modelAttentionLevel: 'RED',
+        semanticCount: 1,
+        matchCount: 1,
+        model: 'security-e2e-model',
+        inputHash: sha256Hex('input'),
+        reportHash: sha256Hex('report'),
+        configHash: sha256Hex('config'),
+        createdAt: new Date('2026-08-20T08:16:00Z'),
+      },
+    });
+    const match = await prisma.monitorReportAiMatch.create({
+      data: {
+        reportAiId: attempt.id,
+        semanticId: semantic.id,
+        semanticVersion: semantic.version,
+        semanticName: AI_SEMANTIC_NAME,
+        attentionLevel: 'RED',
+        confidence: 'HIGH',
+        reason: AI_REASON,
+        ordinal: 0,
+      },
+    });
+    await prisma.monitorReportAiEvidence.createMany({
+      data: [
+        {
+          matchId: match.id,
+          ordinal: 0,
+          field: 'FINDINGS',
+          evidenceHash: sha256Hex(AI_EVIDENCE_FINDINGS),
+          evidenceStart: 3,
+          evidenceEnd: 10,
+        },
+        {
+          matchId: match.id,
+          ordinal: 1,
+          field: 'IMPRESSION',
+          evidenceHash: sha256Hex(AI_EVIDENCE_IMPRESSION),
+          evidenceStart: 0,
+          evidenceEnd: 3,
+        },
+      ],
+    });
   }
 
   async function createUser(username: string, displayName: string): Promise<void> {
@@ -205,6 +294,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     await prisma.monitorMatch.deleteMany({});
     await prisma.monitorRecord.deleteMany({});
     await prisma.monitorRule.deleteMany({});
+    await prisma.attentionSemantic.deleteMany({});
 
     await seedFixture();
 
@@ -253,6 +343,9 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       await prisma.monitorMatch.deleteMany({});
       await prisma.monitorRecord.deleteMany({});
       await prisma.monitorRule.deleteMany({});
+      // After the records: monitor_report_ai_match references attention_semantic
+      // with onDelete: Restrict, so the matches must be cascaded away first.
+      await prisma.attentionSemantic.deleteMany({ where: { id: { in: semanticIds } } });
     }
     if (app) await app.close();
     await prisma.$disconnect();
@@ -438,6 +531,57 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       // possible patient name) must never be stored.
       expect(meta.hadPatientName).toBe(true);
       expect(JSON.stringify(meta)).not.toMatch(/测试患者甲/);
+    },
+  );
+
+  // --- Issue #88: the AI explanation crosses the same masking boundary ------
+
+  itWithDb(
+    'the same AI finding is a verdict for a masked caller and a quote for an unmasked one',
+    async () => {
+      // One record (A1), two callers. The ONLY difference between them is the
+      // patientDetail grant.
+      const full = await agents.viewerFull.get(`/api/monitor/exams/${ids.A1}`).expect(200);
+      const masked = await agents.viewer.get(`/api/monitor/exams/${ids.A1}`).expect(200);
+
+      // Unmasked: the model's sentence and both verbatim excerpts, recomputed
+      // from the stored offsets rather than read back from a stored quote.
+      expect(full.body.dataAccess).toBeUndefined();
+      expect(full.body.attentionSource).toBe('BOTH');
+      expect(full.body.aiJudged).toBe(true);
+      expect(full.body.aiSemantics).toHaveLength(1);
+      expect(full.body.aiSemantics[0].reason).toBe(AI_REASON);
+      expect(full.body.aiSemantics[0].evidence).toEqual([
+        { field: 'FINDINGS', text: AI_EVIDENCE_FINDINGS },
+        { field: 'IMPRESSION', text: AI_EVIDENCE_IMPRESSION },
+      ]);
+
+      // Masked: the model's sentence and every excerpt are report-adjacent free
+      // text, so both go...
+      expect(masked.body.dataAccess).toEqual({ masked: true });
+      expect(masked.body.aiSemantics[0].reason).toBeNull();
+      expect(masked.body.aiSemantics[0].evidence).toEqual([]);
+      // ...while the finding itself stays. Dropping it would leave a record the
+      // AI alone flagged as RED with nothing on screen to explain why.
+      expect(masked.body.aiSemantics[0].name).toBe(AI_SEMANTIC_NAME);
+      expect(masked.body.aiSemantics[0].attentionLevel).toBe('RED');
+      expect(masked.body.aiSemantics[0].confidence).toBe('HIGH');
+      // Which path produced the level is provenance, not patient data - this
+      // caller already sees the level itself.
+      expect(masked.body.attentionSource).toBe('BOTH');
+
+      // And none of it reaches the audit trail: the EXAM_DETAIL meta records
+      // the level and the masking flag, never the excerpt or the model's words.
+      const rows = await prisma.auditLog.findMany({
+        where: { action: 'EXAM_DETAIL', actorUsername: USERS.viewer, resourceId: ids.A1 },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      });
+      expect(rows).toHaveLength(1);
+      const serialized = JSON.stringify(rows[0].meta);
+      expect(serialized).not.toMatch(
+        /一处隆起性病变|胃腺癌|隆起性病变并提示|明确或高度疑似|reportContent|diagnosis/,
+      );
     },
   );
 });

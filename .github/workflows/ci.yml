@@ -172,6 +172,22 @@ jobs:
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/monitor.e2e-spec.ts
 
+      # Issue #88 (PR-B): the doctor-facing AI explanation e2e suite against
+      # this same real Postgres - attentionSource on all four states
+      # (BOTH/RULE/AI_REPORT/NONE), an excerpt byte-identical to a substring of
+      # the stored report body (recomputed server-side from offsets, since the
+      # excerpt itself is deliberately never stored), a STALE excerpt being
+      # dropped while its finding survives with HTTP 200, the audit-field leak
+      # scan over the serialized body (no hash, model id, latency or error
+      # vocabulary), and the list envelope carrying attentionSource but never
+      # aiSemantics. It wipes monitor_match -> monitor_record -> monitor_rule in
+      # beforeAll AND afterAll and deletes its own attention_semantic rows
+      # (after the records, because monitor_report_ai_match's FK is Restrict),
+      # so the seed-count step below still sees exactly the 17 seeded RED rules.
+      - name: Monitor AI explanation e2e suite (real Postgres)
+        working-directory: apps/api
+        run: pnpm exec jest --config ./test/jest-e2e.json test/monitor-ai.e2e-spec.ts
+
       - name: Local authentication e2e suite (real Postgres)
         working-directory: apps/api
         run: pnpm exec jest --config ./test/jest-e2e.json test/auth.e2e-spec.ts

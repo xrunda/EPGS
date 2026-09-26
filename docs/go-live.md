@@ -315,6 +315,12 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
 - [ ] **等级收敛抽查**：抽若干记录确认 `current_level = max(未被过滤的关键词命中等级,
       AI 等级)`；再断开模型地址跑一轮，确认等级**完全不变**、只多出 `outcome = ERROR`
       的审计行。
+- [ ] **确认 `reclassify:once` 的版本再对生产跑**：该脚本会遍历**全表**并把等级按当前
+      启用规则集重写。含 #96 的版本会同时尊重 #87 的过滤与 `ai_attention_level`；
+      #96 之前的版本会把 AI 单独判出的等级写回 `UNCLASSIFIED`（且不会自愈，
+      见 [ai-semantic-monitor-design.md](./ai-semantic-monitor-design.md) §6.1）。
+      不确定堡垒机上是哪个版本时，**先在隔离库上用一条 AI-only 的记录试跑**，确认等级
+      没掉下来再动生产。
 - [ ] **通知未变**：AI 命中不产生任何逐条推送，通知条数与内容与之前一致。
 - [ ] **保留策略与隐私复核**：确认 `monitor_report_ai*` 三张表不落报告原文/Prompt/
       模型原始响应（只有哈希与偏移），且 `reason` 对无 `patientDetail` 权限者置空

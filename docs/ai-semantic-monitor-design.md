@@ -150,6 +150,34 @@ PACS/RIS ──► sync-runner ──► monitor_record + monitor_match（关键
 
 分类路径的重算在**同一个事务**里做：一条记录不可能出现"等级与它的行不一致"的中间态。
 
+### 6.1 手工脚本 `reclassify:once` 也必须走这个公式（issue #96）
+
+上面那句"唯一入口"在 #96 之前有一个例外：运维脚本
+`apps/worker/src/sync/reclassify-once.ts`（`pnpm --filter worker run reclassify:once`）
+自己写了一版等级，而且写的是 **`matchReport()` 的关键词结论**，既不看
+`semantic_filtered`、也不看 `ai_attention_level`。后果有两个，都是静默的：
+
+- AI 单独判出的等级（关键词零命中）被写回 `UNCLASSIFIED`，患者从工作台消失；而分类
+  队列取数是 `ai_resolved_at IS NULL`，已判读的记录不再入队，**这个等级不会自愈**。
+- 被 #87 过滤掉的命中重新变成有效命中，于是等级说 RED、它旁边那行证据却带着
+  `semantic_filtered = true`，等级与自己的证据互相矛盾。
+
+现在这个脚本改为**只刷新关键词一侧**，等级一律由本文件的
+`computeEffectiveLevel(keywordLevels, aiLevel)` 得出：`keywordLevels` 取自本轮
+**按当前启用规则集**重新匹配的结果，减去 `semantic_filtered = true` 的命中
+（按 `uq_monitor_match_dedup` 键比对），`aiLevel` 原样透传。
+
+它**故意不调用** `recomputeRecordLevels`，因为两者在"规则被停用"这一例上结论不同：
+`recomputeRecordLevels` 只读 `monitor_match` 已有行，而旧命中行永不删除，所以停用一条
+规则后它仍会算出旧等级；脚本的本意恰恰是"按当前规则集重算"。因此：
+
+- **自动路径**（同步 / #87 / #88）用 `recomputeRecordLevels`，输入是表里的行；
+- **手工脚本**用 `computeEffectiveLevel`，输入是本轮重匹配的结果。
+
+两条路径共用同一个公式与同一份 `LEVEL_PRIORITY`，区别只在关键词一侧的数据来源，
+并且都遵守"AI 只升不降"。脚本仍然分页遍历**全表**（`take: 200`）、按记录开事务，
+不是"顺手清库"的工具；重复执行是幂等的（等级没变就不写）。
+
 ## 7. 证据校验与失败一律不产生 AI 结论
 
 模型必须为每一条命中引用原文片段。校验方式是**字面子串**：这段文字必须出现在这次真

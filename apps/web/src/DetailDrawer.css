@@ -65,11 +65,21 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 6px 10px;
   margin: 0;
 }
-.drawer__level-line .source-badge {
-  margin-left: 0;
+/*
+  关注理由（issue #94）：flex-basis 100% 让它自己占一行，但仍然紧跟在等级标签下面
+  —— 医生先读到「红色关注」，紧接着就是「为什么是红色」，不用往下翻（所有者要求
+  使用者界面线性、简单）。
+*/
+.drawer__reason {
+  flex: 1 1 100%;
+  margin: 0;
+  color: #1d3033;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
 }
 .drawer__fields {
   display: grid;
@@ -191,6 +201,7 @@
 .drawer__hit-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .drawer__hit-head strong {
@@ -210,7 +221,7 @@
   font-size: 13px;
   line-height: 1.7;
 }
-/* 上下文判读一行（issue #87）：说清「这句话被读成了什么意思」。 */
+/* 「结合上下文」一行（issue #87）：说清「这句话被读成了什么意思」。 */
 .drawer__hit-semantic {
   margin: 8px 0 0;
   color: #4a6266;
@@ -235,11 +246,6 @@
   margin-top: 4px;
   color: var(--ink-300);
 }
-.drawer__hit-meta {
-  margin: 8px 0 0;
-  color: var(--ink-200);
-  font-size: 12px;
-}
 .drawer-state {
   display: grid;
   min-height: 240px;
@@ -259,16 +265,10 @@
 }
 
 /*
-  AI 语义发现（issue #88）。沿用命中证据那一段的排版语言，让医生读到的是同一类
-  内容：等级标签 + 名称 + 证据引用。
+  整份报告读出来的那条依据（issue #88）。issue #94 之后它与关键词命中同处一个
+  「关注依据」列表，沿用同一套排版语言（等级标签 + 名称 + 证据引用），只是左边框
+  用中性灰、命中用青色，好让医生一眼分得清两类依据 —— 分得清不等于要分两段读。
 */
-.drawer__ai-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 12px;
-}
 .drawer__ai-item {
   padding: 10px 12px;
   border: 1px solid var(--border-subtle);

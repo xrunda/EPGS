@@ -367,18 +367,24 @@ DIAGNOSIS)`，实现沿用 issue #5/#26 收敛后的 `MatchField` 枚举，二�
 
 **`attentionSource` 真值表**（只由记录上已有的两个输入决定，不看谁高谁低）：
 
-| 值          | 有效关键词命中 | `aiAttentionLevel` | 界面                  |
-| ----------- | -------------- | ------------------ | --------------------- |
-| `RULE`      | 有             | 空                 | 徽标「关键词」        |
-| `AI_REPORT` | 无             | 非空               | 徽标「AI 语义」       |
-| `BOTH`      | 有             | 非空               | 徽标「关键词 + AI 语义」 |
-| `NONE`      | 无             | 空                 | 不渲染徽标            |
+| 值          | 有效关键词命中 | `aiAttentionLevel` | 含义                       |
+| ----------- | -------------- | ------------------ | -------------------------- |
+| `RULE`      | 有             | 空                 | 只有关键词路径发现了内容   |
+| `AI_REPORT` | 无             | 非空               | 只有报告级判读发现了内容   |
+| `BOTH`      | 有             | 非空               | 两条路径都发现了内容       |
+| `NONE`      | 无             | 空                 | 两条路径都没发现           |
+
+issue #94 之前，调用方用这个字段渲染一个中性灰的「来源徽标」（关键词 / AI 语义 /
+关键词 + AI 语义）。**该徽标已从临床视图移除**（取舍理由见
+[rules-config-ui.md](./rules-config-ui.md) 的「医生看到什么」）；字段本身仍在契约上，
+供运营与审计路径使用，也是工作台/抽屉那句关注理由决定要不要说「报告提示…」的依据。
+**本字段是派生值、不是判定值**：它不参与等级计算，改它不影响任何记录的关注等级。
 
 关键词 RED + AI YELLOW 仍然是 `BOTH`：AI 另外读出的内容本身就是医生该看的临床
 上下文，命名只回答"从哪里来"，不回答"谁更重"。`NONE` 是枚举成员而非 `null`，
 因为"两条路径都没发现"（记录为 `UNCLASSIFIED`，本来就在列表里可见）是一个真实
 状态，可空字段只会制造含混的 NULL。**`attentionSource` 与 `monitorLevel` 读的是
-同一组输入**，所以 `NONE` 与 `UNCLASSIFIED` 必然同时出现，徽标不可能与等级矛盾。
+同一组输入**，所以 `NONE` 与 `UNCLASSIFIED` 必然同时出现，本字段不可能与等级矛盾。
 
 **证据为什么是重算的。** `monitor_report_ai_evidence` 只存 `evidence_hash` 与
 `evidence_start`/`evidence_end`（UTF-16 码元，左闭右开，指向 `monitor_record` 的
@@ -391,7 +397,7 @@ DIAGNOSIS)`，实现沿用 issue #5/#26 收敛后的 `MatchField` 枚举，二�
 
 - 报告正文被重新同步时，`sync-runner` 在同一次写入里清空记录的 AI 状态
   （`ai_attention_level` 置空），但历史尝试行仍在。此时接口**不返回**那些发现
-  （`aiSemantics: []`），等级与徽标也同步退回 `RULE`/`NONE`——两者永远同向。
+  （`aiSemantics: []`），等级与 `attentionSource` 也同步退回 `RULE`/`NONE`——两者永远同向。
 - 重跑（`requeue`）**有意保留** `ai_attention_level`，重跑期间显示上一版结论是
   合法行为。
 

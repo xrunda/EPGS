@@ -283,8 +283,9 @@
 .workbench__table tbody tr:hover {
   background: var(--surface-sunken);
 }
-.workbench__keywords {
-  max-width: 220px;
+/* 关注理由一列（issue #94）：一句话，允许换行，最长不超过这个宽度。 */
+.workbench__reason {
+  max-width: 240px;
 }
 .workbench__row--red {
   background: var(--red-wash);

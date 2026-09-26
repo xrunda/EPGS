@@ -177,12 +177,17 @@ export interface MonitorExamDetailDto extends MonitorExamDto {
  * Derived deterministically in the API read path from data the record already
  * carries; no extra column, no migration.
  *
- * | value       | condition                                          | badge            |
- * | ----------- | -------------------------------------------------- | ---------------- |
- * | `RULE`      | effective keyword hits, no AI finding              | 关键词           |
- * | `AI_REPORT` | no effective keyword hit, AI finding               | AI 语义          |
- * | `BOTH`      | both - regardless of which one is HIGHER           | 关键词 + AI 语义 |
- * | `NONE`      | neither, i.e. the record is UNCLASSIFIED           | no badge         |
+ * | value       | condition                                          |
+ * | ----------- | -------------------------------------------------- |
+ * | `RULE`      | effective keyword hits, no AI finding              |
+ * | `AI_REPORT` | no effective keyword hit, AI finding               |
+ * | `BOTH`      | both - regardless of which one is HIGHER           |
+ * | `NONE`      | neither, i.e. the record is UNCLASSIFIED           |
+ *
+ * Issue #94 removed the source BADGE from the clinical views: a doctor reads
+ * WHY the patient needs attention, not which engine found him. The field stays
+ * on the wire for operations and audit, and `attentionReason.ts` still reads it
+ * to decide whether to say "报告提示…" - it is just never rendered on its own.
  *
  * `BOTH` deliberately does NOT mean "the AI raised the level": a keyword RED
  * with an AI YELLOW is still `BOTH`, because both paths found something a

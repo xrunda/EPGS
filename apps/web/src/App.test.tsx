@@ -102,7 +102,8 @@ describe('App', () => {
     // Issue #92: the row tag spells the level out instead of a bare colour word.
     expect(within(row).getByText('红色关注')).toBeInTheDocument();
     expect(within(row).getByText('住院（I）')).toBeInTheDocument();
-    expect(within(row).getByText('腺癌')).toBeInTheDocument();
+    // Issue #94: the row says why the patient is on the list, in words.
+    expect(within(row).getByText('命中「腺癌」')).toBeInTheDocument();
   });
 
   it('opens notification configuration with a read-only list for a viewer', async () => {
@@ -122,7 +123,9 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    fireEvent.click(screen.getByRole('button', { name: '关键词监控' }));
+    // Issue #94: the clinical workbench calls it 监测规则 now; the modal it
+    // opens keeps its own (config-side) name.
+    fireEvent.click(screen.getByRole('button', { name: '监测规则' }));
 
     expect(screen.getByRole('dialog', { name: '关键词监控' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();

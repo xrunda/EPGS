@@ -1,7 +1,8 @@
 import {
-  MonitorExamDetailDto,
+  MonitorAiSemanticDto,
   MonitorExamDto,
   MonitorExamHitDto,
+  MonitorExamWorkbenchDetailDto,
   MonitorLevelDto,
   SemanticConfidenceDto,
   SemanticStatusDto,
@@ -63,6 +64,21 @@ describe('data-scope helpers (issue #13)', () => {
     expect(masked.bedNo).toBeNull();
   });
 
+  /**
+   * Issue #88: one report-level AI finding, complete with the model's sentence
+   * and a verbatim excerpt. Both are report-adjacent free text, so the mask test
+   * below proves they are nulled rather than asserting on already-null values.
+   */
+  const aiFinding: MonitorAiSemanticDto = {
+    semanticId: '00000000-0000-0000-0000-000000000020',
+    semanticVersion: 3,
+    name: '明确或高度疑似恶性病变',
+    attentionLevel: 'RED',
+    confidence: 'HIGH' as SemanticConfidenceDto,
+    reason: '报告描述了不规则隆起与质脆，提示恶性可能。',
+    evidence: [{ field: 'FINDINGS', text: '胃窦见一处隆起性病变' }],
+  };
+
   it('maskExamDetail nulls the HIGH-sensitivity free text and flags dataAccess.masked', () => {
     const hit: MonitorExamHitDto = {
       ruleId: '00000000-0000-0000-0000-000000000010',
@@ -83,11 +99,14 @@ describe('data-scope helpers (issue #13)', () => {
         judgedAt: '2026-08-20T08:16:00.000Z',
       },
     };
-    const detail: MonitorExamDetailDto = {
+    const detail: MonitorExamWorkbenchDetailDto = {
       ...baseRow,
       reportContent: '胃窦见一处隆起性病变，病理提示黏膜内腺癌。',
       diagnosis: '胃腺癌（早期）。',
       hits: [hit],
+      attentionSource: 'BOTH',
+      aiJudged: true,
+      aiSemantics: [aiFinding],
     };
 
     const masked = maskExamDetail(detail);
@@ -106,14 +125,32 @@ describe('data-scope helpers (issue #13)', () => {
     // Non-sensitive hit fields survive masking.
     expect(masked.hits[0].keyword).toBe('腺癌');
     expect(masked.hits[0].matchedField).toBe('REPORT_TEXT');
+
+    // Issue #88: the model's sentence and every excerpt are report-adjacent free
+    // text, so both go...
+    expect(masked.aiSemantics).toHaveLength(1);
+    expect(masked.aiSemantics[0].reason).toBeNull();
+    expect(masked.aiSemantics[0].evidence).toEqual([]);
+    // ...but the finding itself stays. Without it a record flagged only by the AI
+    // (no keyword hit at all) would be RED with nothing on screen to explain it.
+    expect(masked.aiSemantics[0].name).toBe('明确或高度疑似恶性病变');
+    expect(masked.aiSemantics[0].attentionLevel).toBe('RED');
+    expect(masked.aiSemantics[0].confidence).toBe('HIGH');
+    // Provenance of the LEVEL, which this caller already sees - not patient data.
+    expect(masked.attentionSource).toBe('BOTH');
+    expect(masked.aiJudged).toBe(true);
+
     expect(masked.dataAccess).toEqual({ masked: true });
   });
 
   it('maskExamDetail keeps an unjudged hit unjudged (no invented verdict)', () => {
-    const unjudged: MonitorExamDetailDto = {
+    const unjudged: MonitorExamWorkbenchDetailDto = {
       ...baseRow,
       reportContent: null,
       diagnosis: null,
+      attentionSource: 'RULE',
+      aiJudged: false,
+      aiSemantics: [],
       hits: [
         {
           ruleId: '00000000-0000-0000-0000-000000000010',

@@ -1,11 +1,19 @@
-import { MonitorLevel, MonitorMatch, SemanticConfidence, SemanticStatus } from '@prisma/client';
 import {
-  MonitorExamDetailDto,
+  AttentionLevel,
+  MonitorLevel,
+  MonitorMatch,
+  SemanticConfidence,
+  SemanticStatus,
+} from '@prisma/client';
+import {
   MonitorExamDto,
   MonitorExamHitDto,
+  MonitorExamWorkbenchDetailDto,
+  MonitorExamWorkbenchDto,
   MonitorHitSemanticDto,
   MonitorPatientTypeDto,
 } from '@epgs/shared-types';
+import { ReportAiAttemptRow, toAiJudged, toAiSemantics, toAttentionSource } from './report-ai.mapper';
 import { formatShanghaiDateTime } from './monitor-time';
 
 /**
@@ -16,6 +24,13 @@ import { formatShanghaiDateTime } from './monitor-time';
  * endpoint via MonitorExamDetailRow). The detail hit rows additionally
  * carry rule provenance (ruleId + the versioned rule's version) per issue
  * #8, so each hit is auditable back to the exact rule that produced it.
+ *
+ * Issue #88 (PR-B) adds the report-level AI side. `toExamDto` stays the BASE
+ * mapper - it is what the alert-link H5 list serves, and it must not grow an
+ * AI field - while `toWorkbenchExamDto` is the workbench list row that adds
+ * `attentionSource`. The report-level mapping itself lives in
+ * report-ai.mapper.ts, where the attempt-selection and excerpt-reconstruction
+ * rules are unit-tested on their own.
  */
 
 export interface MonitorExamListRow {
@@ -28,6 +43,15 @@ export interface MonitorExamListRow {
   examItem: string | null;
   examTime: Date | null;
   currentLevel: MonitorLevel;
+  /**
+   * Issue #88: the level the AI path contributed, or NULL when it contributed
+   * nothing (never judged, judged as NONE, or the state was reset because the
+   * report text changed). One scalar, already on the record - so the list needs
+   * no join and cannot carry AI text. It is the same input the level
+   * recomputation reads, which is what keeps `attentionSource` consistent with
+   * the level rather than a second opinion about it.
+   */
+  aiAttentionLevel: AttentionLevel | null;
   matches: { keyword: string; matchedAt: Date }[];
 }
 
@@ -50,13 +74,29 @@ export interface SemanticJudgementRow {
   createdAt: Date;
 }
 
-/** Detail row = list row + report body snapshot + full hit rows. */
+/**
+ * Detail row = list row + report body snapshot + full hit rows + the AI
+ * attempt rows (issue #88).
+ *
+ * `reportVersion`/`aiResolvedAt` join the detail row because the AI mapping
+ * needs them to pick which attempt describes the report as it is now; they are
+ * scalars already on the record, not audit fields of the attempt.
+ */
 export interface MonitorExamDetailRow extends MonitorExamListRow {
   reportContent: string | null;
   diagnosis: string | null;
+  reportVersion: number;
+  aiResolvedAt: Date | null;
   matches: MonitorExamHitRow[];
+  /** OK-outcome attempts, newest first. Empty when the report was never judged. */
+  reportAiAttempts: ReportAiAttemptRow[];
 }
 
+/**
+ * The BASE list row (no AI field). Serves the alert-link H5 list, whose wire
+ * type is MonitorExamDto - adding a field here would push it to a surface that
+ * must not carry AI content.
+ */
 export function toExamDto(row: MonitorExamListRow): MonitorExamDto {
   const shanghai = row.examTime ? formatShanghaiDateTime(row.examTime) : null;
   return {
@@ -73,12 +113,35 @@ export function toExamDto(row: MonitorExamListRow): MonitorExamDto {
   };
 }
 
-export function toExamDetailDto(row: MonitorExamDetailRow): MonitorExamDetailDto {
+/**
+ * The workbench list row = the base row + where the level came from.
+ *
+ * The list's `matches` are already filtered to effective hits (LIST_SELECT's
+ * `semanticFiltered: false`), so "has a keyword finding" is simply "has any
+ * match" here - unlike the detail, where the unfiltered hits are present.
+ */
+export function toWorkbenchExamDto(row: MonitorExamListRow): MonitorExamWorkbenchDto {
+  return {
+    ...toExamDto(row),
+    attentionSource: toAttentionSource(row.matches.length > 0, row.aiAttentionLevel ?? null),
+  };
+}
+
+export function toExamDetailDto(row: MonitorExamDetailRow): MonitorExamWorkbenchDetailDto {
   return {
     ...toExamDto(row),
     reportContent: row.reportContent,
     diagnosis: row.diagnosis,
     hits: row.matches.map(toHitDto),
+    // DETAIL_INCLUDE does NOT filter the hits (the drawer must show a filtered
+    // hit, annotated), so "has an effective keyword finding" has to be asked of
+    // the rows rather than inferred from the array being non-empty.
+    attentionSource: toAttentionSource(
+      row.matches.some((hit) => !hit.semanticFiltered),
+      row.aiAttentionLevel ?? null,
+    ),
+    aiJudged: toAiJudged(row.reportAiAttempts, row),
+    aiSemantics: toAiSemantics(row.reportAiAttempts, row),
   };
 }
 

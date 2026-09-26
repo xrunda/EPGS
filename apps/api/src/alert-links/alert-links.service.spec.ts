@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { MonitorExamDetailDto, MonitorExamDto } from '@epgs/shared-types';
+import { MonitorExamDto, MonitorExamWorkbenchDetailDto } from '@epgs/shared-types';
 import { AlertLinksService } from './alert-links.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MonitorService } from '../monitor/monitor.service';
@@ -31,7 +31,15 @@ function makeRow(overrides: Partial<MonitorExamDto> = {}): MonitorExamDto {
   };
 }
 
-function makeDetail(overrides: Partial<MonitorExamDetailDto> = {}): MonitorExamDetailDto {
+/**
+ * Deliberately the WIDER workbench detail (issue #88) rather than the base DTO,
+ * because that is what MonitorService.getDetail now returns: the alert-link
+ * service receives the AI fields and has to narrow them away. A base-typed
+ * fixture here would prove nothing.
+ */
+function makeDetail(
+  overrides: Partial<MonitorExamWorkbenchDetailDto> = {},
+): MonitorExamWorkbenchDetailDto {
   return {
     ...makeRow(),
     reportContent: '胃窦见一枚 0.6cm 息肉，息肉待复核。',
@@ -49,6 +57,21 @@ function makeDetail(overrides: Partial<MonitorExamDetailDto> = {}): MonitorExamD
         // never hits, so this is just a complete DTO.
         semanticFiltered: false,
         semantic: null,
+      },
+    ],
+    // Issue #88: the report-level AI explanation, present on the object the
+    // alert-link service receives.
+    attentionSource: 'BOTH',
+    aiJudged: true,
+    aiSemantics: [
+      {
+        semanticId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        semanticVersion: 2,
+        name: '明确或高度疑似恶性病变',
+        attentionLevel: 'RED',
+        confidence: 'HIGH',
+        reason: '报告描述了不规则隆起与质脆。',
+        evidence: [{ field: 'FINDINGS', text: '胃窦见一枚 0.6cm 息肉' }],
       },
     ],
     ...overrides,
@@ -115,6 +138,9 @@ describe('AlertLinksService', () => {
       });
       expect(result.items[1]).toMatchObject({ patientName: '李*' });
       expect(result.items[0]).not.toHaveProperty('reportContent');
+      // Issue #88: and no attentionSource - the H5 list's wire type is the base
+      // MonitorExamDto, which has no such field.
+      expect(result.items[0]).not.toHaveProperty('attentionSource');
       expect(result).not.toHaveProperty('dataAccess');
     });
 
@@ -139,6 +165,24 @@ describe('AlertLinksService', () => {
       expect(detail.diagnosis).toBe('胃息肉。');
       expect(detail.hits[0].contextSnippet).toBe('…息肉待复核。');
       expect(detail.dataAccess).toBeUndefined();
+    });
+
+    it('drops the workbench AI fields so the H5 payload cannot grow them (issue #88)', async () => {
+      const { service } = build();
+
+      const detail = await service.getExamDetail(link, link.recordIds[0]);
+
+      // The H5 surface's shape does not change: the owner's rule is that the
+      // notification surface stays as it is, and a link can travel further than
+      // a workbench session. maskAlertExamDetail BUILDS the base DTO from a
+      // whitelist, so this holds for any field added to the workbench later -
+      // the assertion is on the absence, not on a remembered deletion.
+      expect(detail).not.toHaveProperty('attentionSource');
+      expect(detail).not.toHaveProperty('aiJudged');
+      expect(detail).not.toHaveProperty('aiSemantics');
+      // Everything the H5 page does show is still there.
+      expect(detail.reportContent).toBe('胃窦见一枚 0.6cm 息肉，息肉待复核。');
+      expect(detail.hits).toHaveLength(1);
     });
 
     it('answers 404 MONITOR_RECORD_NOT_FOUND for an id outside the snapshot, without querying it', async () => {

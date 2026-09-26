@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  MonitorExamDetailDto,
+  MonitorExamWorkbenchDetailDto,
+  ReportAiFieldDto,
   SemanticConfidenceDto,
   SemanticStatusDto,
 } from '@epgs/shared-types';
+import { ATTENTION_LEVEL_LABELS, SOURCE_LABELS, SOURCE_TITLES } from './attentionSource';
 import { getExamDetail, MonitorApiError } from './monitorApi';
 import {
   DIAGNOSIS_TEXT_FIELDS,
@@ -40,6 +42,17 @@ const SEMANTIC_CONFIDENCE_LABELS: Record<SemanticConfidenceDto, string> = {
   LOW: '把握低',
 };
 
+/**
+ * 证据片段出自报告的哪一部分。与关键词命中的 FIELD_LABELS（highlight.tsx）分开
+ * 命名：后者的取值是 MatchFieldDto（含 REPORT_TEXT / OTHER），这里是 AI 任务的
+ * ReportAiField（只有三列，见 schema.prisma 的 ReportAiField 注释）。
+ */
+const REPORT_AI_FIELD_LABELS: Record<ReportAiFieldDto, string> = {
+  EXAM_ITEM: '检查项目',
+  FINDINGS: '报告内容',
+  IMPRESSION: '诊断',
+};
+
 function friendlyError(error: unknown): string {
   if (error instanceof MonitorApiError && error.status === 404) {
     return '未找到该检查记录，可能已被移除。';
@@ -49,7 +62,7 @@ function friendlyError(error: unknown): string {
 }
 
 export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Element | null {
-  const [detail, setDetail] = useState<MonitorExamDetailDto | null>(null);
+  const [detail, setDetail] = useState<MonitorExamWorkbenchDetailDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -179,9 +192,21 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
         ) : detail ? (
           <div className="drawer__body">
             <div className="drawer__summary">
-              <span className={`level-tag level-tag--${detail.monitorLevel.toLowerCase()}`}>
-                {LEVEL_LABELS[detail.monitorLevel]}
-              </span>
+              {/*
+                等级标签与来源徽标同一行：drawer__summary 是 grid，直接并排会被拆成
+                两行，所以这里自己是一个 flex 行。徽标 NONE 不渲染 —— 两条路径都没发现
+                内容时等级是未分级，再加一个「都没有」的徽标只是噪音。
+              */}
+              <p className="drawer__level-line">
+                <span className={`level-tag level-tag--${detail.monitorLevel.toLowerCase()}`}>
+                  {LEVEL_LABELS[detail.monitorLevel]}
+                </span>
+                {detail.attentionSource !== 'NONE' && (
+                  <span className="source-badge" title={SOURCE_TITLES[detail.attentionSource]}>
+                    {SOURCE_LABELS[detail.attentionSource]}
+                  </span>
+                )}
+              </p>
               <dl className="drawer__fields">
                 <div>
                   <dt>姓名</dt>
@@ -304,6 +329,64 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                 </ul>
               )}
             </section>
+
+            {/*
+              AI 语义发现（issue #88）放在命中证据之后，保留抽屉既有的阅读顺序：先看
+              关键词命中了什么，再看整份报告被读出了什么。对一个只有语义发现的记录，
+              上面显示「暂无命中记录」，这一段正好解释它为什么在列表里。
+
+              两种情况才渲染：(a) 有发现；(b) 判读过但没发现。都没发生（未判读，或
+              判读结果因报告换版而作废）时整段不出现 —— 那正是 #88 之前的界面，不会
+              凭空说一句「看过了」。
+            */}
+            {detail.aiSemantics.length > 0 ? (
+              <section className="drawer__section drawer__section--ai">
+                <h3>
+                  AI 语义发现 <span className="drawer__count">{detail.aiSemantics.length}</span>
+                </h3>
+                <ul className="drawer__ai-list">
+                  {detail.aiSemantics.map((finding) => (
+                    <li className="drawer__ai-item" key={finding.semanticId}>
+                      <div className="drawer__ai-head">
+                        <span
+                          className={`level-tag level-tag--${finding.attentionLevel.toLowerCase()}`}
+                        >
+                          {ATTENTION_LEVEL_LABELS[finding.attentionLevel]}
+                        </span>
+                        <strong>{finding.name}</strong>
+                        <span className="drawer__ai-confidence">
+                          {SEMANTIC_CONFIDENCE_LABELS[finding.confidence]}
+                        </span>
+                      </div>
+                      {finding.reason && <p className="drawer__ai-reason">{finding.reason}</p>}
+                      {/*
+                        证据按服务端重算好的原文渲染，绝不回头去切 reportContent ——
+                        报告正文只在「报告内容」区块出现一次，且从不被改写
+                        （highlight.tsx 的「只切片、不改写」契约）。
+                      */}
+                      {finding.evidence.map((evidence, index) => (
+                        <blockquote
+                          className="drawer__snippet drawer__ai-evidence"
+                          key={`${finding.semanticId}-${evidence.field}-${index}`}
+                        >
+                          <span className="drawer__ai-evidence-field">
+                            {REPORT_AI_FIELD_LABELS[evidence.field]}
+                          </span>
+                          {evidence.text}
+                        </blockquote>
+                      ))}
+                    </li>
+                  ))}
+                </ul>
+                <p className="drawer__ai-note">关注等级不是诊断结论，也不代表病情严重程度。</p>
+              </section>
+            ) : detail.aiJudged ? (
+              <section className="drawer__section drawer__section--ai">
+                <h3>AI 语义发现</h3>
+                <p className="drawer__placeholder">本次 AI 语义判读未发现需要关注的内容</p>
+                <p className="drawer__ai-note">关注等级不是诊断结论，也不代表病情严重程度。</p>
+              </section>
+            ) : null}
           </div>
         ) : null}
       </section>

@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { MonitorExamDto, MonitorSummaryDto, SyncStatusDto } from '@epgs/shared-types';
+import type {
+  MonitorExamWorkbenchDto,
+  MonitorSummaryDto,
+  SyncStatusDto,
+} from '@epgs/shared-types';
 import { Workbench } from './Workbench';
 
-const examRows: MonitorExamDto[] = [
+/**
+ * The workbench list row carries attentionSource (issue #88) - required, so a
+ * fixture cannot omit it and leave the badge silently unrendered.
+ */
+const examRows: MonitorExamWorkbenchDto[] = [
   {
     recordId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     monitorLevel: 'RED',
@@ -15,6 +23,7 @@ const examRows: MonitorExamDto[] = [
     examDate: '2026-08-20',
     examTime: '10:30:00',
     matchedKeywords: ['腺癌', '浸润癌'],
+    attentionSource: 'BOTH',
   },
   {
     recordId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -27,6 +36,7 @@ const examRows: MonitorExamDto[] = [
     examDate: null,
     examTime: null,
     matchedKeywords: [],
+    attentionSource: 'NONE',
   },
 ];
 
@@ -136,6 +146,24 @@ describe('Workbench', () => {
     const row2 = screen.getByRole('row', { name: /绿色/ });
     expect(within(row2).getByText('门诊（O）')).toBeInTheDocument();
     expect(within(row2).getAllByText('—')).toHaveLength(7);
+  });
+
+  // Issue #88: the level cell also says WHERE the level came from. It goes
+  // inside the existing 关注等级 cell - the table stays at ten columns.
+  it('badges the source inside the level cell, and omits it when nothing was found', async () => {
+    render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const bothRow = screen.getByRole('row', { name: /测试患者甲/ });
+    expect(within(bothRow).getByText('关键词 + AI 语义')).toBeInTheDocument();
+
+    const noneRow = screen.getByRole('row', { name: /绿色/ });
+    // NONE renders nothing: both paths agreeing there is nothing to see is not
+    // news, and a badge on every unclassified row would be noise.
+    expect(within(noneRow).queryByText(/关键词/)).not.toBeInTheDocument();
+    expect(noneRow.querySelector('.source-badge')).toBeNull();
+    // The badge is its own element, so it cannot be mistaken for the level.
+    expect(bothRow.querySelectorAll('.level-tag')).toHaveLength(1);
   });
 
   it('applies all filters to the list but excludes level from the summary', async () => {
@@ -385,6 +413,7 @@ describe('Workbench', () => {
                 examDate: null,
                 examTime: null,
                 matchedKeywords: [],
+                attentionSource: 'NONE',
               },
             ],
             total: 1,

@@ -130,14 +130,16 @@ describe('SemanticMonitorModal', () => {
     await screen.findByText('明确或高度疑似恶性病变');
 
     const redRow = screen.getByRole('row', { name: /明确或高度疑似恶性病变/ });
-    expect(within(redRow).getByText('红色')).toBeInTheDocument();
+    // 等级文字必须带「关注」二字（Issue #88 定稿文案）：RED / YELLOW / GREEN 是
+    // 管理上的「关注等级」，不是病情严重程度。
+    expect(within(redRow).getByText('红色关注')).toBeInTheDocument();
     expect(within(redRow).getByText('启用')).toBeInTheDocument();
     expect(within(redRow).getByText('v1')).toBeInTheDocument();
 
     // A disabled entry stays visible (it is a version history, not a deletion)
     // and is distinguishable from an enabled one.
     const yellowRow = screen.getByRole('row', { name: /性质待定、需活检的病变/ });
-    expect(within(yellowRow).getByText('黄色')).toBeInTheDocument();
+    expect(within(yellowRow).getByText('黄色关注')).toBeInTheDocument();
     expect(within(yellowRow).getByText('停用')).toBeInTheDocument();
     expect(within(yellowRow).getByText('v3')).toBeInTheDocument();
   });
@@ -158,6 +160,35 @@ describe('SemanticMonitorModal', () => {
     for (const leak of ['Prompt', '提示词', '大模型', 'LLM', 'Classifier', '分类器', 'JSON', '模型']) {
       expect(screen.queryByText(new RegExp(leak, 'i'))).not.toBeInTheDocument();
     }
+  });
+
+  // Issue #88 定稿文案的机械守门：这一页任何一处等级文字都不能只写颜色。
+  // 上一轮就是因为在四个地方各写了一份字面量，才漏掉了表格行、表单卡片和筛选下拉
+  // 三处；现在四处共用一个映射，这条扫描保证不会再漏。
+  it('never prints a colour without 「关注」 - on the page or in the form', async () => {
+    render(<SemanticMonitorModal open onClose={vi.fn()} actorId="rule-admin" />);
+    await screen.findByText('明确或高度疑似恶性病变');
+
+    const bareColour = /(?:红色|黄色|绿色)(?!关注)/;
+    expect(document.body.textContent ?? '').not.toMatch(bareColour);
+
+    // The form's level cards and the filter dropdown are the two places a bare
+    // colour used to hide, so the scan has to run with both on screen.
+    fireEvent.click(screen.getByRole('button', { name: '新增关注语义' }));
+    expect(screen.getByRole('radio', { name: /红色关注/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /黄色关注/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /绿色关注/ })).toBeInTheDocument();
+    // The level filter's own options (the status filter's are not colours).
+    const levelOptions = Array.from(document.querySelectorAll('option')).map(
+      (option) => option.textContent ?? '',
+    );
+    expect(levelOptions).toEqual(
+      expect.arrayContaining(['红色关注', '黄色关注', '绿色关注']),
+    );
+    for (const option of levelOptions) {
+      expect(option).not.toMatch(bareColour);
+    }
+    expect(document.body.textContent ?? '').not.toMatch(bareColour);
   });
 
   it('summarises the three-colour pool over ENABLED semantics only', async () => {

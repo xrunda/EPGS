@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  MonitorExamDto,
+  MonitorExamWorkbenchDto,
   MonitorLevelDto,
   MonitorSummaryDto,
   SyncHealthState,
@@ -9,6 +9,7 @@ import type {
 import { getExamSummary, listExams, MonitorApiError, getSyncStatus } from './monitorApi';
 import { listRules } from './rulesApi';
 import { DetailDrawer } from './DetailDrawer';
+import { SOURCE_LABELS, SOURCE_TITLES } from './attentionSource';
 import './Workbench.css';
 
 interface WorkbenchProps {
@@ -122,7 +123,7 @@ const PATIENT_TYPE_CODE_FALLBACK_LABELS: Record<string, string> = {
   O: '门诊',
 };
 
-function formatPatientType(exam: MonitorExamDto): string {
+function formatPatientType(exam: MonitorExamWorkbenchDto): string {
   const { name, code } = exam.patientType;
   if (name && code) return `${name}（${code}）`;
   if (name) return name;
@@ -186,7 +187,7 @@ export function Workbench({
   onOpenNotifications,
   onOpenUsers,
 }: WorkbenchProps): JSX.Element {
-  const [items, setItems] = useState<MonitorExamDto[]>([]);
+  const [items, setItems] = useState<MonitorExamWorkbenchDto[]>([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<MonitorSummaryDto | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatusDto | null>(null);
@@ -567,6 +568,19 @@ export function Workbench({
                     <span className={`level-tag level-tag--${exam.monitorLevel.toLowerCase()}`}>
                       {LEVEL_LABELS[exam.monitorLevel]}
                     </span>
+                    {/*
+                      来源徽标（issue #88）放在关注等级单元格内，10 列的表格不再加列。
+                      纯文字，颜色不是唯一的信息通道。NONE（两条路径都没发现，等级为
+                      未分级）不渲染，避免一排噪音。
+                    */}
+                    {exam.attentionSource !== 'NONE' && (
+                      <span
+                        className="source-badge"
+                        title={SOURCE_TITLES[exam.attentionSource]}
+                      >
+                        {SOURCE_LABELS[exam.attentionSource]}
+                      </span>
+                    )}
                   </td>
                   <td>{exam.patientName ?? '—'}</td>
                   <td>{exam.department ?? '—'}</td>

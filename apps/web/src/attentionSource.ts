@@ -24,9 +24,12 @@ export const SOURCE_TITLES: Record<MonitorAttentionSourceDto, string> = {
 };
 
 /**
- * 关注等级在业务上的说法。与 SemanticMonitorModal 的 POOL_LABELS 同一套词：
- * RED / YELLOW / GREEN 是管理上的「关注等级」（要多久看到），不是临床严重程度或
- * 诊断分级，所以必须带「关注」二字。
+ * 关注等级在业务上的说法 —— **全应用唯一一份**。RED / YELLOW / GREEN 是管理上的
+ * 「关注等级」（要多久看到），不是临床严重程度或诊断分级，所以必须带「关注」二字。
+ *
+ * 引用处只有两个文件（共五处）：详情抽屉的「AI 语义发现」等级标签，以及 AI 语义
+ * 监控页的池标题 / 表格行内标签 / 表单等级卡片 / 筛选下拉（SemanticMonitorModal 把它
+ * 别名成 POOL_LABELS）。上一轮就是在那一页漏改了三处，所以等级文案只有一个来源。
  *
  * 注意与 highlight.tsx 的 LEVEL_LABELS 不同：那个映射的输出是「红色」，被预警 H5
  * 页面复用并在那里自己拼上「关注」二字（AlertApp 渲染「{level}关注」）。这里不能

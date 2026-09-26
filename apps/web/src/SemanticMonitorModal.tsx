@@ -5,6 +5,10 @@ import {
   ATTENTION_SEMANTIC_DESCRIPTION_MAX_LENGTH,
   ATTENTION_SEMANTIC_NAME_MAX_LENGTH,
 } from '@epgs/shared-types';
+// 等级文字只有一个来源（attentionSource.ts）：本页的池标题、表格行内标签、
+// 新增/编辑表单的等级卡片、筛选下拉，以及工作台列表与详情抽屉共用同一个映射。
+// 分开写多份字面量正是上一轮漏改三处的原因，所以这里只引用、不再声明。
+import { ATTENTION_LEVEL_LABELS as POOL_LABELS } from './attentionSource';
 import {
   AiSemanticsApiError,
   createAiSemantic,
@@ -68,20 +72,6 @@ const LEVEL_HINTS: Record<AttentionLevelDto, string> = {
   RED: '需要尽快人工确认',
   YELLOW: '需要留意或安排跟进',
   GREEN: '值得记录，暂不需要处理',
-};
-
-/**
- * 本页每一处等级文字都必须显式带「关注」二字（Issue #88 定稿文案）：RED /
- * YELLOW / GREEN 是管理上的「关注等级」（要多久看到），不是临床严重程度或诊断
- * 分级，只写颜色容易被医生读成病情轻重。
- *
- * 池标题、表格行内标签、新增/编辑表单的等级卡片、筛选下拉共用这一个映射，所以
- * 这一页不可能出现一处只写颜色的等级 —— 分开写四份字面量正是上一轮漏掉三处的原因。
- */
-const POOL_LABELS: Record<AttentionLevelDto, string> = {
-  RED: '红色关注',
-  YELLOW: '黄色关注',
-  GREEN: '绿色关注',
 };
 
 const PAGE_SIZE = 20;

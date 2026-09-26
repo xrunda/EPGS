@@ -150,7 +150,7 @@ describe('SemanticMonitorModal', () => {
     await screen.findByText('明确或高度疑似恶性病变');
 
     expect(screen.getByRole('heading', { name: 'AI 语义监控' })).toBeInTheDocument();
-    expect(screen.getByText('听懂报告里写了什么「意思」。')).toBeInTheDocument();
+    expect(screen.getByText('理解医生这句话真正表达了什么意思。')).toBeInTheDocument();
     expect(screen.getByText('关键词监控看「字」 · AI 语义监控看「意思」')).toBeInTheDocument();
     expect(screen.getByText(/不作为正式诊断/)).toBeInTheDocument();
     expect(screen.getByText(/不是诊断结论，也不代表病情严重程度/)).toBeInTheDocument();
@@ -171,6 +171,12 @@ describe('SemanticMonitorModal', () => {
     expect(within(pool).getByText('需要尽快人工确认')).toBeInTheDocument();
     expect(within(pool).getByText('需要留意或安排跟进')).toBeInTheDocument();
     expect(within(pool).getByText('值得记录，暂不需要处理')).toBeInTheDocument();
+
+    // 池标题必须带「关注」二字：RED / YELLOW / GREEN 是「关注等级」（要多久看到），
+    // 不是病情严重程度，光写颜色会被医生读成轻重分级。
+    for (const label of ['红色关注', '黄色关注', '绿色关注']) {
+      expect(within(pool).getByText(label)).toBeInTheDocument();
+    }
 
     const countCalls = vi
       .mocked(fetch)

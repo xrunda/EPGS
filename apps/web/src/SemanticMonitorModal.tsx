@@ -76,6 +76,17 @@ const LEVEL_HINTS: Record<AttentionLevelDto, string> = {
   GREEN: '值得记录，暂不需要处理',
 };
 
+/**
+ * 三色池的标题必须显式带「关注」二字（Issue #88 定稿文案）：RED / YELLOW / GREEN
+ * 是管理上的「关注等级」（要多久看到），不是临床严重程度或诊断分级，只写颜色
+ * 容易被医生读成病情轻重。
+ */
+const POOL_LABELS: Record<AttentionLevelDto, string> = {
+  RED: '红色关注',
+  YELLOW: '黄色关注',
+  GREEN: '绿色关注',
+};
+
 const PAGE_SIZE = 20;
 
 function toDraft(semantic: AttentionSemanticDto): SemanticDraft {
@@ -337,7 +348,7 @@ export function SemanticMonitorModal({
           </button>
         </header>
 
-        <p className="semantic-modal__lead">听懂报告里写了什么「意思」。</p>
+        <p className="semantic-modal__lead">理解医生这句话真正表达了什么意思。</p>
         <p className="semantic-modal__sublead">
           用医生自己的话写下需要关注的情况。系统会读完整份报告，判断有没有表达这层意思 ——
           即使报告里一个字都没写到。
@@ -366,7 +377,7 @@ export function SemanticMonitorModal({
                 {ATTENTION_LEVELS_DTO.map((level) => (
                   <li key={level}>
                     <span className={`level-tag level-tag--${level.toLowerCase()}`}>
-                      {LEVEL_LABELS[level]}
+                      {POOL_LABELS[level]}
                     </span>
                     <strong>{poolCounts[level]}</strong>
                     <span className="semantic-pool__hint">{LEVEL_HINTS[level]}</span>

@@ -1,10 +1,15 @@
 import { MonitorRecord, Prisma } from '@prisma/client';
 import { RuleSnapshot } from '@epgs/matching-engine';
-import { hitKey, reclassifyRecord } from './reclassify-once';
+import { hitKey, reclassifyRecord } from './reclassify-record';
 
 /**
- * The ops script that re-runs matching against the current rule set (issue
- * #96).
+ * The per-record logic behind the ops script (`reclassify-once.ts`, CLI) that
+ * re-runs matching against the current rule set (issue #96).
+ *
+ * This spec imports `reclassify-record`, NOT the CLI: the CLI imports AppModule,
+ * whose `ConfigModule.forRoot` validation needs a populated `.env` and so fails
+ * in CI. Keeping the logic free of Nest is what makes it testable at all - the
+ * same reason `monitor/record-level.ts` is a separate module.
  *
  * It is the ONE path that used to assign `monitor_record.current_level` outside
  * `monitor/record-level.ts`, and it did so from the keyword engine's verdict -

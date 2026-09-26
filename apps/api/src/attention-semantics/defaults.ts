@@ -79,6 +79,12 @@ export const DEFAULT_ATTENTION_SEMANTICS: readonly DefaultAttentionSemantic[] = 
       '报告提示病变为多发、累及多个部位，或范围较长、面积较大，例如：多发息肉、散在多发糜烂、病变累及范围广、累及长度较长。含义是病变负荷较大，可能影响后续处理安排。',
   },
   {
+    name: '良性器质性或功能性病变（需处理或随访）',
+    attentionLevel: 'YELLOW',
+    description:
+      '报告明确描述了良性、但需要临床处理、随访或告知患者的器质性或功能性病变，例如：贲门失弛缓症（贲门松弛、食管体部扩张、食物潴留、镜身通过受阻）、食管裂孔疝（齿状线上移、局部疝囊形成）、明确的良性管腔狭窄或动力障碍。含义是"本次确实存在需要跟进的病变，只是性质不是恶性"。',
+  },
+  {
     name: '与既往检查相比出现变化',
     attentionLevel: 'GREEN',
     description:

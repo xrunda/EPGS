@@ -84,14 +84,15 @@ function stubDetail(payload: MonitorExamWorkbenchDetailDto): void {
 }
 
 /**
- * The 「AI 语义发现」 section on its own. Since the summary's main level tag and
- * an AI finding both spell the level the same way (「红色关注」, issue #92), a
- * whole-dialog text query for a level is ambiguous by design - scope the AI
+ * The 「关注依据」 section on its own (issue #94: the old 命中证据 and AI 语义发现
+ * sections are now one list). Since the summary's main level tag and every item's
+ * own level tag spell the level the same way (「红色关注」, issue #92), a
+ * whole-dialog text query for a level is ambiguous by design - scope the
  * assertions to the section that owns them.
  */
-function aiSection(dialog: HTMLElement): HTMLElement {
-  const section = dialog.querySelector<HTMLElement>('.drawer__section--ai');
-  if (!section) throw new Error('AI 语义发现 section is missing from the drawer');
+function reasonSection(dialog: HTMLElement): HTMLElement {
+  const section = dialog.querySelector<HTMLElement>('.drawer__section--reasons');
+  if (!section) throw new Error('关注依据 section is missing from the drawer');
   return section;
 }
 
@@ -138,15 +139,22 @@ describe('DetailDrawer', () => {
     expect(marks[0].textContent).toBe('腺癌');
     expect(marks[1].textContent).toBe('腺癌');
 
-    // The summary tag spells the level out (红色关注, issue #92); the hit row
-    // inside 命中证据 keeps its own bare tag. The keyword also shows in the two
-    // highlighted marks and the hit evidence list.
+    // Issue #94: one sentence right under the level says why this patient is on
+    // the list, before any evidence list.
+    expect(dialog.querySelector('.drawer__reason')?.textContent).toBe(
+      '报告内容或诊断中发现「腺癌」',
+    );
+    // The summary tag and the item's own tag spell the level the same way -
+    // 红色关注 is now the only spelling inside the drawer (issue #94).
     expect(dialog.querySelector('.drawer__level-line .level-tag')?.textContent).toBe('红色关注');
-    expect(within(dialog).getAllByText('红色')).toHaveLength(1);
+    expect(within(dialog).getAllByText('红色关注')).toHaveLength(2);
+    expect(within(dialog).queryByText('红色')).not.toBeInTheDocument();
     expect(within(dialog).getAllByText('腺癌')).toHaveLength(3);
     expect(within(dialog).getByText('报告内容与诊断')).toBeInTheDocument();
     expect(within(dialog).getByText('…胃体见多发隆起型病变，考虑腺癌。…')).toBeInTheDocument();
-    expect(within(dialog).getByText('规则 aaaaaaaa · v1')).toBeInTheDocument();
+    // Issue #94: the rule UUID and version are operational identifiers, no
+    // longer on the clinical main line (the API still returns them).
+    expect(within(dialog).queryByText(/规则 [0-9a-f]{8} · v\d/)).not.toBeInTheDocument();
   });
 
   it('shows placeholders when the report or diagnosis is missing', async () => {
@@ -167,7 +175,7 @@ describe('DetailDrawer', () => {
     expect(within(dialog).getByText('暂无报告内容')).toBeInTheDocument();
     expect(within(dialog).getByText('（未同步到报告正文）')).toBeInTheDocument();
     expect(within(dialog).getByText('暂无诊断')).toBeInTheDocument();
-    expect(within(dialog).getByText('暂无命中记录')).toBeInTheDocument();
+    expect(within(dialog).getByText('暂无关注依据')).toBeInTheDocument();
   });
 
   it('highlights multiple matched keywords without altering the original text', async () => {
@@ -228,12 +236,12 @@ describe('DetailDrawer', () => {
 
     const dialog = await screen.findByRole('dialog', { name: '检查详情' });
     expect(dialog.querySelectorAll('mark.hit-highlight')).toHaveLength(0);
-    expect(within(dialog).getByText('暂无命中记录')).toBeInTheDocument();
+    expect(within(dialog).getByText('暂无关注依据')).toBeInTheDocument();
   });
 
   // Issue #87: a hit the AI judged not to express the rule's intent stays
   // visible (the keyword engine did fire) but is marked 未计入关注 and carries
-  // the 上下文判读 line; it must NOT be highlighted as a reason for the visit.
+  // the 结合上下文 line; it must NOT be highlighted as a reason for the visit.
   it('shows a filtered hit with its verdict but keeps it out of the highlights', async () => {
     const filteredDetail: MonitorExamWorkbenchDetailDto = {
       ...detail,
@@ -288,14 +296,14 @@ describe('DetailDrawer', () => {
     expect(
       within(hit as HTMLElement).getByText('该句是否认句，报告没有写存在溃疡。'),
     ).toBeInTheDocument();
-    expect(dialog.querySelector('.drawer__hit-semantic-label')?.textContent).toBe('上下文判读');
+    expect(dialog.querySelector('.drawer__hit-semantic-label')?.textContent).toBe('结合上下文');
   });
 
   it('does not invent a verdict for a hit that was never judged', async () => {
     render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
 
     const dialog = await screen.findByRole('dialog', { name: '检查详情' });
-    expect(within(dialog).queryByText('上下文判读')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('结合上下文')).not.toBeInTheDocument();
     expect(within(dialog).queryByText(/未计入关注/)).not.toBeInTheDocument();
     expect(dialog.querySelectorAll('li.drawer__hit--filtered')).toHaveLength(0);
   });
@@ -372,30 +380,7 @@ describe('DetailDrawer', () => {
 
   // --- Issue #88: the report-level AI explanation --------------------------
 
-  describe('attentionSource badge', () => {
-    it.each([
-      ['RULE', '关键词'],
-      ['AI_REPORT', 'AI 语义'],
-      ['BOTH', '关键词 + AI 语义'],
-    ] as const)('badges %s as 「%s」 next to the level tag', async (source, label) => {
-      stubDetail(withAi({ attentionSource: source, aiSemantics: [], aiJudged: false }));
-      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
-
-      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
-      const line = dialog.querySelector('.drawer__level-line');
-      const badge = line?.querySelector('.source-badge');
-      expect(badge?.textContent).toBe(label);
-      // The badge sits BESIDE the level tag, never replacing it, and it is
-      // plain text: colour is not the only channel saying where the level came
-      // from. (The hit row's own level tag is a separate element - hence the
-      // scoping to the summary line.)
-      expect(line?.querySelectorAll('.level-tag')).toHaveLength(1);
-      // Issue #92: the main level tag spells out 「关注」, exactly like the AI
-      // findings further down the drawer.
-      expect(line?.querySelector('.level-tag')?.textContent).toBe('红色关注');
-      expect(badge?.className).not.toMatch(/level-tag--/);
-    });
-
+  describe('关注理由 / level tags', () => {
     // Issue #92: the main level tag says 「关注」 too - 红色是管理上的关注等级，
     // 不是病情严重程度，抽屉与工作台行内标签用同一份文案。
     it.each([
@@ -410,7 +395,62 @@ describe('DetailDrawer', () => {
       expect(dialog.querySelector('.drawer__level-line .level-tag')?.textContent).toBe(label);
     });
 
-    it('renders no badge at all when neither path found anything', async () => {
+    // Issue #94: one sentence built from the record's own fields, covering all
+    // four attention sources. NONE gets no sentence at all.
+    it.each([
+      ['RULE', '报告内容或诊断中发现「腺癌」'],
+      ['BOTH', '报告内容或诊断中发现「腺癌」；报告提示「明确或高度疑似恶性病变」'],
+    ] as const)('states the reason for a %s record as 「%s」', async (source, expected) => {
+      stubDetail(withAi({ attentionSource: source }));
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      expect(dialog.querySelector('.drawer__reason')?.textContent).toBe(expected);
+    });
+
+    it('says the report itself prompted the visit when no keyword matched', async () => {
+      // The failure this exists for: a red record with zero keyword hits. The
+      // sentence has to name what the report said, not leave the level bare.
+      stubDetail(
+        withAi({ attentionSource: 'AI_REPORT', hits: [], matchedKeywords: [] }),
+      );
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      expect(dialog.querySelector('.drawer__reason')?.textContent).toBe(
+        '报告提示「明确或高度疑似恶性病变」',
+      );
+    });
+
+    it('names the hit at the record level first, and counts the rest', async () => {
+      const hits = [
+        {
+          ...detail.hits[0],
+          keyword: '息肉',
+          level: 'YELLOW' as const,
+          matchedField: 'FINDINGS' as const,
+        },
+        detail.hits[0],
+        {
+          ...detail.hits[0],
+          ruleId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          keyword: '肿物',
+          matchedField: 'IMPRESSION' as const,
+        },
+      ];
+      stubDetail({ ...detail, hits, matchedKeywords: ['息肉', '腺癌', '肿物'] });
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      // 腺癌 is the RED one and the record is RED, so it is the one named even
+      // though 息肉 matched first - the sentence explains the tag above it, and
+      // it says which part of the report that hit came from.
+      expect(dialog.querySelector('.drawer__reason')?.textContent).toBe(
+        '报告内容或诊断中发现「腺癌」等 3 处',
+      );
+    });
+
+    it('states no reason at all when nothing was found', async () => {
       stubDetail({
         ...detail,
         monitorLevel: 'UNCLASSIFIED',
@@ -421,23 +461,79 @@ describe('DetailDrawer', () => {
       render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
 
       const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      expect(dialog.querySelector('.drawer__reason')).toBeNull();
       expect(dialog.querySelector('.source-badge')).toBeNull();
       expect(within(dialog).getByText('未分级')).toBeInTheDocument();
     });
+
+    it('never names the machinery that produced the level', async () => {
+      // Issue #94: the source badge is gone from the clinical view - the doctor
+      // reads why the patient needs attention, not which engine found him.
+      stubDetail(withAi());
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      expect(dialog.querySelector('.source-badge')).toBeNull();
+      const reason = dialog.querySelector('.drawer__reason')?.textContent ?? '';
+      for (const leak of ['关键词', 'AI', '语义', '判读']) {
+        expect(reason).not.toContain(leak);
+      }
+    });
+
+    it('builds the reason for a masked caller from what it is still allowed to see', async () => {
+      // Issue #13/#88 masking strips everything report-adjacent - the report
+      // body, the hit's quote and verdict, the finding's sentence and quotes -
+      // while the keyword, the matched field, the semantic name and the levels
+      // survive (apps/api/src/access/data-scope.ts). The sentence has to come
+      // out of exactly those survivors: read a stripped field and it would
+      // either go blank or leak model prose to a caller with no report rights.
+      stubDetail(
+        withAi({
+          reportContent: null,
+          diagnosis: null,
+          hits: [{ ...detail.hits[0], contextSnippet: '', semantic: null }],
+          aiSemantics: [{ ...aiFinding, reason: null, evidence: [] }],
+        }),
+      );
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      const reason = dialog.querySelector('.drawer__reason')?.textContent;
+      // Same sentence as the unmasked BOTH case above - the text did not
+      // change, only the material it was allowed to read.
+      expect(reason).toBe(
+        '报告内容或诊断中发现「腺癌」；报告提示「明确或高度疑似恶性病变」',
+      );
+      for (const freeText of [
+        '胃体见多发隆起型病变，考虑腺癌。',
+        '胃体腺癌。',
+        '报告描述了不规则隆起与质脆。',
+        '…胃体见多发隆起型病变，考虑腺癌。…',
+      ]) {
+        expect(reason).not.toContain(freeText);
+      }
+    });
   });
 
-  describe('AI 语义发现', () => {
+  describe('关注依据', () => {
     it('renders each finding with its level, name, confidence, reason and quotes', async () => {
       stubDetail(withAi());
       render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
 
       const dialog = await screen.findByRole('dialog', { name: '检查详情' });
-      expect(within(dialog).getByRole('heading', { name: /AI 语义发现/ })).toBeInTheDocument();
-      const ai = aiSection(dialog);
-      expect(within(ai).getByText('明确或高度疑似恶性病变')).toBeInTheDocument();
-      expect(within(ai).getByText('红色关注')).toBeInTheDocument();
-      expect(within(ai).getByText('把握高')).toBeInTheDocument();
-      expect(within(ai).getByText('报告描述了不规则隆起与质脆。')).toBeInTheDocument();
+      // Issue #94: one section, one count over both kinds of evidence.
+      expect(within(dialog).getByRole('heading', { name: /关注依据/ })).toBeInTheDocument();
+      const reasons = reasonSection(dialog);
+      expect(reasons.querySelectorAll('li')).toHaveLength(2);
+      expect(within(reasons).getByText('明确或高度疑似恶性病变')).toBeInTheDocument();
+      // Both items are RED, and both say so with the same four characters.
+      expect(within(reasons).getAllByText('红色关注')).toHaveLength(2);
+      expect(within(reasons).getByText('把握高')).toBeInTheDocument();
+      expect(within(reasons).getByText('报告描述了不规则隆起与质脆。')).toBeInTheDocument();
+      // The hit and the finding are in the same list, both tagged the same way.
+      expect(within(reasons).getByText('腺癌')).toBeInTheDocument();
+      expect(reasons.querySelectorAll('li.drawer__hit')).toHaveLength(1);
+      expect(reasons.querySelectorAll('li.drawer__ai-item')).toHaveLength(1);
       // The finding's level tag and the summary's main tag are the same word
       // now (issue #92) - both come from attentionSource.ts.
       expect(dialog.querySelector('.drawer__level-line .level-tag')?.textContent).toBe('红色关注');
@@ -463,7 +559,7 @@ describe('DetailDrawer', () => {
       expect(paragraphs).toHaveLength(2);
       expect(paragraphs[0].textContent).toBe('胃体见多发隆起型病变，考虑腺癌。');
       expect(paragraphs[1].textContent).toBe('胃体腺癌。');
-      // The AI quotes live in the AI section, never inside the report body.
+      // The quotes live in 关注依据, never inside the report body.
       expect(paragraphs[0].querySelectorAll('blockquote')).toHaveLength(0);
       expect(dialog.querySelectorAll('p.drawer__text blockquote')).toHaveLength(0);
     });
@@ -480,15 +576,15 @@ describe('DetailDrawer', () => {
       const dialog = await screen.findByRole('dialog', { name: '检查详情' });
       // Without the finding a record flagged only by the AI would be 红色关注
       // with nothing on screen to explain it.
-      const ai = aiSection(dialog);
-      expect(within(ai).getByText('明确或高度疑似恶性病变')).toBeInTheDocument();
-      expect(within(ai).getByText('红色关注')).toBeInTheDocument();
-      expect(within(ai).getByText('把握高')).toBeInTheDocument();
+      const reasons = reasonSection(dialog);
+      expect(within(reasons).getByText('明确或高度疑似恶性病变')).toBeInTheDocument();
+      expect(within(reasons).getAllByText('红色关注')).toHaveLength(2);
+      expect(within(reasons).getByText('把握高')).toBeInTheDocument();
       expect(dialog.querySelectorAll('blockquote.drawer__ai-evidence')).toHaveLength(0);
       expect(within(dialog).queryByText('报告描述了不规则隆起与质脆。')).not.toBeInTheDocument();
     });
 
-    it('says so explicitly when the AI judged the report and found nothing', async () => {
+    it('says the whole report was checked when it was judged and nothing was found', async () => {
       stubDetail({
         ...detail,
         attentionSource: 'RULE',
@@ -498,29 +594,33 @@ describe('DetailDrawer', () => {
       render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
 
       const dialog = await screen.findByRole('dialog', { name: '检查详情' });
-      expect(
-        within(dialog).getByText('本次 AI 语义判读未发现需要关注的内容'),
-      ).toBeInTheDocument();
+      expect(within(dialog).getByText('整份报告已核对，未发现需要关注的内容')).toBeInTheDocument();
     });
 
-    it('says nothing about the AI when the report was never judged', async () => {
+    it('says nothing extra when the report was never judged', async () => {
       stubDetail({ ...detail, aiJudged: false, aiSemantics: [] });
       render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
 
       const dialog = await screen.findByRole('dialog', { name: '检查详情' });
       // No claim either way: "we looked and found nothing" is a statement, and
       // the drawer must not make it when nobody looked.
-      expect(within(dialog).queryByText(/AI 语义发现/)).not.toBeInTheDocument();
       expect(
-        within(dialog).queryByText('本次 AI 语义判读未发现需要关注的内容'),
+        within(dialog).queryByText('整份报告已核对，未发现需要关注的内容'),
       ).not.toBeInTheDocument();
     });
 
-    it('lists a RED finding above a GREEN one when both are present', async () => {
+    it('sorts the merged list by level, hits before findings at the same level', async () => {
+      const greenHit = {
+        ...detail.hits[0],
+        ruleId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        keyword: '糜烂',
+        level: 'GREEN' as const,
+      };
       stubDetail(
         withAi({
+          hits: [detail.hits[0], greenHit],
+          matchedKeywords: ['腺癌', '糜烂'],
           aiSemantics: [
-            aiFinding,
             {
               ...aiFinding,
               semanticId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
@@ -530,18 +630,23 @@ describe('DetailDrawer', () => {
               reason: null,
               evidence: [],
             },
+            aiFinding,
           ],
         }),
       );
       render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
 
       const dialog = await screen.findByRole('dialog', { name: '检查详情' });
-      // The server sorts; the drawer renders in the order it was given, so this
-      // asserts the rendering does not reorder behind the API's back.
-      const items = dialog.querySelectorAll('li.drawer__ai-item');
-      expect(items).toHaveLength(2);
-      expect(items[0].textContent).toContain('明确或高度疑似恶性病变');
-      expect(items[1].textContent).toContain('值得记录的轻微表现');
+      // Deterministic order (issue #94): RED first, then GREEN; within a level
+      // the hits keep the server's order and come before the findings - and the
+      // GREEN finding stays below both RED ones even though the server put it
+      // first in its own array.
+      const items = Array.from(reasonSection(dialog).querySelectorAll('li'));
+      expect(items).toHaveLength(4);
+      expect(items[0].textContent).toContain('腺癌');
+      expect(items[1].textContent).toContain('明确或高度疑似恶性病变');
+      expect(items[2].textContent).toContain('糜烂');
+      expect(items[3].textContent).toContain('值得记录的轻微表现');
     });
 
     it('uses only doctor-facing wording, never the implementation vocabulary', async () => {
@@ -551,6 +656,10 @@ describe('DetailDrawer', () => {
       const dialog = await screen.findByRole('dialog', { name: '检查详情' });
       const rendered = dialog.textContent ?? '';
       for (const leak of [
+        '关键词监控',
+        'AI 语义监控',
+        '语义',
+        '判读',
         'Prompt',
         '提示词',
         'Semantic',
@@ -562,15 +671,16 @@ describe('DetailDrawer', () => {
         '大模型',
         'Schema',
         '置信度',
+        '哈希',
       ]) {
         expect(rendered).not.toContain(leak);
       }
       // Positive controls: the agreed wording really is on screen, so the scan
       // above cannot pass by rendering nothing.
-      expect(rendered).toContain('AI 语义发现');
+      expect(rendered).toContain('关注依据');
       expect(rendered).toContain('关注等级不是诊断结论');
-      // Issue #87's line survives alongside it.
-      expect(rendered).toContain('命中证据');
+      // Issue #87's lines survive inside the merged list.
+      expect(rendered).toContain('报告内容与诊断');
     });
   });
 });

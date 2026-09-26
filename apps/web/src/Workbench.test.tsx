@@ -1,15 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
+  MonitorAttentionSourceDto,
   MonitorExamWorkbenchDto,
+  MonitorLevelDto,
   MonitorSummaryDto,
   SyncStatusDto,
 } from '@epgs/shared-types';
 import { Workbench } from './Workbench';
 
 /**
- * The workbench list row carries attentionSource (issue #88) - required, so a
- * fixture cannot omit it and leave the badge silently unrendered.
+ * The list row carries attentionSource (issue #88) - required, so a fixture
+ * cannot omit it and leave the reason silently wrong.
  */
 const examRows: MonitorExamWorkbenchDto[] = [
   {
@@ -39,6 +41,47 @@ const examRows: MonitorExamWorkbenchDto[] = [
     attentionSource: 'NONE',
   },
 ];
+
+/** One list row with everything the 关注理由 column reads spelled out. */
+function examRow(
+  patientName: string,
+  monitorLevel: MonitorLevelDto,
+  matchedKeywords: string[],
+  attentionSource: MonitorAttentionSourceDto,
+): MonitorExamWorkbenchDto {
+  return {
+    recordId: `${patientName}-record`,
+    monitorLevel,
+    patientName,
+    department: '内镜中心',
+    bedNo: '1床',
+    patientType: { code: 'I', name: '住院' },
+    examItem: '胃镜',
+    examDate: '2026-08-20',
+    examTime: '10:30:00',
+    matchedKeywords,
+    attentionSource,
+  };
+}
+
+/** Serves one list of exam rows (plus the summary/sync chrome) for one test. */
+function stubExams(items: MonitorExamWorkbenchDto[]): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/monitor/exams/')) {
+        return jsonResponse({ error: { message: '未找到' } }, 404);
+      }
+      if (url.includes('/api/monitor/exams')) {
+        return jsonResponse({ items, total: items.length, page: 1, pageSize: 20 });
+      }
+      if (url.includes('/api/monitor/summary')) return jsonResponse(summary);
+      if (url.includes('/api/system/sync-status')) return jsonResponse(syncStatus);
+      return jsonResponse({ items: [], total: 0, page: 1, pageSize: 200 });
+    }),
+  );
+}
 
 const summary: MonitorSummaryDto = { total: 25, red: 10, yellow: 5, green: 9, unclassified: 1 };
 
@@ -142,30 +185,75 @@ describe('Workbench', () => {
     expect(within(row1).getByText('住院（I）')).toBeInTheDocument();
     expect(within(row1).getByText('2026-08-20')).toBeInTheDocument();
     expect(within(row1).getByText('10:30:00')).toBeInTheDocument();
-    expect(within(row1).getByText('腺癌、浸润癌')).toBeInTheDocument();
+    // Issue #94: the column answers 「为什么需要关注」 in words. BOTH is stated
+    // as both, because a keyword alone may not be the higher of the two.
+    expect(within(row1).getByText('命中「腺癌」等 2 处；报告提示需要关注')).toBeInTheDocument();
+    // The level tag is its own element, so the reason cannot be mistaken for it.
+    expect(row1.querySelectorAll('.level-tag')).toHaveLength(1);
 
     const row2 = screen.getByRole('row', { name: /绿色/ });
     expect(within(row2).getByText('绿色关注')).toBeInTheDocument();
     expect(within(row2).getByText('门诊（O）')).toBeInTheDocument();
+    // Nothing found it, so there is no reason to state - and none is invented.
     expect(within(row2).getAllByText('—')).toHaveLength(7);
   });
 
-  // Issue #88: the level cell also says WHERE the level came from. It goes
-  // inside the existing 关注等级 cell - the table stays at ten columns.
-  it('badges the source inside the level cell, and omits it when nothing was found', async () => {
+  // Issue #94: one sentence per row, covering all four attention sources. The
+  // AI-only row matters most - it carries a level with no keyword at all, so a
+  // blank cell there would be a red record a doctor cannot explain.
+  it('explains each row for all four attention sources', async () => {
+    stubExams([
+      examRow('测试患者甲', 'RED', ['腺癌', '浸润癌'], 'RULE'),
+      examRow('测试患者乙', 'RED', [], 'AI_REPORT'),
+      examRow('测试患者丙', 'RED', ['溃疡'], 'BOTH'),
+      examRow('测试患者丁', 'UNCLASSIFIED', [], 'NONE'),
+    ]);
+
     render(<Workbench onOpenRules={vi.fn()} />);
     await screen.findByText('测试患者甲');
 
-    const bothRow = screen.getByRole('row', { name: /测试患者甲/ });
-    expect(within(bothRow).getByText('关键词 + AI 语义')).toBeInTheDocument();
+    const reasonOf = (name: RegExp): string =>
+      screen.getByRole('row', { name }).querySelector('.workbench__reason')?.textContent ?? '';
 
-    const noneRow = screen.getByRole('row', { name: /绿色/ });
-    // NONE renders nothing: both paths agreeing there is nothing to see is not
-    // news, and a badge on every unclassified row would be noise.
-    expect(within(noneRow).queryByText(/关键词/)).not.toBeInTheDocument();
-    expect(noneRow.querySelector('.source-badge')).toBeNull();
-    // The badge is its own element, so it cannot be mistaken for the level.
-    expect(bothRow.querySelectorAll('.level-tag')).toHaveLength(1);
+    expect(reasonOf(/测试患者甲/)).toBe('命中「腺癌」等 2 处');
+    expect(reasonOf(/测试患者乙/)).toBe('报告提示需要关注');
+    expect(reasonOf(/测试患者丙/)).toBe('命中「溃疡」；报告提示需要关注');
+    expect(reasonOf(/测试患者丁/)).toBe('—');
+  });
+
+  /**
+   * Issue #94: the workbench renders no mechanism vocabulary - this is the guard
+   * for removing the source badge, which used to put 「AI 语义」 on every row.
+   * Scans the rendered text, not the source.
+   */
+  it('uses only doctor-facing wording, never the implementation vocabulary', async () => {
+    const { container } = render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const rendered = container.textContent ?? '';
+    for (const leak of [
+      '关键词监控',
+      'AI 语义监控',
+      '语义',
+      '判读',
+      'Prompt',
+      '提示词',
+      'LLM',
+      '模型',
+      '分类器',
+      'JSON',
+      'Schema',
+      '置信度',
+      '哈希',
+      '大模型',
+    ]) {
+      expect(rendered).not.toContain(leak);
+    }
+    // Positive controls: the agreed wording really is on screen, so the scan
+    // above cannot pass by rendering nothing.
+    expect(rendered).toContain('红色关注');
+    expect(rendered).toContain('关注理由');
+    expect(rendered).toContain('监测规则');
   });
 
   it('applies all filters to the list but excludes level from the summary', async () => {

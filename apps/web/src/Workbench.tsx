@@ -9,7 +9,8 @@ import type {
 import { getExamSummary, listExams, MonitorApiError, getSyncStatus } from './monitorApi';
 import { listRules } from './rulesApi';
 import { DetailDrawer } from './DetailDrawer';
-import { ATTENTION_LEVEL_LABELS, SOURCE_LABELS, SOURCE_TITLES } from './attentionSource';
+import { ATTENTION_LEVEL_LABELS } from './attentionSource';
+import { rowAttentionReason } from './attentionReason';
 import './Workbench.css';
 
 interface WorkbenchProps {
@@ -350,12 +351,18 @@ export function Workbench({
           <button className="button" type="button" onClick={() => setReloadKey((c) => c + 1)}>
             立即刷新
           </button>
+          {/*
+            两个配置入口的按钮文案（issue #94）：工作台是医生的临床视图，渲染文本里
+            不出现「关键词监控 / AI 语义监控」这类机制词。弹窗内部保留机制说法 ——
+            配置者需要知道自己在调整哪一种识别方式（所有者 Review 划的边界）。
+            只改字：目标弹窗、权限、行为一律不变。
+          */}
           <button className="button button--primary" type="button" onClick={onOpenRules}>
-            关键词监控
+            监测规则
           </button>
           {onOpenAiSemantics && (
             <button className="button" type="button" onClick={onOpenAiSemantics}>
-              AI 语义监控
+              关注设置
             </button>
           )}
           {onOpenNotifications && (
@@ -547,7 +554,7 @@ export function Workbench({
                 <th>检查项目</th>
                 <th>检查日期</th>
                 <th>检查时间</th>
-                <th>命中关键词</th>
+                <th>关注理由</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -565,19 +572,6 @@ export function Workbench({
                     <span className={`level-tag level-tag--${exam.monitorLevel.toLowerCase()}`}>
                       {ATTENTION_LEVEL_LABELS[exam.monitorLevel]}
                     </span>
-                    {/*
-                      来源徽标（issue #88）放在关注等级单元格内，10 列的表格不再加列。
-                      纯文字，颜色不是唯一的信息通道。NONE（两条路径都没发现，等级为
-                      未分级）不渲染，避免一排噪音。
-                    */}
-                    {exam.attentionSource !== 'NONE' && (
-                      <span
-                        className="source-badge"
-                        title={SOURCE_TITLES[exam.attentionSource]}
-                      >
-                        {SOURCE_LABELS[exam.attentionSource]}
-                      </span>
-                    )}
                   </td>
                   <td>{exam.patientName ?? '—'}</td>
                   <td>{exam.department ?? '—'}</td>
@@ -586,9 +580,12 @@ export function Workbench({
                   <td>{exam.examItem ?? '—'}</td>
                   <td>{exam.examDate ?? '—'}</td>
                   <td>{exam.examTime ?? '—'}</td>
-                  <td className="workbench__keywords">
-                    {exam.matchedKeywords.length > 0 ? exam.matchedKeywords.join('、') : '—'}
-                  </td>
+                  {/*
+                    关注理由（issue #94）：这一列回答「为什么这位患者需要我关注」。
+                    来源徽标（issue #88）已从临床视图移除，理由句由 attentionReason.ts
+                    拼出；没有理由的行显示占位符，不编造理由。
+                  */}
+                  <td className="workbench__reason">{rowAttentionReason(exam) ?? '—'}</td>
                   <td>
                     <button
                       className="table-actions"

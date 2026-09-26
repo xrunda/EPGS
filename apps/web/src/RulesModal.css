@@ -411,24 +411,6 @@ textarea:focus {
   background: #eef2f2;
   color: var(--ink-300);
 }
-/*
-  「这条记录为什么在关注列表里」的来源徽标（issue #88），工作台列表与详情抽屉共用
-  （本文件经 App.tsx 全局加载）。刻意做成中性灰的纯文字 pill，与等级标签的三种颜色
-  区分开：颜色只表达等级，来源不占用颜色通道。
-*/
-.source-badge {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 6px;
-  padding: 3px 9px;
-  border: 1px solid #d3dbdb;
-  border-radius: var(--radius-pill);
-  background: #f4f7f7;
-  color: #52686a;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
 .table-actions button,
 .text-button {
   padding: 0;

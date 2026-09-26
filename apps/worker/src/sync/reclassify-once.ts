@@ -1,10 +1,10 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
-import { matchReport, RuleSnapshot } from '@epgs/matching-engine';
-import { Prisma } from '@prisma/client';
+import { RuleSnapshot } from '@epgs/matching-engine';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { reclassifyRecord } from './reclassify-record';
 
 /**
  * One-off ops script: re-runs matching for every EXISTING MonitorRecord
@@ -26,6 +26,10 @@ import { PrismaService } from '../prisma/prisma.service';
  * Same trust model as sync:once (see run-once.ts's doc comment): a CLI
  * script requiring shell access to the worker's runtime, not an HTTP
  * endpoint - no new attack surface, reuses AppModule's real DI wiring.
+ *
+ * This file is only the CLI: the per-record logic - including how the level
+ * is derived since issue #96 - lives in `./reclassify-record`, which has no
+ * AppModule import so it can be unit-tested without a populated `.env`.
  */
 async function main(): Promise<void> {
   const logger = new Logger('reclassify:once');
@@ -64,62 +68,10 @@ async function main(): Promise<void> {
       }
 
       for (const record of records) {
-        const matchResult = matchReport({
-          reportId: record.reportId,
-          reportVersion: record.reportVersion,
-          describeText: record.reportContent,
-          diagnoseText: record.diagnosis,
-          rules,
-        });
-
-        await prisma.$transaction(async (tx) => {
-          if (matchResult.matchedRules.length > 0) {
-            const matchedAt = new Date();
-            const rows: Prisma.MonitorMatchCreateManyInput[] = [];
-            for (const matched of matchResult.matchedRules) {
-              for (const occurrence of matched.occurrences) {
-                rows.push({
-                  monitorRecordId: record.id,
-                  ruleId: matched.ruleId,
-                  keyword: matched.keyword,
-                  level: matched.level,
-                  matchedField: matched.field,
-                  contextSnippet: occurrence.contextSnippet,
-                  // Issue #87: same offsets sync-runner writes, so a
-                  // reclassified record's hits are judged from the same
-                  // anchor a normally-synced one would use.
-                  matchStart: occurrence.start,
-                  matchEnd: occurrence.end,
-                  reportVersion: record.reportVersion,
-                  matchedAt,
-                });
-              }
-            }
-            if (rows.length > 0) {
-              // skipDuplicates: safe to re-run this script multiple times
-              // without piling up duplicate MonitorMatch rows for a
-              // record whose matches haven't changed since the last run.
-              await tx.monitorMatch.createMany({ data: rows, skipDuplicates: true });
-            }
-          }
-
-          if (matchResult.level !== record.currentLevel) {
-            await tx.monitorRecord.update({
-              where: { id: record.id },
-              data: {
-                currentLevel: matchResult.level,
-                firstMatchedAt:
-                  matchResult.matchedRules.length > 0
-                    ? (record.firstMatchedAt ?? new Date())
-                    : record.firstMatchedAt,
-                lastMatchedAt:
-                  matchResult.matchedRules.length > 0 ? new Date() : record.lastMatchedAt,
-              },
-            });
-            changed += 1;
-          }
-        });
-
+        const moved = await prisma.$transaction((tx) => reclassifyRecord(tx, record, rules));
+        if (moved) {
+          changed += 1;
+        }
         processed += 1;
       }
 
@@ -131,10 +83,6 @@ async function main(): Promise<void> {
   } finally {
     await app.close();
   }
-}
-
-function matchedAt(): Date {
-  return new Date();
 }
 
 main().catch((err: unknown) => {

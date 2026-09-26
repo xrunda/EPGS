@@ -178,6 +178,19 @@
   font-size: 12px;
 }
 
+/* 操作列（issue #88 目视验证发现）：编辑栏打开后表格可分配的宽度收窄，而
+   .table-actions 是 flex 行、按钮里只有两个汉字，浏览器会把按钮压到「一个字」
+   宽，出现「编／辑」「停／用」竖排，1920×1080 下 18 个按钮全部如此（关键词监控
+   同一 CSS 不触发，因为它的操作列还能分到宽度）。这里让按钮不许内部换行，
+   操作列便保住了最小宽度；表格本身已有 min-width: 820px + 横向滚动兜底。
+   作用域限定在 .semantic-modal 内，不改动 RulesModal.css 的共享类。 */
+.semantic-modal .table-actions {
+  flex-wrap: nowrap;
+}
+.semantic-modal .table-actions button {
+  white-space: nowrap;
+}
+
 /* 关注等级选择：三张卡并排，每种颜色都写清它在业务上意味着什么 —— 颜色本身
    不能是唯一的信息载体。 */
 .semantic-level-picker {

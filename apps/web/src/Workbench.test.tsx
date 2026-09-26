@@ -135,7 +135,8 @@ describe('Workbench', () => {
     );
 
     const row1 = screen.getByRole('row', { name: /测试患者甲/ });
-    expect(within(row1).getByText('红色')).toBeInTheDocument();
+    // Issue #92: the row tag spells the level out (「红色关注」), like the drawer.
+    expect(within(row1).getByText('红色关注')).toBeInTheDocument();
     expect(within(row1).getByText('内镜中心')).toBeInTheDocument();
     expect(within(row1).getByText('12床')).toBeInTheDocument();
     expect(within(row1).getByText('住院（I）')).toBeInTheDocument();
@@ -144,6 +145,7 @@ describe('Workbench', () => {
     expect(within(row1).getByText('腺癌、浸润癌')).toBeInTheDocument();
 
     const row2 = screen.getByRole('row', { name: /绿色/ });
+    expect(within(row2).getByText('绿色关注')).toBeInTheDocument();
     expect(within(row2).getByText('门诊（O）')).toBeInTheDocument();
     expect(within(row2).getAllByText('—')).toHaveLength(7);
   });

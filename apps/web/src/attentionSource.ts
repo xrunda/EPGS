@@ -1,4 +1,4 @@
-import type { MonitorAttentionSourceDto } from '@epgs/shared-types';
+import type { MonitorAttentionSourceDto, MonitorLevelDto } from '@epgs/shared-types';
 
 /**
  * 「这条记录为什么在关注列表里」（issue #88）的医生语言，供工作台列表与详情抽屉
@@ -27,16 +27,21 @@ export const SOURCE_TITLES: Record<MonitorAttentionSourceDto, string> = {
  * 关注等级在业务上的说法 —— **全应用唯一一份**。RED / YELLOW / GREEN 是管理上的
  * 「关注等级」（要多久看到），不是临床严重程度或诊断分级，所以必须带「关注」二字。
  *
- * 引用处只有两个文件（共五处）：详情抽屉的「AI 语义发现」等级标签，以及 AI 语义
- * 监控页的池标题 / 表格行内标签 / 表单等级卡片 / 筛选下拉（SemanticMonitorModal 把它
- * 别名成 POOL_LABELS）。上一轮就是在那一页漏改了三处，所以等级文案只有一个来源。
+ * 引用处：工作台的列表行内标签、详情抽屉的主等级标签与「AI 语义发现」等级标签，
+ * 以及 AI 语义监控页的池标题 / 表格行内标签 / 表单等级卡片 / 筛选下拉
+ * （SemanticMonitorModal 把它别名成 POOL_LABELS）。几处都从同一个映射取值，所以
+ * 不会再出现同一屏里「红色」与「红色关注」并存。上一轮就是在那一页漏改了三处。
+ *
+ * UNCLASSIFIED 不是关注等级，说法是「未分级」；它在这里只为让映射能吃下整份
+ * MonitorLevelDto（记录等级、命中等级都可能取到它），调用方不必再判一次空。
  *
  * 注意与 highlight.tsx 的 LEVEL_LABELS 不同：那个映射的输出是「红色」，被预警 H5
  * 页面复用并在那里自己拼上「关注」二字（AlertApp 渲染「{level}关注」）。这里不能
  * 改那一个，否则 H5 会变成「红色关注关注」。
  */
-export const ATTENTION_LEVEL_LABELS = {
+export const ATTENTION_LEVEL_LABELS: Record<MonitorLevelDto, string> = {
   RED: '红色关注',
   YELLOW: '黄色关注',
   GREEN: '绿色关注',
-} as const;
+  UNCLASSIFIED: '未分级',
+};

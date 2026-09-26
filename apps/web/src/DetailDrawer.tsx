@@ -198,8 +198,12 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                 内容时等级是未分级，再加一个「都没有」的徽标只是噪音。
               */}
               <p className="drawer__level-line">
+                {/*
+                  主等级标签与下面的「AI 语义发现」用同一份文案（attentionSource.ts），
+                  所以同一屏里不会一处写「红色」、一处写「红色关注」。
+                */}
                 <span className={`level-tag level-tag--${detail.monitorLevel.toLowerCase()}`}>
-                  {LEVEL_LABELS[detail.monitorLevel]}
+                  {ATTENTION_LEVEL_LABELS[detail.monitorLevel]}
                 </span>
                 {detail.attentionSource !== 'NONE' && (
                   <span className="source-badge" title={SOURCE_TITLES[detail.attentionSource]}>

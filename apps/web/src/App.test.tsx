@@ -99,7 +99,8 @@ describe('App', () => {
 
     expect(await screen.findByText('测试患者甲')).toBeInTheDocument();
     const row = screen.getByRole('row', { name: /测试患者甲/ });
-    expect(within(row).getByText('红色')).toBeInTheDocument();
+    // Issue #92: the row tag spells the level out instead of a bare colour word.
+    expect(within(row).getByText('红色关注')).toBeInTheDocument();
     expect(within(row).getByText('住院（I）')).toBeInTheDocument();
     expect(within(row).getByText('腺癌')).toBeInTheDocument();
   });

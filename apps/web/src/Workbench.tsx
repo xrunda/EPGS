@@ -9,7 +9,7 @@ import type {
 import { getExamSummary, listExams, MonitorApiError, getSyncStatus } from './monitorApi';
 import { listRules } from './rulesApi';
 import { DetailDrawer } from './DetailDrawer';
-import { SOURCE_LABELS, SOURCE_TITLES } from './attentionSource';
+import { ATTENTION_LEVEL_LABELS, SOURCE_LABELS, SOURCE_TITLES } from './attentionSource';
 import './Workbench.css';
 
 interface WorkbenchProps {
@@ -55,13 +55,6 @@ const PAGE_SIZE = 20;
 
 /** Auto-refresh cadence for the exam list/summary (issue #48). */
 const AUTO_REFRESH_SECONDS = 60;
-
-const LEVEL_LABELS: Record<MonitorLevelDto, string> = {
-  RED: '红色',
-  YELLOW: '黄色',
-  GREEN: '绿色',
-  UNCLASSIFIED: '未分级',
-};
 
 const HEALTH_LABELS: Record<SyncHealthState, string> = {
   HEALTHY: '同步正常',
@@ -565,8 +558,12 @@ export function Workbench({
                   className={`workbench__row workbench__row--${exam.monitorLevel.toLowerCase()}`}
                 >
                   <td>
+                    {/*
+                      等级文字带「关注」二字（attentionSource.ts 是唯一来源）：红色是
+                      管理上的关注等级，不是病情严重程度，行内也不能只留一个颜色词。
+                    */}
                     <span className={`level-tag level-tag--${exam.monitorLevel.toLowerCase()}`}>
-                      {LEVEL_LABELS[exam.monitorLevel]}
+                      {ATTENTION_LEVEL_LABELS[exam.monitorLevel]}
                     </span>
                     {/*
                       来源徽标（issue #88）放在关注等级单元格内，10 列的表格不再加列。

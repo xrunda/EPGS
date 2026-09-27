@@ -106,6 +106,7 @@ describe('data-scope helpers (issue #13)', () => {
       hits: [hit],
       attentionSource: 'BOTH',
       aiJudged: true,
+      aiStatus: 'JUDGED',
       aiSemantics: [aiFinding],
     };
 
@@ -150,6 +151,7 @@ describe('data-scope helpers (issue #13)', () => {
       diagnosis: null,
       attentionSource: 'RULE',
       aiJudged: false,
+      aiStatus: 'NOT_JUDGED',
       aiSemantics: [],
       hits: [
         {

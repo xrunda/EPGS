@@ -13,7 +13,13 @@ import {
   MonitorHitSemanticDto,
   MonitorPatientTypeDto,
 } from '@epgs/shared-types';
-import { ReportAiAttemptRow, toAiJudged, toAiSemantics, toAttentionSource } from './report-ai.mapper';
+import {
+  ReportAiAttemptRow,
+  toAiJudged,
+  toAiSemantics,
+  toAiStatus,
+  toAttentionSource,
+} from './report-ai.mapper';
 import { formatShanghaiDateTime } from './monitor-time';
 
 /**
@@ -90,6 +96,16 @@ export interface MonitorExamDetailRow extends MonitorExamListRow {
   matches: MonitorExamHitRow[];
   /** OK-outcome attempts, newest first. Empty when the report was never judged. */
   reportAiAttempts: ReportAiAttemptRow[];
+  /**
+   * Issue #102: how many attempts against this record ended in ERROR, counted in
+   * SQL by DETAIL_INCLUDE as a filtered relation count (hence Prisma's `_count`
+   * shape rather than a domain field).
+   *
+   * It has to be asked separately because `reportAiAttempts` above is filtered
+   * to OK in SQL: those rows are paired with a verdict and a level, and mixing
+   * ERROR rows in would both break that pairing and crowd the `take: 5` window.
+   */
+  _count: { reportAiAttempts: number };
 }
 
 /**
@@ -141,6 +157,7 @@ export function toExamDetailDto(row: MonitorExamDetailRow): MonitorExamWorkbench
       row.aiAttentionLevel ?? null,
     ),
     aiJudged: toAiJudged(row.reportAiAttempts, row),
+    aiStatus: toAiStatus(row.reportAiAttempts, row, row._count.reportAiAttempts > 0),
     aiSemantics: toAiSemantics(row.reportAiAttempts, row),
   };
 }

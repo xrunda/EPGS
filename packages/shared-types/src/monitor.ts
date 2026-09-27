@@ -198,6 +198,31 @@ export interface MonitorExamDetailDto extends MonitorExamDto {
  */
 export type MonitorAttentionSourceDto = 'RULE' | 'AI_REPORT' | 'BOTH' | 'NONE';
 
+/**
+ * Issue #102: whether this record's report-level AI judgement produced a
+ * verdict, and if not, WHY not.
+ *
+ * Before this, the wire carried one boolean (`aiJudged`) and `false` covered two
+ * very different facts: "the AI read the report and had nothing to say" and "the
+ * AI was asked and could not answer". The drawer rendered nothing for both, so a
+ * failed judgement was indistinguishable from a clean one - a doctor reading
+ * "no AI finding" could not tell whether that meant anything.
+ *
+ * | value        | meaning                                                     |
+ * | ------------ | ----------------------------------------------------------- |
+ * | `JUDGED`     | an OK attempt exists for THIS report version (was `true`)    |
+ * | `FAILED`     | no such attempt, a failed attempt exists, and the record has |
+ * |              | left the queue (`aiResolvedAt` set) - no further attempt is  |
+ * |              | coming                                                       |
+ * | `NOT_JUDGED` | everything else: never asked, still being retried, or the    |
+ * |              | report text has since changed                                |
+ *
+ * The three are derived from existing columns, which is why this needed no
+ * migration. `JUDGED` says nothing about whether anything was found - read
+ * `aiSemantics` for that.
+ */
+export type MonitorAiStatusDto = 'JUDGED' | 'FAILED' | 'NOT_JUDGED';
+
 /** Mirrors Prisma's ReportAiField enum: which report column an excerpt sits in. */
 export type ReportAiFieldDto = 'EXAM_ITEM' | 'FINDINGS' | 'IMPRESSION';
 
@@ -273,6 +298,18 @@ export interface MonitorExamWorkbenchDetailDto extends MonitorExamDetailDto {
    * anything; read `aiSemantics` for that.
    */
   aiJudged: boolean;
+  /**
+   * Issue #102: the same fact as `aiJudged`, plus the failure case it could not
+   * express. Kept alongside `aiJudged` rather than replacing it because that
+   * field is an already-shipped contract with its own tests; the two are
+   * equal by construction when the status is `JUDGED`, and `aiJudged` is
+   * exactly `aiStatus === 'JUDGED'`.
+   *
+   * `FAILED` and an empty `aiSemantics` together are what tell the doctor "the
+   * level you are looking at is keyword-only, and the AI layer that might have
+   * raised it did not run". That combination must be rendered, not swallowed.
+   */
+  aiStatus: MonitorAiStatusDto;
   /**
    * Ordered by attention level priority (RED -> YELLOW -> GREEN), then by the
    * stored ordinal, so the doctor reads the most attention-worthy finding

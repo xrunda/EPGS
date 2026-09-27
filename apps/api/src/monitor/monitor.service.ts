@@ -141,6 +141,17 @@ export class MonitorService {
     // attempt that loses the `aiResolvedAt: null` guard still writes its audit
     // row without touching the record, so the newest row is not always the one
     // the level came from. Backed by (monitor_record_id, created_at).
+    // Issue #102: whether a FAILED attempt exists, answered in the same round
+    // trip. It cannot be read off `reportAiAttempts` below, which is filtered to
+    // OK - and it must not be, because widening that list would let ERROR rows
+    // crowd out the OK attempt inside its `take: 5` window and silently turn a
+    // judged record into an unjudged one. A count is also all the mapper needs:
+    // the failure's CODE stays in the audit table, off the doctor-facing wire.
+    _count: {
+      select: {
+        reportAiAttempts: { where: { outcome: 'ERROR' } },
+      },
+    },
     reportAiAttempts: {
       where: { outcome: 'OK' },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],

@@ -421,6 +421,14 @@ SEMANTIC_REPORT_ENABLED=true
 代码上线本身很轻：**一张迁移（只改枚举）、零新环境变量、零新依赖、零新静态资源**。
 真正的操作重点是 §11.4 的**冷启动**——不做的话模块上线了但没人能打开。
 
+> **执行提示（2026-09-27 补）**：本节只记录管理员模块这一个批次，**执行时部署的是当时的
+> main**，它上面还有 #87 / #88 / #103 三个批次，所以：
+> `prisma migrate deploy` 的输出会**多出** `20260925000000_add_semantic_judge`、
+> `20260926000000_add_ai_report_classify`、`20260927000000_add_monitor_level_conflict_read`
+> 三条（尚未应用时），属正常，不是本节引入的；
+> 这三条的回退按 §7.2 的**顺序 0–2** 走，**不要**按本节的 §11.6；
+> AI 语义监控的开关与启用门禁在 §10，本节一律不碰——部署代码不等于打开开关。
+
 ### 11.1 变更清单
 
 | 来源 | 内容 | 数据库 | 配置 |
@@ -458,11 +466,13 @@ SEMANTIC_REPORT_ENABLED=true
 
 ### 11.3 部署（`bash start.sh`，脚本自动完成的步骤只需看输出）
 
-1. `git pull` 到包含 #85 的 main（本次批次末尾提交为 `507e6fd`）。
+1. `git pull` 到包含 #85 的 main（本批次末尾提交为 `507e6fd`；拉到更新的 main 也包含它，
+   多出来的部分见本节开头的执行提示）。
 2. env 预检输出应与 §9 部署时**逐字一致**（`ALERT_LINK_BASE_URL` 那行的开启/关闭
    状态不变）。出现新「错误」即停下。
 3. `prisma migrate deploy` 应新增应用 `20260911000000_add_user_admin_role_and_audit_actions`
-   （已应用过则显示 "No pending migrations"）。**注意 `migrate deploy` 只打印迁移
+   （已应用过则显示 "No pending migrations"；若输出里还夹着别的迁移名，先对照本节开头的
+   执行提示，那三条属正常）。**注意 `migrate deploy` 只打印迁移
    文件名、不回显 SQL**，所以"只有 `ALTER TYPE`、没建表"无法从输出直接确认——
    改用下面的枚举查询事后核对（`AppRole` 应恰好 5 个值，且 `\dt` 的表清单不新增）：
    ```bash

@@ -110,7 +110,9 @@ pnpm install
 cp .env.example .env                      # optional, for reference
 cp apps/api/.env.example apps/api/.env
 cp apps/worker/.env.example apps/worker/.env
-cp apps/web/.env.example apps/web/.env
+# apps/web needs no .env: the frontend calls the API on its own origin
+# (see apps/web/src/authApi.ts), and the Vite dev server proxies /api and
+# /health to the api process (see apps/web/vite.config.ts).
 docker compose up -d                      # optional: local Postgres on :5432
 ```
 
@@ -153,18 +155,27 @@ broken state.
 | `PACS_MOCK_CSV_PATH`      | worker           | API-shaped CSV path; required in `csv` mode                         | `../../Doc/moke-data.csv`                    |
 | `PACS_HTTP_BASE_URL`      | worker           | Hospital REST gateway; required in `http` mode                      | no default                                   |
 | `PACS_HTTP_SERVICE_TOKEN` | worker           | Gateway Bearer Token; required in `http` mode                       | no default                                   |
-| `VITE_API_BASE_URL`       | web              | Base URL web uses to call the API                                   | `http://localhost:3000`                      |
 | `JWT_SECRET`              | api              | 本地登录 JWT 签名密钥（至少 32 字符，必填）                         | 无默认值                                     |
 | `JWT_EXPIRES_SECONDS`     | api              | 登录 Cookie 与 JWT 有效期（秒）                                     | `28800`                                      |
 | `WEB_ORIGIN`              | api              | 允许携带 Cookie 调用 API 的前端来源                                 | `http://localhost:5173`                      |
 | `ALERT_LINK_BASE_URL`     | api, worker      | 企微客户端打开 `/alert` 患者列表页的地址；未设置则不追加卡片（#72） | 无默认值（关闭）                             |
 | `ALERT_LINK_TTL_HOURS`    | api, worker      | 预警链接有效期（小时，1-168）                                       | `24`                                         |
 | `SEMANTIC_JUDGE_ENABLED`  | worker           | AI 语义判读总开关（#87）；关闭时不联系任何模型，行为与上线前一致    | `false`                                      |
+| `SEMANTIC_REPORT_ENABLED` | worker           | AI 语义监控总开关（#88）；读整份报告，只会把关注等级往上调          | `false`                                      |
 
-> AI 语义判读（#87）其余变量（模型地址 / 名称 / 超时 / 批量 / 重试 / 上下文预算）
-> 见 [apps/worker/.env.example](apps/worker/.env.example) 与
-> [docs/semantic-judge-design.md](docs/semantic-judge-design.md)。模型相关变量**刻意
-> 不是"启用时必填"**：缺配置时判读自我禁用并打日志，患者监测同步与推送照常运行。
+> **前端不读任何构建期环境变量**：单端口反向代理之后，页面所有请求都相对自己的 origin
+> （见 [deploy/nginx.conf.template](deploy/nginx.conf.template) 与
+> [docs/deployment.md](docs/deployment.md) §1），因此不存在 `VITE_API_BASE_URL` 这类
+> 需要写进构建产物的地址——这是刻意的，写死地址正是当年跨网闸登录失败的根因。
+> Vite 配置里只剩 dev server 用的 `VITE_DEV_API_TARGET` / `VITE_DEV_HOST`，来自 shell 环境。
+>
+> AI 语义判读（#87）与 AI 语义监控（#88）的其余变量（模型地址 / 名称 / 超时 / 批量 / 重试 /
+> 上下文预算）见 [apps/worker/.env.example](apps/worker/.env.example) 与
+> [docs/semantic-judge-design.md](docs/semantic-judge-design.md)、
+> [docs/ai-semantic-monitor-design.md](docs/ai-semantic-monitor-design.md)。两个开关**互相独立**。
+> 模型相关变量**刻意不是"启用时必填"**：缺配置时判读/分类自我禁用并打日志，患者监测同步与推送
+> 照常运行——**代价是这个错误是静默的**，所以只写开关不写模型地址时，从启动日志里看不出问题
+> （`start.sh` 现在会把这几项的状态打印出来，见 [docs/deployment.md](docs/deployment.md) §3）。
 
 See `.env.example` (root) and `apps/*/.env.example` for the full, commented list.
 

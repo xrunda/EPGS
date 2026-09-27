@@ -15,6 +15,8 @@
 #   - apps/api/.env、apps/worker/.env 已手动创建好
 #     (.env 从不进 git，git pull 不会自动生成它们 - 首次部署需要手动
 #     创建，参考本仓库 README 或直接问维护者要一份现成的)
+#   - 空机器从零开始装，看 docs/first-install.md（本脚本只是"重启/更新"的入口，
+#     不是安装指引：建库建角色、nginx 与系统服务、/root 下的目录权限等都在那边）
 #
 # 架构说明（跨安全域/网闸部署）:
 #   web/api/worker 曾各自监听独立端口 (5173/3000/3001)，前端把 api 地址
@@ -92,13 +94,19 @@ stop_all
 if [ "${1:-}" != "nopull" ]; then
   echo ""
   echo "===== [0/8] git pull 最新代码 ====="
-  git pull origin main
+  # --ff-only（issue #127）：堡垒机是只读的部署目标，不该在那里产生合并提交。
+  # 一旦有人在那儿改过文件或有本地提交，这里会快速失败并说清楚，而不是悄悄
+  # 合出一个没人看过的 merge commit。
+  git pull --ff-only origin main
 fi
 
-if [ ! -f apps/api/.env ] || [ ! -f apps/worker/.env ] || [ ! -f apps/web/.env ]; then
+# 只要求 api/worker 的 .env（issue #127 去掉了 apps/web/.env）：生产构建不读它 ——
+# 单端口反向代理之后前端全部走相对路径，仓库里没有任何代码读 VITE_API_BASE_URL。
+# 之前要求它存在，等于让一次全新部署卡在一个对本系统毫无作用的空文件上。
+if [ ! -f apps/api/.env ] || [ ! -f apps/worker/.env ]; then
   echo ""
-  echo "错误: apps/{api,worker,web}/.env 缺失一个或多个。"
-  echo ".env 从不进 git，需要手动创建 - 参考之前的部署记录或问维护者要配置。"
+  echo "错误: apps/api/.env 或 apps/worker/.env 缺失。"
+  echo ".env 从不进 git，需要手动创建 - 参考 docs/first-install.md §4 或问维护者要配置。"
   exit 1
 fi
 
@@ -178,6 +186,36 @@ else
   if [ "${api_ttl:-24}" != "${worker_ttl:-24}" ]; then
     echo "警告: ALERT_LINK_TTL_HOURS 两端不一致（api=${api_ttl:-24} worker=${worker_ttl:-24}），链接有效期以签发方为准。"
   fi
+fi
+
+# issue #127: AI 语义层的状态打印 —— 只提示，不拦截。
+#
+# 语义层是可选能力：模型地址缺失时分类/判读模块自我禁用、worker 照常启动，同步与
+# 推送都不受影响。好处是"少配一个变量不会把整个系统拖下水"，代价是这个错误**完全
+# 静默**：现场就遇到过一次「SEMANTIC_REPORT_ENABLED=true，三个 SEMANTIC_MODEL_*
+# 一个都没写」—— worker 启动日志看不出任何异常，只有手工跑 classify:once 时才报
+# "分类器已禁用或未配置"，排查成本很高。
+#
+# 所以这里把状态摆出来。**只打印"配没配"，绝不打印任何值** —— 与上面
+# ALERT_LINK_BASE_URL 一样，只输出键的状态，不输出密钥、地址或连接串。
+model_missing=""
+for model_var in SEMANTIC_MODEL_BASE_URL:地址 SEMANTIC_MODEL_NAME:名称 SEMANTIC_MODEL_API_KEY:密钥; do
+  if [ -z "$(read_env_value apps/worker/.env "${model_var%%:*}")" ]; then
+    model_missing="${model_missing}${model_var##*:} "
+  fi
+done
+report_enabled=$(read_env_value apps/worker/.env SEMANTIC_REPORT_ENABLED)
+judge_enabled=$(read_env_value apps/worker/.env SEMANTIC_JUDGE_ENABLED)
+if [ -z "$model_missing" ]; then
+  echo "AI 语义层: 报告级分类=${report_enabled:-false} 命中判读=${judge_enabled:-false} 模型连接=地址/名称/密钥 均已配置"
+elif [ "${report_enabled:-false}" = "true" ] || [ "${judge_enabled:-false}" = "true" ]; then
+  echo "AI 语义层: 报告级分类=${report_enabled:-false} 命中判读=${judge_enabled:-false} 模型连接=缺 [ ${model_missing}]"
+  echo "      警告: 开关已打开，但模型连接不完整 —— 分类/判读会自我禁用：worker 照常启动、"
+  echo "      同步与推送都不受影响，但不会做任何 AI 判读，而且启动日志里没有别的提示。"
+  echo "      要么把三个 SEMANTIC_MODEL_* 配齐，要么先把开关改回 false"
+  echo "      （见 apps/worker/.env.example 与 docs/go-live.md §10）。"
+else
+  echo "AI 语义层: 报告级分类=${report_enabled:-false} 命中判读=${judge_enabled:-false} 模型连接=缺 [ ${model_missing}]（两个开关都关着，语义层不工作）"
 fi
 
 # 目标库是否已经能接受连接（只探连通性，不认证）。优先 pg_isready —— 它认得出

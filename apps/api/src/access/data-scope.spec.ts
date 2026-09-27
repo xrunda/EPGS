@@ -140,7 +140,30 @@ describe('data-scope helpers (issue #13)', () => {
     // Provenance of the LEVEL, which this caller already sees - not patient data.
     expect(masked.attentionSource).toBe('BOTH');
     expect(masked.aiJudged).toBe(true);
+    expect(masked.aiStatus).toBe('JUDGED');
 
+    expect(masked.dataAccess).toEqual({ masked: true });
+  });
+
+  it('maskExamDetail keeps the failure notice for a caller who cannot see the report (issue #102)', () => {
+    // The redaction takes the report body away, so this caller cannot check the
+    // level for themselves. `aiStatus: FAILED` is what tells them a whole layer
+    // is missing - it is derived from queue state, not patient data, and losing
+    // it here would leave the caveat off the one reader who needs it most.
+    const failed: MonitorExamWorkbenchDetailDto = {
+      ...baseRow,
+      reportContent: null,
+      diagnosis: null,
+      attentionSource: 'RULE',
+      aiJudged: false,
+      aiStatus: 'FAILED',
+      aiSemantics: [],
+      hits: [],
+    };
+
+    const masked = maskExamDetail(failed);
+
+    expect(masked.aiStatus).toBe('FAILED');
     expect(masked.dataAccess).toEqual({ masked: true });
   });
 

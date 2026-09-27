@@ -510,13 +510,27 @@ describe('DetailDrawer', () => {
       expect(keywordCard).not.toBeNull();
       expect(reportCard).not.toBeNull();
 
-      const iconOf = (card: Element | null): { src: string | null; alt: string | null } | null => {
+      const iconOf = (
+        card: Element | null,
+      ): { src: string | null; alt: string | null; title: string | null } | null => {
         const img = card?.querySelector('.drawer__source-icon');
         if (!img) return null;
-        return { src: img.getAttribute('src'), alt: img.getAttribute('alt') };
+        return {
+          src: img.getAttribute('src'),
+          alt: img.getAttribute('alt'),
+          title: img.getAttribute('title'),
+        };
       };
-      expect(iconOf(keywordCard)).toEqual({ src: '/finding-keyword.png', alt: '命中' });
-      expect(iconOf(reportCard)).toEqual({ src: '/finding-ai.png', alt: '报告提示' });
+      expect(iconOf(keywordCard)).toEqual({
+        src: '/finding-keyword.png',
+        alt: '命中',
+        title: '监测规则命中',
+      });
+      expect(iconOf(reportCard)).toEqual({
+        src: '/finding-ai.png',
+        alt: '报告提示',
+        title: '报告全文提示',
+      });
 
       // Exactly one per card, so a card can never carry both or neither.
       expect(keywordCard!.querySelectorAll('.drawer__source-icon')).toHaveLength(1);

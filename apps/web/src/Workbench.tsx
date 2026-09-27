@@ -612,6 +612,7 @@ export function Workbench({
                             key={icon.src}
                             src={icon.src}
                             alt={icon.alt}
+                            title={icon.tip}
                           />
                         ))}
                       </span>

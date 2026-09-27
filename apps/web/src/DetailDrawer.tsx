@@ -423,6 +423,7 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                             className="drawer__source-icon"
                             src={KEYWORD_SOURCE_ICON.src}
                             alt={KEYWORD_SOURCE_ICON.alt}
+                            title={KEYWORD_SOURCE_ICON.tip}
                           />
                           {/*
                             等级标签与下面每条依据、以及摘要区的主标签用同一份文案
@@ -474,6 +475,7 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                             className="drawer__source-icon"
                             src={REPORT_SOURCE_ICON.src}
                             alt={REPORT_SOURCE_ICON.alt}
+                            title={REPORT_SOURCE_ICON.tip}
                           />
                           <span
                             className={`level-tag level-tag--${item.finding.attentionLevel.toLowerCase()}`}

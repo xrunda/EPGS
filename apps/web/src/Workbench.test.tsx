@@ -242,10 +242,11 @@ describe('Workbench', () => {
     await screen.findByText('测试患者甲');
 
     const rowOf = (name: RegExp): HTMLElement => screen.getByRole('row', { name });
+    const iconsOf = (name: RegExp): HTMLImageElement[] => [
+      ...rowOf(name).querySelectorAll<HTMLImageElement>('.workbench__source-icon'),
+    ];
     const sourcesOf = (name: RegExp): string[] =>
-      [...rowOf(name).querySelectorAll('.workbench__source-icon')].map(
-        (img) => img.getAttribute('alt') ?? '',
-      );
+      iconsOf(name).map((img) => img.getAttribute('alt') ?? '');
 
     expect(sourcesOf(/测试患者甲/)).toEqual(['命中']);
     expect(sourcesOf(/测试患者乙/)).toEqual(['报告提示']);
@@ -254,6 +255,15 @@ describe('Workbench', () => {
     // (a blank cell reads as "failed to render", not as "nothing found it").
     expect(sourcesOf(/测试患者丁/)).toEqual([]);
     expect(rowOf(/测试患者丁/).querySelector('.workbench__source-none')?.textContent).toBe('—');
+
+    // Hovering tells the doctor what the icon means - a bare glyph in a dense
+    // table is just "some icon" the first time you see it.
+    expect(iconsOf(/测试患者甲/).map((img) => img.getAttribute('title'))).toEqual(['监测规则命中']);
+    expect(iconsOf(/测试患者乙/).map((img) => img.getAttribute('title'))).toEqual(['报告全文提示']);
+    expect(iconsOf(/测试患者丙/).map((img) => img.getAttribute('title'))).toEqual([
+      '监测规则命中',
+      '报告全文提示',
+    ]);
 
     // The column is labelled and sits between the level and the patient name.
     const headers = [...container.querySelectorAll('.workbench__table thead th')].map(

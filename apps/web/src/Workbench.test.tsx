@@ -198,6 +198,69 @@ describe('Workbench', () => {
     expect(within(row2).getAllByText('—')).toHaveLength(7);
   });
 
+  /**
+   * Issue #114: the header is branding + settings only, and the refresh control
+   * belongs to the list it refreshes.
+   *
+   * Two things are being pinned here. First, the toolbar entries now read
+   * exactly like the modals they open - if someone renames a modal title, the
+   * entry that promises it has to change with it. Second, the refresh button
+   * lives inside the list's own tools strip, not in the toolbar; that is what
+   * makes it obvious which thing is being refreshed.
+   */
+  it('keeps only settings entries in the toolbar and puts refresh in the list (issue #114)', async () => {
+    const onOpenRules = vi.fn();
+    const onOpenAiSemantics = vi.fn();
+    const { container } = render(
+      <Workbench onOpenRules={onOpenRules} onOpenAiSemantics={onOpenAiSemantics} />,
+    );
+    await screen.findByText('测试患者甲');
+
+    const toolbar = container.querySelector('.workbench__toolbar');
+    expect(toolbar).not.toBeNull();
+    // Entry wording === modal title, so the two have to be asserted together.
+    fireEvent.click(within(toolbar as HTMLElement).getByRole('button', { name: '关键词监控' }));
+    expect(onOpenRules).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(toolbar as HTMLElement).getByRole('button', { name: 'AI 语义监控' }));
+    expect(onOpenAiSemantics).toHaveBeenCalledTimes(1);
+
+    const list = container.querySelector('.workbench__list');
+    const tools = container.querySelector('.workbench__list-tools');
+    expect(list).not.toBeNull();
+    expect(tools).not.toBeNull();
+    // Nested: the strip is inside the card the table is inside, so the button
+    // is visually and structurally "this list", not "the page".
+    expect(list as HTMLElement).toContainElement(tools as HTMLElement);
+
+    const refresh = screen.getByRole('button', { name: '刷新列表' });
+    expect(tools as HTMLElement).toContainElement(refresh);
+    expect(toolbar as HTMLElement).not.toContainElement(refresh);
+    // No leftover text button: the countdown moved with it, and the old label
+    // is gone for good.
+    expect(within(toolbar as HTMLElement).queryByRole('button', { name: '立即刷新' })).toBeNull();
+    expect(within(tools as HTMLElement).getByText('60 秒后刷新')).toBeInTheDocument();
+  });
+
+  /**
+   * Issue #114: the product mark sits next to the page title. It is decorative
+   * - the h1 already names the system - so it must carry an empty alt rather
+   * than making a screen reader announce the same name twice.
+   */
+  it('shows the product mark next to the page title as decorative (issue #114)', async () => {
+    const { container } = render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const logo = container.querySelector('.workbench__brand .workbench__logo');
+    expect(logo).not.toBeNull();
+    expect(logo?.tagName).toBe('IMG');
+    // Absolute path from public/: the build empties dist/, so a relative import
+    // would break on the next build.
+    expect(logo?.getAttribute('src')).toBe('/logo.png');
+    expect(logo?.getAttribute('alt')).toBe('');
+    // The mark is not a substitute for the title - both are present.
+    expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
+  });
+
   // Issue #94: one sentence per row, covering all four attention sources. The
   // AI-only row matters most - it carries a level with no keyword at all, so a
   // blank cell there would be a red record a doctor cannot explain.
@@ -225,12 +288,28 @@ describe('Workbench', () => {
    * Issue #94: the workbench renders no mechanism vocabulary - this is the guard
    * for removing the source badge, which used to put 「AI 语义」 on every row.
    * Scans the rendered text, not the source.
+   *
+   * Issue #114 narrowed this guarantee and moved it. The settings toolbar now
+   * labels each entry with the modal title it opens, verbatim (关键词监控 /
+   * AI 语义监控): an entry that says one thing and opens another costs the user
+   * more than a mechanism word does. So the scan drops that one strip - which
+   * carries no patient information whatsoever - and keeps watching everything a
+   * doctor actually reads: level, reason, findings, wording.
+   *
+   * The toolbar is removed by selector from a copy of the live DOM, and the
+   * removal is asserted to have hit exactly one element, so a rename or a move
+   * fails here instead of silently letting the scan pass over the whole page.
    */
   it('uses only doctor-facing wording, never the implementation vocabulary', async () => {
     const { container } = render(<Workbench onOpenRules={vi.fn()} />);
     await screen.findByText('测试患者甲');
 
-    const rendered = container.textContent ?? '';
+    const scanned = container.cloneNode(true) as HTMLElement;
+    const toolbars = scanned.querySelectorAll('.workbench__toolbar');
+    expect(toolbars).toHaveLength(1);
+    toolbars.forEach((toolbar) => toolbar.remove());
+    const rendered = scanned.textContent ?? '';
+
     for (const leak of [
       '关键词监控',
       'AI 语义监控',
@@ -250,10 +329,12 @@ describe('Workbench', () => {
       expect(rendered).not.toContain(leak);
     }
     // Positive controls: the agreed wording really is on screen, so the scan
-    // above cannot pass by rendering nothing.
+    // above cannot pass by rendering nothing. 「内镜中心」 also pins down that
+    // the branding block (issue #114) sits inside the scanned region rather
+    // than having been swept out with the toolbar.
     expect(rendered).toContain('红色关注');
     expect(rendered).toContain('关注理由');
-    expect(rendered).toContain('监测规则');
+    expect(rendered).toContain('内镜中心');
   });
 
   it('applies all filters to the list but excludes level from the summary', async () => {
@@ -396,7 +477,7 @@ describe('Workbench', () => {
     expect(screen.getByRole('button', { name: '下一页' })).toBeDisabled();
   });
 
-  it('refreshes list, summary, and sync status when 立即刷新 is clicked', async () => {
+  it('refreshes list, summary, and sync status when 刷新列表 is clicked', async () => {
     render(<Workbench onOpenRules={vi.fn()} />);
     await screen.findByText('测试患者甲');
     const examsCalls = () =>
@@ -406,7 +487,7 @@ describe('Workbench', () => {
         .filter((url) => url.includes('/api/monitor/exams'));
     const before = examsCalls().length;
 
-    fireEvent.click(screen.getByRole('button', { name: '立即刷新' }));
+    fireEvent.click(screen.getByRole('button', { name: '刷新列表' }));
 
     await waitFor(() => expect(examsCalls().length).toBeGreaterThan(before));
   });

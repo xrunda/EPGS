@@ -126,9 +126,9 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    // Issue #94: the clinical workbench calls it 监测规则 now; the modal it
-    // opens keeps its own (config-side) name.
-    fireEvent.click(screen.getByRole('button', { name: '监测规则' }));
+    // Issue #114: the entry reads exactly like the modal it opens, so the
+    // button name and the dialog name below are the same string on purpose.
+    fireEvent.click(screen.getByRole('button', { name: '关键词监控' }));
 
     expect(screen.getByRole('dialog', { name: '关键词监控' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();

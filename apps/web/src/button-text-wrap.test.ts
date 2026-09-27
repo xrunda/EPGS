@@ -56,10 +56,14 @@ describe('按钮标签不许在内部断行（issue #110）', () => {
     expect(body).toMatch(/flex-wrap:\s*wrap/);
   });
 
-  it('六个操作按钮成组，换行按组发生而不是逐个落行', () => {
-    const toolbar = read('Workbench.css');
-    expect(ruleBody(toolbar, '.workbench__toolbar-actions')).toMatch(/display:\s*flex/);
-    // 组内不换行：否则又退回「某一个按钮被单独挤到第二行」的形态
-    expect(ruleBody(toolbar, '.workbench__toolbar-actions')).toMatch(/flex-wrap:\s*nowrap/);
-  });
+  /*
+    #110 还有第三条断言，钉住「六个按钮成组、换行按组发生」（`.workbench__toolbar-actions`）。
+    issue #114 把倒计时与「立即刷新」搬进列表右上角之后，工具栏只剩「同步状态 + 5 个设置
+    入口」，1440/1920/1280 下一行放得下（853px / 984px），那一层分组连同它的 CSS 一起去掉了
+    —— 留一条断言去钉一个 DOM 里已经不存在的类，只会变成一条永远为真的假绿。
+
+    「按钮标签不许在内部折行」本身仍然由上面两条守着；工具栏在各宽度下不折字是渲染性质，
+    jsdom 测不出来，证据是实测（见 PR #114：901 / 1024 / 1280 / 1440 / 1920 五档，按钮标签
+    逐档 1 行、高 38px）。
+  */
 });

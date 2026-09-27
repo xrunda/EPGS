@@ -233,7 +233,7 @@
   border-radius: var(--radius-sm);
   background: var(--ink-900);
   color: #fff;
-  font-size: 26px;
+  font-size: inherit;
   line-height: 1.2;
   white-space: nowrap;
   opacity: 0;

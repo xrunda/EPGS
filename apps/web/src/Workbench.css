@@ -314,7 +314,8 @@
   悬停提示（issue #112）。
 
   不用原生 `title`：那个气泡由浏览器画，字号、字体、圆角都不在 CSS 的势力范围内
-  （Chrome 固定约 13px），所有者要求「加大一倍」改不动，所以自己画一个。
+  —— 所有者要它「和列表里其他文字一样大」（患者姓名那种 13px），原生做不到，
+  所以自己画一个，字号 `inherit` 跟着所在行走。
 
   位置在图标**右侧、垂直居中**，不是习惯上的正上方 —— `.workbench__table-wrap`
   为了窄屏横向滚动带着 `overflow-x: auto`，按 CSS 规则另一轴的 `visible` 会被算成
@@ -335,8 +336,9 @@
   border-radius: var(--radius-sm);
   background: var(--ink-900);
   color: #fff;
-  /* 26px = 浏览器原生提示（约 13px）的两倍，所有者要求。改这一个数字即可。 */
-  font-size: 26px;
+  /* 与所在行的正文同号（.workbench__table 的 13px）—— 继承而不是写死，
+     这样抽屉那边不用再配一个数字，两处都跟着各自容器的字号走。 */
+  font-size: inherit;
   line-height: 1.2;
   white-space: nowrap;
   opacity: 0;

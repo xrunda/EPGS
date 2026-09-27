@@ -33,6 +33,15 @@ describe('Notification API (e2e, real Postgres)', () => {
   let viewerAgent: ReturnType<typeof request.agent>;
   let fakeSender: { send: jest.Mock };
 
+  /**
+   * A syntactically valid but unroutable origin, used to pin the alert-link
+   * switch (issue #90). Nothing ever dials it - the fake sender only records
+   * the payload - so it must never be a host that could resolve.
+   */
+  const ALERT_LINK_BASE_URL_E2E = 'https://alert.e2e.invalid';
+  /** Puts the developer's own value back when the suite ends (see afterAll). */
+  let previousAlertLinkBaseUrl: string | undefined;
+
   const adminUsername = 'notif-e2e-admin';
   const viewerUsername = 'notif-e2e-viewer';
   const ruleAdminUsername = 'notif-e2e-ruleadmin';
@@ -50,6 +59,21 @@ describe('Notification API (e2e, real Postgres)', () => {
    * so it never depends on which day CI happens to run (issue #74).
    */
   const SEEDED_AT = new Date();
+
+  /**
+   * The sender mock, split by message kind (issue #90).
+   *
+   * One channel gets one template message plus, when alert links are on, one
+   * `news` card per level that has records (issue #72/#76) - so the raw call
+   * count is "1 or 1+N" depending on configuration. These helpers let a test
+   * assert the message it is actually about without the card count leaking
+   * into it, and assert the cards on their own terms.
+   */
+  function sentCalls(): Array<{ url: string; message: any }> {
+    return fakeSender.send.mock.calls.map(([url, message]) => ({ url, message }));
+  }
+  const templateCalls = () => sentCalls().filter((call) => call.message.msgType === 'TEXT');
+  const cardCalls = () => sentCalls().filter((call) => call.message.msgType === 'NEWS');
 
   function itWithDb(name: string, fn: () => Promise<void>): void {
     it(name, async () => {
@@ -72,6 +96,21 @@ describe('Notification API (e2e, real Postgres)', () => {
   }
 
   beforeAll(async () => {
+    /*
+      Issue #90: pin the alert-link switch for this suite, BEFORE AppModule is
+      compiled (configuration() reads process.env, and dotenv never overrides a
+      variable that is already set - so this wins over apps/api/.env).
+
+      The cards used to be whatever the developer's .env happened to say, so
+      the two sender assertions below were really asserting "the feature is
+      off": green on CI (which sets no ALERT_LINK_BASE_URL) and red on any
+      machine that had it on. With the switch pinned, the run is identical
+      everywhere and BOTH the summary message and the cards can be asserted,
+      instead of one of them being assumed away.
+    */
+    previousAlertLinkBaseUrl = process.env.ALERT_LINK_BASE_URL;
+    process.env.ALERT_LINK_BASE_URL = ALERT_LINK_BASE_URL_E2E;
+
     prisma = new PrismaClient();
     try {
       await prisma.$queryRaw`SELECT 1`;
@@ -189,6 +228,11 @@ describe('Notification API (e2e, real Postgres)', () => {
   afterAll(async () => {
     if (dbAvailable) {
       await prisma.auditLog.deleteMany({});
+      // alert_link first: it has no FK out to the push tables (pushLogId is
+      // SetNull), and with the switch pinned ON (issue #90) every run leaves
+      // three rows behind - they used to accumulate in the database untouched
+      // because CI never issued any.
+      await prisma.alertLink.deleteMany({});
       // FK order: push_delivery -> push_log -> rule_channel -> rule, all
       // before channels/templates (rule->template and delivery->channel are
       // Restrict; leaving a rule would block the template delete below).
@@ -209,6 +253,10 @@ describe('Notification API (e2e, real Postgres)', () => {
     }
     if (app) await app.close();
     await prisma.$disconnect();
+    // Leave the environment as we found it - jest --runInBand shares one
+    // process across spec files (issue #90).
+    if (previousAlertLinkBaseUrl === undefined) delete process.env.ALERT_LINK_BASE_URL;
+    else process.env.ALERT_LINK_BASE_URL = previousAlertLinkBaseUrl;
   });
 
   beforeEach(async () => {
@@ -216,6 +264,7 @@ describe('Notification API (e2e, real Postgres)', () => {
     fakeSender.send.mockClear();
     // Same FK order as afterAll - a rule bound to a channel from a prior test
     // would otherwise block the channel/template delete (Restrict).
+    await prisma.alertLink.deleteMany({});
     await prisma.pushDelivery.deleteMany({});
     await prisma.pushLog.deleteMany({});
     await prisma.notificationRuleChannel.deleteMany({});
@@ -581,10 +630,26 @@ describe('Notification API (e2e, real Postgres)', () => {
 
     // The sender got the decrypted URL + the window-summary render. The 4th
     // record (examTime 00:00+08 NEXT day) is excluded by the lt boundary.
-    expect(fakeSender.send).toHaveBeenCalledTimes(1);
-    const [url, message] = fakeSender.send.mock.calls[0];
-    expect(url).toContain('e2e-rule-secret');
-    expect(message.renderedContent).toBe('2026-08-23 菏泽市中医医院 红1 黄1 绿1 共3');
+    const templateMessages = templateCalls();
+    expect(templateMessages).toHaveLength(1);
+    expect(templateMessages[0].url).toContain('e2e-rule-secret');
+    expect(templateMessages[0].message.renderedContent).toBe(
+      '2026-08-23 菏泽市中医医院 红1 黄1 绿1 共3',
+    );
+
+    // Issue #72: one card per level that has records in this window, in level
+    // order, each pointing at the H5 entry on the configured origin. Asserted
+    // from the pinned switch, so this is the same on every machine.
+    const cards = cardCalls();
+    expect(cards.map((call) => call.message.renderedTitle)).toEqual([
+      '红色关注 1 例 · 2026-08-23',
+      '黄色关注 1 例 · 2026-08-23',
+      '绿色关注 1 例 · 2026-08-23',
+    ]);
+    for (const card of cards) {
+      expect(card.message.linkUrl).toContain(`${ALERT_LINK_BASE_URL_E2E}/alert?t=`);
+      expect(card.message.coverImageUrl).toBe(`${ALERT_LINK_BASE_URL_E2E}/alert-cover.jpg`);
+    }
 
     // Audit: the manual run records NOTIFICATION_RULE_RUN with the outcome.
     const auditRow = await prisma.auditLog.findFirst({
@@ -620,7 +685,11 @@ describe('Notification API (e2e, real Postgres)', () => {
     // One PushLog row for the window regardless of how many ticks raced.
     const logCount = await prisma.pushLog.count({ where: { ruleId: rule.id, windowDate: RULE_WINDOW } });
     expect(logCount).toBe(1);
-    expect(fakeSender.send).toHaveBeenCalledTimes(1);
+    // What dedupes is the RUN, not the messages: the second tick adds no
+    // sender call at all, so the counts are still those of the first run -
+    // one summary plus one card per level with records (issue #90).
+    expect(templateCalls()).toHaveLength(1);
+    expect(cardCalls()).toHaveLength(3);
   });
 
   itWithDb('viewer is forbidden from rule writes/runs but can read rules and push logs', async () => {

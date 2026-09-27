@@ -148,6 +148,7 @@ pnpm --filter @epgs/api auth:assign-access --username <账号> --roles SYSTEM_AD
 
 | 顺序 | 迁移目录                                                      | 回滚脚本作用                                                                                                                                                                                                                            |
 | ---- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | `20260927000000_add_monitor_level_conflict_read`（#103）      | 删除 `monitor_level_conflict_read` 表与它的两个索引。**必须最先执行**（它是最新的一层，不过这张表无外键、无级联，放哪一步都不会报错）。**会丢失全部"已核对"标记**，待办列表本身不受影响（每次从记录实算），重新标记即可。**一处撤不干净**：`AuditAction` 里仍留着 `MONITOR_LEVEL_CONFLICT_READ`/`MONITOR_LEVEL_CONFLICT_UNREAD`。脚本可**自动执行** |
 | 1    | `20260926000000_add_ai_report_classify`（#88）                | 删除 `monitor_report_ai` 及其两张子表、`attention_semantic`、`monitor_record` 的 5 个 `ai_*` 列、分类队列部分索引 `uq_monitor_record_ai_queue` 与 `AttentionLevel`/`ReportAiField` 两个枚举。**必须最先执行**：`monitor_report_ai` 对 `monitor_record` 有外键，且 `AttentionLevel` 类型要先于第 11 步删表释放。**会丢失全部报告级 AI 分类审计**（当时生效的语义版本、模型、命中与证据），且不可重建；关键词路径与 #87 审计不受影响。**建议先回滚 worker 再回滚 schema** |
 | 2    | `20260925000000_add_semantic_judge`（#87）                    | 删除 `monitor_match_semantic`、`monitor_match` 的 8 个 `semantic_*`/`match_*` 列、`monitor_rule.semantic_intent` 与 4 个枚举。**必须先于第 11 步**：该表对 `monitor_match` 有外键，而第 11 步的 `DROP TABLE monitor_match` 不带 CASCADE |
 | 3    | `20260905060000_add_alert_link`（#72）                        | 删除 `alert_link`（已发出的企微卡片链接立即失效）。**必须先于第 5 步**：它对 `push_log` 有外键                                                                                                                                          |
@@ -174,10 +175,13 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
   `SemanticTask` 的 `CLASSIFY_REPORT` 同理（见下条）；
   对应 `rollback.sql` 头部给出了"先确认 `audit_log` 无该值再重建枚举"的手工 SQL，
   默认不自动执行。
-- **完全重置到空库**：执行 1→11 全部回滚，再 `DELETE FROM "_prisma_migrations";`
+- **#103 回滚只丢"看过了"，不丢判定**：这张表只存已读状态，待办列表每次用同一套判定
+  从既有记录实算，所以回滚后列表照旧、只是全部显示未读。`monitor_match`、
+  `monitor_report_ai*`、等级、医生端那句提醒都不受影响（提醒不走这张表）。
+- **完全重置到空库**：执行 0→11 全部回滚，再 `DELETE FROM "_prisma_migrations";`
   清空历史（否则 re-deploy 会跳过"看似已应用"的迁移），最后按需
   `prisma migrate deploy` 重建。CI 的 db-migrations job 即按此流程验证：
-  #88→#87→#72→#70→#61→#53→#14→#13→#31→#3 回滚（#26 因 #3 已全量清表而省略其破坏性
+  #103→#88→#87→#72→#70→#61→#53→#14→#13→#31→#3 回滚（#26 因 #3 已全量清表而省略其破坏性
   回滚）→ 清空历史 → 重新正向迁移。
 - **#88 分类回滚同样"少一层注解"，不是"丢命中"**：回滚只删除 AI 分类的审计行与
   队列/结果列，`monitor_match` 与 `monitor_rule` 一字不动，`monitor_record`
@@ -214,6 +218,10 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
       的 `open_count` 随点击增加。
 - [ ] **推送助理**（#70）：工作台右下角胶囊显示「值班中」与距下次推送倒计时；
       worker 停 2 分钟后变「已失联」，恢复后自动回到在线。
+- [ ] **等级分歧**（#103）：`RULE_ADMIN` 账号工作台工具栏有「等级分歧」入口、
+      `VIEWER` 账号**没有**；列表里若出现条目，点开同一条记录确认医生抽屉里也有那句
+      双方点名的提醒，且**两侧的名字与等级逐字对得上**；标记已读后刷新仍为已读。
+      列表里不应出现任何患者信息（姓名/床号/报告正文）。
 
 ## 9. 发布记录：2026-09 推送增强（#74 / #72 / #70 / #76）
 

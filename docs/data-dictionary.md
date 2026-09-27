@@ -384,6 +384,45 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
 
 保留策略：随所属命中行级联删除。
 
+## monitor_level_conflict_read — 关注等级分歧的已读状态（issue #103）
+
+**只存"有人核对过"这一个状态，不存待办副本**：列表每次用同一套判定
+（`apps/api/src/monitor/level-conflict.ts`）从既有记录实算，这张表只回答"这一组配置
+有没有人看过"。这样判定只有一份实现，不会出现待办表与判定规则各自漂移。
+
+一行代表**一组配置对一个等级分歧的核对状态**，不是一条记录、更不是一份报告。键由
+`rule_group_id` + `semantic_group_id` + `field` + `keyword_level` + `ai_level` 拼成：
+**跨版本稳定**（规则/语义改文字生成新版本行，用版本行做键会让每次改词都变成新问题、
+已核对过的条目反复诈尸），但**等级变了键就变**——那是真的另一种分歧。
+
+**不是闭环（issue #26）**：这张表与它的接口不表示任何报告被阅读或处置过，
+路由与文案刻意避开上报/知晓/处理那一套词（见
+[monitor-level-conflict-api.md](./monitor-level-conflict-api.md)）。
+
+| 字段                              | 类型                                 | 敏感级别 | 说明                                                                     |
+| --------------------------------- | ------------------------------------ | -------- | ------------------------------------------------------------------------ |
+| `id`                              | UUID PK                              | LOW      | 主键                                                                     |
+| `conflictKey`                     | varchar(200) UNIQUE                  | LOW      | `ruleGroupId:semanticGroupId:field:keywordLevel:aiLevel`，判定与去重都用它 |
+| `ruleGroupId`                     | uuid                                 | LOW      | 关键词规则的**组** ID（跨版本不变）                                       |
+| `semanticGroupId`                 | uuid                                 | LOW      | 关注语义的**组** ID（跨版本不变）                                         |
+| `field`                           | MatchField                           | LOW      | 两边落在同一列才配对，只可能是 `FINDINGS`（报告内容）/`IMPRESSION`（诊断） |
+| `keywordLevel`                    | MonitorLevel                         | LOW      | 关键词侧的关注等级，**参与键**：等级变了就是另一条待办                     |
+| `aiLevel`                         | AttentionLevel                       | LOW      | 报告级判读侧的关注等级，**参与键**                                      |
+| `readAt`                          | timestamptz?                         | LOW      | NULL = 未读（沿用本仓库"用终止时间戳表示待办"的惯例）                     |
+| `readBy`                          | varchar(100)?                        | LOW      | 标记人的账号名，非 FK（同 `createdBy`）                                   |
+| `createdAt`/`updatedAt`           | timestamptz(6)                       | LOW      | 创建/更新时间                                                             |
+
+**无患者数据**：一个关键词、两个组 ID、一个列名、两个等级、一个账号名。没有记录 ID、
+没有报告正文、没有偏移。
+
+**幂等约束**：`conflictKey` UNIQUE（`monitor_level_conflict_read_conflict_key_key`）——
+标记已读/未读都是 upsert/幂等删除，重复标记不会产生第二行。
+
+索引：`(readAt)`（列表按未读优先排序与 `read` 过滤）。
+
+保留策略：配置级数据，无自动清理；判定用的记录被清理后状态行仍在（无害，它不引用
+记录），需要时可人工按 `updatedAt` 清理。
+
 ## sync_job_log — 同步任务日志
 
 不包含任何患者数据；`errorSummary` 只允许记录来源标识/错误摘要，
@@ -468,6 +507,7 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
 | 判读审计查询（issue #87）    | `monitor_match_semantic(match_id, created_at)`、`monitor_match_semantic(outcome)`、`monitor_match_semantic(decision_reason)`                                              |
 | 关注语义配置（issue #88）    | `attention_semantic(semantic_group_id)`、`attention_semantic(attention_level, is_enabled)`                                                                               |
 | 分类队列与审计（issue #88）  | 部分索引 `uq_monitor_record_ai_queue(ai_claimed_at, id) WHERE ai_resolved_at IS NULL`（分类队列，**手写、不在 schema.prisma 里**）、`monitor_report_ai(monitor_record_id, created_at)`、`monitor_report_ai(outcome)`、`monitor_report_ai(attention_level)`、`monitor_report_ai_match(report_ai_id)`、`monitor_report_ai_match(semantic_id)`、`monitor_report_ai_evidence(match_id)` |
+| 等级分歧待办（issue #103）   | `monitor_level_conflict_read(conflict_key)` 唯一、`monitor_level_conflict_read(read_at)`（未读优先排序与 `read` 过滤）。**待办本身没有索引可加**：它每次从既有记录实算，窗口（`days`）就是扫描上界 |
 | 同步任务运维查询             | `sync_job_log(job_name, started_at)`、`sync_job_log(status)`                                                                                                              |
 
 ## 迁移与回滚
@@ -481,6 +521,7 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
   - `apps/api/prisma/migrations/20260823032959_add_notification_channel_template/migration.sql`（issue #52/#53 增加 `notification_channel`/`notification_template` 与 `NotificationMsgType` 枚举，并为既有 `AuditAction` 枚举追加 `NOTIFICATION_TEST_SEND` 值）
   - `apps/api/prisma/migrations/20260911000000_add_user_admin_role_and_audit_actions/migration.sql`（issue #78/#79 为既有 `AppRole` 枚举追加 `USER_ADMIN` 值，为既有 `AuditAction` 枚举追加 `USER_CREATE`/`USER_ROLE_CHANGE`/`USER_DISABLE`/`USER_ENABLE`/`USER_DELETE`/`USER_PASSWORD_RESET` 六个值，不新建表）
   - `apps/api/prisma/migrations/20260925000000_add_semantic_judge/migration.sql`（issue #87 新增 `monitor_match_semantic` 表与 `SemanticStatus`/`SemanticConfidence`/`SemanticJudgeOutcome`/`SemanticTask` 四个枚举，为 `monitor_rule` 加 `semantic_intent`，为 `monitor_match` 加判读状态列。**纯增量、全部 `IF NOT EXISTS`**：不改任何既有列的含义，`semantic_filtered NOT NULL DEFAULT false` 保证存量命中全部按原样计入关注）
+  - `apps/api/prisma/migrations/20260927000000_add_monitor_level_conflict_read/migration.sql`（issue #103 新增 `monitor_level_conflict_read` 单表，并为既有 `AuditAction` 枚举追加 `MONITOR_LEVEL_CONFLICT_READ`/`MONITOR_LEVEL_CONFLICT_UNREAD`。**纯增量、全部 `IF NOT EXISTS`、无任何外键**：不存待办副本（每次查询实算），只存"这一组配置有没有人核对过"；不碰关键词匹配、等级、#87 判读、#88 分类与推送路径）
   - `apps/api/prisma/migrations/20260926000000_add_ai_report_classify/migration.sql`（issue #88 新增 `attention_semantic` 配置表与 `monitor_report_ai`/`monitor_report_ai_match`/`monitor_report_ai_evidence` 三张审计表、`AttentionLevel`/`ReportAiField` 两个枚举，为既有 `SemanticTask` 枚举追加 `CLASSIFY_REPORT`、为既有 `AuditAction` 枚举追加 `ATTENTION_SEMANTIC_CREATE`/`ATTENTION_SEMANTIC_UPDATE`，为 `monitor_record` 加五个 `ai_*` 队列/结果列并**手写**分类队列部分索引 `uq_monitor_record_ai_queue`。**纯增量、全部 `IF NOT EXISTS`，且不写入任何医学配置**：`ai_attention_level` 为 NULL、`ai_resolved_at` 为 NULL 时行为与 #88 之前完全一致）
 - 回滚脚本（Prisma Migrate 本身没有内建 down-migration 机制，回滚脚本需手动执行，
   详见脚本头部注释）：
@@ -492,6 +533,7 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
   - `20260823032959_add_notification_channel_template/rollback.sql`（删除两张新表与 `NotificationMsgType` 枚举可直接执行；`AuditAction` 追加值**不可**用 `DROP TYPE` 简单回滚——PostgreSQL 无 `ALTER TYPE ... DROP VALUE`，脚本头部注释给出了需要人工确认 `audit_log` 无该值记录后再执行的枚举重建 SQL，不自动执行）
   - `20260911000000_add_user_admin_role_and_audit_actions/rollback.sql`（同样无表可删——`AppRole`/`AuditAction` 追加值均不可用 `DROP TYPE` 简单回滚，脚本头部注释给出需人工确认 `app_user_access`/`audit_log` 无该值记录后再执行的枚举重建 SQL，不自动执行）
   - `20260925000000_add_semantic_judge/rollback.sql`（issue #87：删除判读状态列、`semantic_intent`、审计表与四个枚举。**会丢失全部判读记录与已生效的过滤结论**，回滚后所有命中重新计入关注；脚本头部注释要求先确认 `monitor_match_semantic` 行数，不自动执行）
+  - `20260927000000_add_monitor_level_conflict_read/rollback.sql`（issue #103：删除 `monitor_level_conflict_read` 表与它的两个索引。**会丢失全部"已核对"标记**——待办列表本身不受影响（它每次从记录实算），丢的只是"谁看过了"，重新标记即可。**一处撤不干净**：`AuditAction` 里仍留着 `MONITOR_LEVEL_CONFLICT_READ`/`MONITOR_LEVEL_CONFLICT_UNREAD`——PostgreSQL 无法从类型里删除取值，重建类型要重写 `audit_log`，代价远大于留下两个无人使用的取值。脚本**自动执行**，因为这张表无外键、不级联、删掉不会带走任何别的数据）
   - `20260926000000_add_ai_report_classify/rollback.sql`（issue #88：按"先子表后父表、先去列后删类型"的顺序删除三张审计表、`attention_semantic`、五个 `ai_*` 列、分类队列部分索引与 `AttentionLevel`/`ReportAiField` 两个枚举。**会丢失全部报告级 AI 分类记录**——当时生效的是哪版关注语义、哪个模型、命中了什么、依据了哪些原文片段，这份审计**不可重建**：今天重跑只会用今天的配置、今天的模型，跟产生原判定的那次不是一回事。关键词路径（`monitor_match`、`monitor_record` 的 `current_level`/`first_matched_at`/`last_matched_at`、`monitor_rule`）与 #87 的审计表**完全不受影响**。**两处撤不干净**：`SemanticTask` 里仍留着 `CLASSIFY_REPORT`、`AuditAction` 里仍留着 `ATTENTION_SEMANTIC_CREATE`/`_UPDATE`——PostgreSQL 无法从类型里删除取值，重建类型要重写 `monitor_match_semantic`/`audit_log`，代价远大于留下两个无人使用的取值。建议**先回滚 worker 再回滚 schema**，避免出现分类器往半拆的表里写的窗口）
 - **生产数据确认门（issue #26）**：`remove_closed_loop_readonly` 迁移开头包含
   PL/pgSQL 数据门禁——若 `monitor_action` 仍存在任何数据，或任意

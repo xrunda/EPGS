@@ -210,8 +210,10 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
 `attentionSource`（issue #88）。
 **绝不含** `reportContent`/`diagnosis`，也绝不含任何 `reportStatus`/
 `handlingStatus` 类字段——这是 wire 类型 `MonitorExamWorkbenchDto` 的硬约束。
-**也绝不含** `aiSemantics`/`aiJudged`：AI 文本与审计字段只出现在详情接口，
+**也绝不含** `aiSemantics`/`aiJudged`/`aiStatus`：AI 文本与审计字段只出现在详情接口，
 列表行上的 `aiAttentionLevel` 标量只用于推导 `attentionSource`，本身不外发。
+（"这一行的 AI 判读失败了"是详情页要讲清的事，列表不承担这个信息；列表要的是
+"这位患者为什么在名单上"。）
 
 空值示例（无科室/床号、未知患者类型编码 `X`、无命中、`examTime` 为 null 的行）：
 
@@ -282,6 +284,7 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
   ],
   "attentionSource": "BOTH",
   "aiJudged": true,
+  "aiStatus": "JUDGED",
   "aiSemantics": [
     {
       "semanticId": "22222222-2222-4222-8222-000000000001",
@@ -354,7 +357,8 @@ DIAGNOSIS)`，实现沿用 issue #5/#26 收敛后的 `MatchField` 枚举，二�
 | 字段                    | 取值                              | 说明                                                                       |
 | ----------------------- | --------------------------------- | -------------------------------------------------------------------------- |
 | `attentionSource`       | `RULE`/`AI_REPORT`/`BOTH`/`NONE`  | 这条记录为什么在关注列表里（真值表见下）                                   |
-| `aiJudged`              | boolean                           | AI 是否判读过**当前版本**的报告。只回答"看没看过"，不含时间、模型、耗时     |
+| `aiJudged`              | boolean                           | AI 是否判读过**当前版本**的报告。只回答"看没看过"，不含时间、模型、耗时。恒等于 `aiStatus === 'JUDGED'`，为兼容保留 |
+| `aiStatus`              | `JUDGED`/`FAILED`/`NOT_JUDGED`    | AI 有没有结论、以及结论还会不会来（三态见下）                              |
 | `aiSemantics`           | array                             | 报告级发现，按关注等级优先级（RED → YELLOW → GREEN）再按模型输出顺序排列    |
 | `aiSemantics[].semanticId` / `.semanticVersion` | uuid / number        | 依据的是医院哪一版关注语义（`attention_semantic` 永不物理删除，引用可解析） |
 | `aiSemantics[].name`    | string                            | 该版关注语义的名称（命中时刻的快照）                                       |
@@ -385,6 +389,28 @@ issue #94 之前，调用方用这个字段渲染一个中性灰的「来源徽�
 因为"两条路径都没发现"（记录为 `UNCLASSIFIED`，本来就在列表里可见）是一个真实
 状态，可空字段只会制造含混的 NULL。**`attentionSource` 与 `monitorLevel` 读的是
 同一组输入**，所以 `NONE` 与 `UNCLASSIFIED` 必然同时出现，本字段不可能与等级矛盾。
+
+**`aiStatus` 三态（issue #102）。** 它回答的是"这条记录的关注等级背后有没有 AI 结论"，
+以及"结论还会不会来"：
+
+| 值           | 条件                                                        | 调用方要求                                                     |
+| ------------ | ----------------------------------------------------------- | -------------------------------------------------------------- |
+| `JUDGED`     | 当前报告版本有一条 `outcome = 'OK'` 的尝试                   | 正常展示结论（含"看了但没发现"，即 `aiSemantics: []`）          |
+| `FAILED`     | 有 `ERROR` 尝试、当前版本没有 `OK` 尝试，**且记录已出队**     | **必须显式告知结论不完整**，见下                                |
+| `NOT_JUDGED` | 其余（没问过、正文已换、还在队列里）                          | 无需额外说明                                                   |
+
+- **`FAILED` 必须让医生看见。** 此时关注等级只由关键词路径产生，AI 那一半**永久缺席**
+  （记录已出队，不会再有尝试）。渲染成与普通关键词记录无异的界面，等于让医生把"没判"
+  读成"判了但没有"——这是 issue #102 存在的理由。
+- **`FAILED` 与 `aiJudged: false` 不是一回事。** 后者包含"还没轮到它判"这种正常状态；
+  只有"失败过且不会再试"才是 `FAILED`。判断依据里**必须**带上队列状态（`aiResolvedAt`），
+  只看"有没有 ERROR 行"会把还在重试的记录误报成失败。
+- **医生端只被告知"没判成"，不被告知"为什么"。** `aiStatus` 只读 `outcome` 与队列状态，
+  不读 `error` 错误码、模型、耗时；失败原因留在 `monitor_report_ai`，由有权限的运维
+  路径查（见 [ai-semantic-monitor-design.md](../ai-semantic-monitor-design.md) §7.2）。
+- **失败分级与重试次数**见 [ai-semantic-monitor-design.md](../ai-semantic-monitor-design.md)
+  §7.1：传输层失败会留在队列里重试到上限，因此同一份报告可能有多行 `ERROR` 审计，
+  期间 `aiStatus` 是 `NOT_JUDGED`，跑满之后才变 `FAILED`。
 
 **证据为什么是重算的。** `monitor_report_ai_evidence` 只存 `evidence_hash` 与
 `evidence_start`/`evidence_end`（UTF-16 码元，左闭右开，指向 `monitor_record` 的
@@ -450,7 +476,12 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
   `apps/api/src/monitor/report-ai.mapper.spec.ts` —— `attentionSource` 四种来源真值
   表、尝试选择（只认 OK、优先 `createdAt == aiResolvedAt` 的那次、版本不符不展示）、
   证据重算（越界/负值/`start >= end`/空切片/正文变更导致哈希不符 → 丢片段留发现，
-  空白折叠形态仍接受）、三个 `field` 对三列的映射、发现按等级优先级排序。
+  空白折叠形态仍接受）、三个 `field` 对三列的映射、发现按等级优先级排序，以及
+  `aiStatus` 三态（issue #102：`JUDGED` 含"看了但没发现"与"先失败后成功"两种历史、
+  `FAILED` 仅在记录已出队时成立、重试待办期间是 `NOT_JUDGED`，并有"`aiStatus` 不得与
+  `aiJudged` 互相矛盾"的等价性用例）。失败分级本身的单测在 worker：
+  `apps/worker/src/semantic-report/retry-policy.spec.ts`（含"新增错误码而未分级必须
+  挂测试"的完备性用例）。
 - 端到端测试（真实 Postgres）：`apps/api/test/monitor.e2e-spec.ts` —— 组合筛选、
   跨 UTC 日界的 Shanghai 边界、自然日边界（午夜 00:00、23:59）、null 行、稳定分页、
   非法参数 400、汇总与列表同筛一致性、只读详情，以及 issue #8 的命中证据契约
@@ -464,7 +495,9 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
   陈旧偏移 → 片段丢弃而发现保留且 HTTP 200、**审计字段泄漏扫描**（序列化后的响应
   不含任何哈希/模型/耗时/错误字段名，也不含 64 位十六进制串）、列表信封每项有
   `attentionSource` 而无 `aiSemantics`，以及 `listByIds`（预警 H5 列表路径）返回
-  基类型行。脱敏与 H5 边界的成对断言分别在 `security.e2e-spec.ts` 与
+  基类型行。issue #102 另有一组：种一条 `ERROR` 尝试断言 `aiStatus: 'FAILED'` 且
+  等级退回纯关键词路径，并单独断言**失败原因本身**（错误码字符串、`error` 字段）不
+  出现在这份响应里。脱敏与 H5 边界的成对断言分别在 `security.e2e-spec.ts` 与
   `alert-links.e2e-spec.ts`。
 
 本地验证 real Postgres 的临时实例方式（与 `docs/rules-api.md` 相同）：

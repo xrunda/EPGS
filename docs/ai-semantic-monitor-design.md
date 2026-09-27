@@ -207,8 +207,8 @@ PACS/RIS ──► sync-runner ──► monitor_record + monitor_match（关键
 
 - **OK 尝试定义 `ai_attention_level`**（包括"零命中"这种真实结论，写 NULL，从而让
   重跑能清掉一条过期的旧结论）；
-- **ERROR 尝试不动它**，只写 `ai_resolved_at`。这样一次网关抖动不会抹掉一条已经核实
-  过的判定。
+- **ERROR 尝试不动它**。这样一次网关抖动不会抹掉一条已经核实过的判定。失败之后记录
+  是**当场出队**还是**留在队列等下一次**，取决于失败的性质，见 §7.1。
 
 两种写入都带 `aiResolvedAt: null` 的守卫，晚到的落败者不会覆盖已定案的结论；落败仍
 然留下自己的审计行（一次尝试一行就是溯源链）。
@@ -218,6 +218,52 @@ PACS/RIS ──► sync-runner ──► monitor_record + monitor_match（关键
 为它产生审计行）。认领是乐观的：`UPDATE … WHERE` 会**重述 SELECT 的谓词**，所以两个
 worker 不可能对同一份报告各花一次模型调用。报告内容变化（重新同步）会把
 `ai_resolved_at` 置回 NULL，让改了文字的旧结论不会留下来。
+
+### 7.1 失败分两种：值得再问一次的，与再问多少次都一样的（issue #102）
+
+#102 之前，任何 `ERROR` 都在第一次就写 `ai_resolved_at` 出队，于是
+`SEMANTIC_REPORT_MAX_ATTEMPTS` 这个配置**从来没有被用到过**——没有任何代码会把失败的
+记录放回队列。一次网关抖动就等于一份报告的 AI 结论永久缺失，而医生端看不出差别。
+
+现在按"再问一次有没有可能得到不同答案"分成两类。判据是一个纯函数（每条都有单测）：
+`apps/worker/src/semantic-report/retry-policy.ts`。
+
+| 类别 | 错误码 | 处置 |
+| --- | --- | --- |
+| **可重试**（答案没到，或路上坏了） | `NETWORK`、`TIMEOUT`、`MODEL_ERROR`、`HTTP_429`、`HTTP_5xx` | 释放认领，记录留在队列，下一轮或租约到期后重试 |
+| **确定性**（答案到了但不能用） | `INVALID_JSON`、`SCHEMA_INVALID`、`UNKNOWN_ENUM`、`EVIDENCE_UNVERIFIED`、`EMPTY_CONTEXT`、`EMPTY_INPUT`、`REPORT_TOO_LONG`、`UNKNOWN_SEMANTIC`、`INCOHERENT_LEVEL`、`NO_SEMANTICS` | 第一次就出队 |
+| 读不懂的状态码 | 其余 `HTTP_*` | 按确定性处理：不理解的失败要去看，不是重发三遍 |
+
+- 可重试的失败**不写 `ai_resolved_at`**，只把 `ai_claimed_at` 释放回 NULL；`ai_attempts`
+  照常累加，到上限后由 `resolveExhausted` 出队。
+- 两类失败都留一行审计（`outcome = ERROR` + `error` 机器码 + 累加后的 `ai_attempts`），
+  区别只在记录还在不在队列里。
+- `INCOHERENT_LEVEL` 归到确定性是**实测结论**：院内堡垒机 2026-09-27、隔离库
+  `epgs_replay`、当时唯一命中该码的 TEST-REPLAY-014 重复 5 次返回逐字节一致。表里
+  其余各条**没有**这样测过，`retry-policy.ts` 的注释把这一点写明了；将来若发现网关
+  确实会抖动，要改的也只有那一张表。
+
+### 7.2 医生端怎么知道"这次没判成"：`aiStatus` 三态（issue #102）
+
+详情接口新增只读字段 `aiStatus`，医生端据此判断当前的关注等级背后有没有 AI 结论：
+
+| 值 | 条件 | 医生端 |
+| --- | --- | --- |
+| `JUDGED` | 当前报告版本有一条 `OK` 尝试 | 正常显示结论（含"看了但没发现"） |
+| `FAILED` | 有 `ERROR` 尝试、当前版本没有 `OK` 尝试，**且记录已出队** | 明确告知结论不完整 |
+| `NOT_JUDGED` | 其余情况（没问过、正文已换、还在队列里） | 不额外说明 |
+
+- 三个值都**只读 `outcome` 与队列状态**，不读错误码、模型、耗时——"审计字段不上医生端"
+  的边界（§8）没有变。
+- `FAILED` 要求记录**已经出队**是关键：还在队列里说明结论还会来，此时说"判不成"是在
+  撒谎。
+- 它与 `aiJudged` 恒等（`aiStatus === 'JUDGED'` ⇔ `aiJudged === true`，后者为兼容保留）。
+
+**运维处置**：`FAILED` 的正确处置是查 `monitor_report_ai.error` 并修提示词/配置/网关，
+**不是反复重试**。传输层故障（网关长时间不可用）恢复后，用
+`pnpm --filter worker run classify:once --requeue --failed-only` 把"有 ERROR 尝试、
+当前报告版本还没有结论、且已出队"的记录重新入队；不带 `--failed-only` 的 `--requeue`
+会重跑全部记录，代价大得多。
 
 ## 8. 审计与隐私
 
@@ -283,7 +329,11 @@ worker 环境变量（`.env.example` 有逐项注释）：
    是医学效果的验收，测试只能证明代码按契约执行，证明不了语义本身对不对。
 6. **看等级收敛**：抽查若干条记录，确认 `current_level` 等于
    `max(未被过滤的关键词命中等级, AI 等级)`；再拔掉模型地址跑一轮，确认等级**完全不
-   变**、只多出 `outcome=ERROR` 的审计行。
+   变**、只多出 `outcome=ERROR` 的审计行。**注意这一轮现在会重试**（§7.1）：拔掉地址
+   属于传输层失败，记录会留在队列里反复失败，同一份报告出现**若干行** ERROR 直到
+   `SEMANTIC_REPORT_MAX_ATTEMPTS` 到顶才出队——这是预期行为，不是重复写入的 bug。
+   医生端此时仍是 `NOT_JUDGED` 而不是 `FAILED`，因为结论还在路上；跑够若干轮后再看，
+   才应该变成 `FAILED`。
 7. **确认通知没变**：AI 命中不产生任何逐条推送，通知内容与条数与改动前一致。
 
 ## 11. 一期不做的事（避免误读）

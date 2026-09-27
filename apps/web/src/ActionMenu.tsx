@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { FocusEvent as ReactFocusEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import './ActionMenu.css';
 
 /** 二级菜单里的一项。 */
@@ -87,6 +87,20 @@ export function ActionMenu({
     buttons[next].focus();
   };
 
+  /*
+    焦点离开菜单就收起面板。Tab 从最后一项继续往后走时焦点已经离开，面板还浮在
+    那儿就是一块没人控制的东西 —— 键盘用户看不到自己跟它还有没有关系。
+    焦点只是从一项换到另一项、或 Shift+Tab 回到触发按钮时不算离开（relatedTarget
+    仍在容器内），否则菜单会在 Tab 遍历到一半时自己关掉。
+    relatedTarget 为 null（焦点落到 body、或整个窗口失焦）按「离开」处理：那时候
+    菜单留着也没有意义，点外部那条路径本来也会关。
+  */
+  const onBlur = (event: ReactFocusEvent<HTMLDivElement>): void => {
+    if (!open) return;
+    if (rootRef.current?.contains(event.relatedTarget as Node)) return;
+    setOpen(false);
+  };
+
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (event.key === 'Escape' && open) {
       // 不让它继续冒泡：将来若有外层弹层，Esc 应该只关这一层
@@ -117,6 +131,7 @@ export function ActionMenu({
       className={`action-menu${className ? ` ${className}` : ''}`}
       ref={rootRef}
       onKeyDown={onKeyDown}
+      onBlur={onBlur}
     >
       <button
         className={`action-menu__trigger${triggerClassName ? ` ${triggerClassName}` : ''}`}

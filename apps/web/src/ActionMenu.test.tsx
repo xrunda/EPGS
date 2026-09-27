@@ -163,6 +163,37 @@ describe('ActionMenu「⋯」二级菜单（issue #116）', () => {
   });
 
   /*
+    Tab 从最后一项继续往后走，焦点已经离开菜单，面板必须跟着收起 —— 否则它就成了
+    一块浮在页面上、没人控制的东西。用 focusOut（React 的 onBlur 就是它）加一个
+    容器外的 relatedTarget 模拟「焦点走到外面去了」。
+  */
+  it('焦点离开菜单时收起', () => {
+    const { trigger } = renderMenu();
+    fireEvent.click(trigger);
+    const last = screen.getAllByRole('menuitem')[1];
+    const outside = document.createElement('button');
+    document.body.append(outside);
+
+    fireEvent.focusOut(last, { relatedTarget: outside });
+
+    expect(isOpen(trigger)).toBe(false);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  // 焦点只是从一项换到另一项（或 Shift+Tab 回到触发按钮）不算离开，菜单不许自己关掉。
+  it('焦点在菜单内部移动时不收起', () => {
+    const { trigger } = renderMenu();
+    fireEvent.click(trigger);
+    const [first, second] = screen.getAllByRole('menuitem');
+
+    fireEvent.focusOut(first, { relatedTarget: second });
+    expect(isOpen(trigger)).toBe(true);
+
+    fireEvent.focusOut(second, { relatedTarget: trigger });
+    expect(isOpen(trigger)).toBe(true);
+  });
+
+  /*
     关闭后重新打开，焦点应该回到第一项而不是留在上次那一项 —— 菜单每次打开都是
     一份新的，不该记得上次读到哪。用一个受控外壳把「关闭再打开」串起来。
   */

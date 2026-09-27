@@ -118,6 +118,8 @@ export function SemanticMonitorModal({
   const [reloadKey, setReloadKey] = useState(0);
   /** 当前生效的语义按颜色各有多少条；取不到就不显示，不影响列表。 */
   const [poolCounts, setPoolCounts] = useState<Record<AttentionLevelDto, number> | null>(null);
+  /** 顶部说明区是否展开；默认收起，见下方入口按钮处的注释（issue #123）。 */
+  const [explainerOpen, setExplainerOpen] = useState(false);
   const [editing, setEditing] = useState<AttentionSemanticDto | 'new' | null>(null);
   const [draft, setDraft] = useState<SemanticDraft>(EMPTY_DRAFT);
   const [dirty, setDirty] = useState(false);
@@ -335,13 +337,6 @@ export function SemanticMonitorModal({
           </button>
         </header>
 
-        <p className="semantic-modal__lead">理解医生这句话真正表达了什么意思。</p>
-        <p className="semantic-modal__sublead">
-          用医生自己的话写下需要关注的情况。系统会读完整份报告，判断有没有表达这层意思 ——
-          即使报告里一个字都没写到。
-        </p>
-        <p className="semantic-modal__crosssell">关键词监控看「字」 · AI 语义监控看「意思」</p>
-
         <div className="semantic-modal__notice">
           <span aria-hidden="true">i</span>
           <p>
@@ -351,32 +346,73 @@ export function SemanticMonitorModal({
           </p>
         </div>
 
-        <div className="semantic-pool" aria-label="三色关注池">
-          {poolCounts && (
-            <>
-              <p className="semantic-pool__title">
-                当前生效
-                <strong>
-                  {ATTENTION_LEVELS_DTO.reduce((sum, level) => sum + poolCounts[level], 0)} 条
-                </strong>
+        {/* 说明区默认收起（issue #123）：这几段连起来占掉弹层顶部一大片高度，把
+            真正要用的筛选和列表挤到要滚动才看得到。收起时留一个显眼的入口，点开
+            仍是原来一字不少的说明。上面的免责提示刻意不在收起之列——按规范必须
+            常驻，不折叠、不可关闭。 */}
+        <button
+          type="button"
+          className="semantic-modal__explainer-toggle"
+          aria-expanded={explainerOpen}
+          aria-controls="semantic-explainer"
+          onClick={() => setExplainerOpen((current) => !current)}
+        >
+          <span className="semantic-modal__explainer-mark" aria-hidden="true">
+            ?
+          </span>
+          <span className="semantic-modal__explainer-label">
+            这些关注等级是怎么定的
+            <small>点开看：这套监控在看什么、三种颜色各代表什么</small>
+          </span>
+          <span
+            className={
+              explainerOpen
+                ? 'semantic-modal__explainer-chevron semantic-modal__explainer-chevron--open'
+                : 'semantic-modal__explainer-chevron'
+            }
+            aria-hidden="true"
+          >
+            ▾
+          </span>
+        </button>
+
+        {explainerOpen && (
+          <div id="semantic-explainer" className="semantic-modal__explainer">
+            <p className="semantic-modal__lead">理解医生这句话真正表达了什么意思。</p>
+            <p className="semantic-modal__sublead">
+              用医生自己的话写下需要关注的情况。系统会读完整份报告，判断有没有表达这层意思 ——
+              即使报告里一个字都没写到。
+            </p>
+            <p className="semantic-modal__crosssell">关键词监控看「字」 · AI 语义监控看「意思」</p>
+
+            <div className="semantic-pool" aria-label="三色关注池">
+              {poolCounts && (
+                <>
+                  <p className="semantic-pool__title">
+                    当前生效
+                    <strong>
+                      {ATTENTION_LEVELS_DTO.reduce((sum, level) => sum + poolCounts[level], 0)} 条
+                    </strong>
+                  </p>
+                  <ul className="semantic-pool__chips">
+                    {ATTENTION_LEVELS_DTO.map((level) => (
+                      <li key={level}>
+                        <span className={`level-tag level-tag--${level.toLowerCase()}`}>
+                          {POOL_LABELS[level]}
+                        </span>
+                        <strong>{poolCounts[level]}</strong>
+                        <span className="semantic-pool__hint">{LEVEL_HINTS[level]}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <p className="semantic-pool__footer">
+                语义判断只会把关注等级往上调，不会把关键词已经命中的等级降下来。两边都命中时取较高的那一个。
               </p>
-              <ul className="semantic-pool__chips">
-                {ATTENTION_LEVELS_DTO.map((level) => (
-                  <li key={level}>
-                    <span className={`level-tag level-tag--${level.toLowerCase()}`}>
-                      {POOL_LABELS[level]}
-                    </span>
-                    <strong>{poolCounts[level]}</strong>
-                    <span className="semantic-pool__hint">{LEVEL_HINTS[level]}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          <p className="semantic-pool__footer">
-            语义判断只会把关注等级往上调，不会把关键词已经命中的等级降下来。两边都命中时取较高的那一个。
-          </p>
-        </div>
+            </div>
+          </div>
+        )}
 
         <form
           className="rules-filters"

@@ -319,6 +319,94 @@ export interface MonitorLevelConflictDto {
 }
 
 /**
+ * Issue #103: one entry of the admin's level-conflict list - a configuration
+ * disagreement, aggregated over the records that exhibit it.
+ *
+ * The doctor's drawer shows the same disagreement in prose on one record; this is
+ * that same sentence turned into a piece of work with a stable identity, so an
+ * admin can find it, fix the configuration, and record that they looked at it.
+ *
+ * `conflictKey` is the identity, and it is built from GROUP ids plus the report
+ * column plus the two levels - never from a rule or semantic VERSION row. Rules
+ * and semantics are immutable and versioned, so a key built from version rows
+ * would make every re-wording look like a brand new problem, and an admin who
+ * had already dealt with one would keep seeing it come back. Re-colouring either
+ * side DOES produce a new key, because that is a genuinely different
+ * disagreement.
+ *
+ * Nothing here is patient data: a keyword, a configured semantic name, two
+ * levels, a column name and two numbers. No report text, no offsets, no record
+ * ids.
+ */
+export interface MonitorLevelConflictTodoDto {
+  /** Stable across rule and semantic version bumps. See the type comment. */
+  conflictKey: string;
+  keyword: string;
+  keywordLevel: MonitorLevelDto;
+  semanticName: string;
+  semanticLevel: AttentionLevelDto;
+  /** The report column both sides landed in: FINDINGS or IMPRESSION. */
+  field: MatchFieldDto;
+  /**
+   * How many records inside the requested window show this conflict. It is the
+   * only sense of scale the list has, and it is what separates a problem worth
+   * fixing from a one-off: a rule and a semantic that disagree on one report are
+   * a curiosity, on forty they are a live misconfiguration.
+   */
+  recordCount: number;
+  /** ISO 8601 UTC instant of the most recent matching record in the window. */
+  lastSeenAt: string;
+  /** ISO 8601 UTC instant an admin marked this read; null = unread. */
+  readAt: string | null;
+}
+
+/**
+ * Response for the two write endpoints - the read state of one conflict, after
+ * the write.
+ *
+ * Returned rather than 204 so a client can update one row without refetching the
+ * list, and so the response is a statement of the state that now holds rather
+ * than an acknowledgement that something happened.
+ */
+export interface MonitorLevelConflictStateDto {
+  conflictKey: string;
+  /** ISO 8601 UTC instant; null = unread. */
+  readAt: string | null;
+}
+
+/** Response for `GET /api/monitor/level-conflicts`. Not paginated - see below. */
+export interface MonitorLevelConflictListDto {
+  items: MonitorLevelConflictTodoDto[];
+  /** The window actually applied, echoed so the client need not re-derive it. */
+  days: number;
+  /** Entries with `readAt === null`, so the toolbar/tab can count without filtering. */
+  unreadCount: number;
+}
+
+/**
+ * Query params for `GET /api/monitor/level-conflicts`.
+ *
+ * NOT PAGINATED, deliberately: the entry count is a function of the
+ * CONFIGURATION (rules x semantics x columns), not of record volume, so it is
+ * bounded by something an admin controls by hand. The two list endpoints that do
+ * paginate (`rules`, `attention-semantics`) are per-row tables that grow with
+ * use; this one cannot.
+ */
+export interface MonitorLevelConflictListQuery {
+  /** Trailing window in days. Defaults to LEVEL_CONFLICT_DEFAULT_DAYS, capped at LEVEL_CONFLICT_MAX_DAYS. */
+  days?: number;
+  /** Filter to only unread (false) or only read (true) entries. Omit for both. */
+  read?: boolean;
+}
+
+/** Default trailing window for the admin list, in days. */
+export const LEVEL_CONFLICT_DEFAULT_DAYS = 90;
+/** Hard cap on the window - bounds the aggregation scan. */
+export const LEVEL_CONFLICT_MAX_DAYS = 365;
+/** The windows the UI offers. Every value must be <= LEVEL_CONFLICT_MAX_DAYS. */
+export const LEVEL_CONFLICT_DAY_PRESETS = [7, 30, 90, 180, 365] as const;
+
+/**
  * Issue #88 (PR-B): the workbench list row. An EXTENSION of MonitorExamDto, not
  * a change to it, so `AlertLinkExamListDto` (which keeps `MonitorExamDto[]`)
  * is structurally incapable of carrying the new field to the alert-link H5

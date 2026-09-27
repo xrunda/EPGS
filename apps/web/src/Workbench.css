@@ -10,6 +10,22 @@
   justify-content: space-between;
   gap: 24px;
 }
+/*
+  产品标识（issue #114）：与三行标题块并排、垂直居中，40px。
+  顶栏那个医院 logo 在深色条上，这个在内容区左上角、小一号，两个不打架。
+  资源是 80×80 的两倍图（原图 665×665 / 446KB → 12KB）。
+*/
+.workbench__brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.workbench__logo {
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
 .workbench__heading h1 {
   margin: 3px 0 5px;
   color: var(--ink-800);
@@ -31,42 +47,27 @@
   font-size: 13px;
 }
 /*
-  工具栏（issue #110）：状态一行、操作一行，换行**成组**发生。
+  工具栏（issue #110 立、issue #114 后重写）。
 
-  原来 `flex-wrap: wrap` 只写在 `@media (max-width: 900px)` 里，于是 901px 以上是
-  nowrap：工具栏里那两个 `white-space: nowrap` 的跨度（同步状态句、倒计时）不肯
-  收缩，全部收缩量就落到 6 个按钮上。按钮里的中文没有空格，浏览器可以在任意两个
-  字之间断行，按钮又没有 `white-space: nowrap`，于是被压到比标签还窄 —— 1440 与
-  1920 下按钮 93×46、内容盒 61px，而四个汉字在 16px 字号下需要 64px。
+  #110 当初的理由是工具栏内容 1006px > 容器 984px，必须占两行，而且不能只是允许
+  折行：断点落在按钮之间会让最后一个按钮单独掉行，倒计时的位数（「9 秒」/「180 秒」）
+  还会让宽度每秒抖一次。解法是把按钮成组，断行只发生在「状态」与「整组按钮」之间。
 
-  实测工具栏内容要 1006px，容器只给 984px（`.workbench` 定宽 1180，减去标题块
-  172 与间隙 24），差 22px —— 正好是 6 个按钮各被压掉 3.7px。这 22px 不是靠调
-  字号或内边距能补回来的，所以工具栏必须占两行。
+  **#114 之后这个前提没了**：倒计时与「立即刷新」都搬进了列表右上角，工具栏只剩
+  「同步状态 + 5 个设置入口」。实测 1440/1920/1280 下工具栏 853px，984px 的容器
+  一行放得下、高 38px，不再需要第二行，所以 `.workbench__toolbar-actions` 那一层
+  连同它的规则一起去掉了。
 
-  但**不能只是允许折行**：那样断点会落在按钮之间，「用户管理」会单独掉到第二行、
-  且左对齐，比折字更难看；更要命的是内容宽度随倒计时位数（「9 秒」/「180 秒」）
-  在 984px 上下摆动，版式会每秒抖一次。
-
-  所以按钮先成组（`.workbench__toolbar-actions`），断行只发生在组与状态之间：
-  第一行状态、第二行六个按钮，尺寸固定、不随秒数变化。`justify-content: flex-end`
-  让两行都贴右，与改动前按钮贴右的观感一致。
-
-  竖向没有代价：标题块本身 98px 高，工具栏从 84px 变成 20+8+38=66px，标题行总高
-  仍是 98px，与改动前逐像素相同。
+  `flex-wrap: wrap` 保留：它现在只在窄宽度上生效 —— 1024px / 901px 实测工具栏落到
+  783px / 682px，会折成「状态一行、按钮一行」（高 84px）。写在这里（顶层）而不是
+  `@media (max-width: 900px)` 里，是因为 #110 的缺陷正是「只在 900px 以下允许换行」
+  造成的；上面两种宽度实测按钮标签都没被压到折行（各行 1 行、高 38px）。
 */
 .workbench__toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-}
-/* 操作按钮成组：组内一行放不下时也不会各自折字（按钮标签内部本来就不许断行），
-   组作为整体参与上面的换行。 */
-.workbench__toolbar-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
   gap: 8px;
 }
 .workbench__sync {
@@ -86,8 +87,8 @@
   content: '';
   box-shadow: 0 0 0 3px rgba(60, 149, 96, 0.18);
 }
+/* 倒计时现在跟着列表走（issue #114），间距交给 .workbench__list-tools 的 gap。 */
 .workbench__countdown {
-  margin-right: 8px;
   color: var(--ink-200);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
@@ -280,13 +281,68 @@
   color: var(--green-ink);
 }
 
-.workbench__table-wrap {
+/*
+  列表卡片（issue #114）：卡片外观（边框/圆角/白底/投影）从 .workbench__table-wrap
+  提到这一层。因为列表右上角现在有了自己的工具条（倒计时 + 刷新），它得和表格同属
+  一张卡片 —— 刷新的是谁，一眼就能看出来。
+
+  overflow: hidden 接替原来 .workbench__table-wrap 的裁剪职责（圆角要切掉表头浅底
+  和末行底色）。表格里那些要溢出的提示气泡仍归 .workbench__table-wrap 管，它在
+  这一层**内侧**，先裁一次，所以这一层的 overflow 碰不到它们。
+*/
+.workbench__list {
   margin-top: 18px;
-  overflow-x: auto;
+  overflow: hidden;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: #fff;
   box-shadow: var(--shadow-sm);
+}
+/*
+  列表工具条：靠右对齐，刷新按钮落在最右 = 卡片右上角。不加下边框 —— 紧接着的表头
+  自带浅色底，颜色变化本身就是分隔，再画一条线是两道杠。
+*/
+.workbench__list-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 14px 8px;
+}
+/*
+  刷新按钮（issue #114）：图标按钮，去掉 .button 那套 26px 零内边距的粗糙外观，
+  28×28 够点、正方形、圆角，hover 才有底色，静息状态不抢注意力。
+  可访问名走 aria-label（图形本身读不出来），title 顺带给出鼠标悬停提示。
+*/
+.workbench__refresh {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-300);
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.workbench__refresh:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-sunken);
+  color: var(--teal-700);
+}
+.workbench__refresh:focus-visible {
+  border-color: var(--teal-500);
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.workbench__table-wrap {
+  overflow-x: auto;
 }
 .workbench__table {
   width: 100%;

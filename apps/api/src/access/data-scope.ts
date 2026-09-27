@@ -88,9 +88,13 @@ export function maskExamDetail(
     // half-redacted list - and a snippet of the report is the same class of
     // content this function already blankets via contextSnippet.
     //
-    // `attentionSource` and `aiJudged` need no handling here: they are derived
-    // from the level this caller already sees, and the generic maskExamRow above
-    // preserves them.
+    // `attentionSource`, `aiJudged` and `aiStatus` need no handling here: they
+    // are derived from the level and the queue state this caller already sees,
+    // and the generic maskExamRow above preserves them. Issue #102's `aiStatus`
+    // in particular MUST survive: it is what tells the doctor the level is
+    // keyword-only because the whole-report pass did not complete. Redacting it
+    // would take the caveat away from exactly the reader who is least able to
+    // check the report for themselves.
     aiSemantics: dto.aiSemantics.map((finding) => ({
       ...finding,
       reason: null,

@@ -19,10 +19,11 @@ export function maskAlertExamRow(dto: MonitorExamDto): MonitorExamDto {
  * The H5 detail payload is a BASE MonitorExamDetailDto, and it is BUILT from the
  * whitelist below rather than spread-and-hope.
  *
- * Issue #88 (PR-B) added AI fields to the workbench detail DTO. The alert H5
- * page must not carry them (the owner's rule is that the notification surface's
- * shape does not change, and a link can travel further than a workbench
- * session), so `getDetail` returns the wider type and this function narrows it.
+ * Issue #88 (PR-B) added AI fields to the workbench detail DTO, and issue #102
+ * added `aiStatus` to that same wider type. The alert H5 page must not carry any
+ * of them (the owner's rule is that the notification surface's shape does not
+ * change, and a link can travel further than a workbench session), so
+ * `getDetail` returns the wider type and this function narrows it.
  * `const { attentionSource, aiSemantics, ...rest } = dto` would be shorter but
  * expresses "we remembered to delete it"; a whitelist expresses "it cannot be
  * there", which is the property that survives the next person adding a field.

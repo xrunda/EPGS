@@ -314,3 +314,22 @@
   font-size: 12px;
   line-height: 1.6;
 }
+/*
+  整份报告核对失败的提示（issue #102）。
+
+  刻意用中性色，不借用红/黄/绿任何一个关注等级色：这句话说的是「这个等级可能不
+  完整」，它本身不是一个等级，用等级色说它会让医生以为系统又给出了一个颜色判断。
+  靠左边的一道粗边和一句完整的话把它从周围文字里分出来 —— 颜色不是信息通道，
+  换一套配色也读得懂。
+*/
+.drawer__ai-warning {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-left: 3px solid var(--border-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-sunken);
+  color: var(--ink-800);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.7;
+}

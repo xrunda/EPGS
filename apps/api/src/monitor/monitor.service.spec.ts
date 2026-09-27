@@ -30,6 +30,9 @@ describe('MonitorService', () => {
       reportVersion: 1,
       aiResolvedAt: null,
       reportAiAttempts: [],
+      // Issue #102: failed attempts, counted by DETAIL_INCLUDE rather than
+      // listed (that list is filtered to OK).
+      _count: { reportAiAttempts: 0 },
       matches: [
         { keyword: '腺癌', matchedAt: new Date('2026-08-20T01:30:01Z') },
         { keyword: '息肉样', matchedAt: new Date('2026-08-20T01:30:02Z') },
@@ -386,6 +389,14 @@ describe('MonitorService', () => {
                     createdAt: true,
                   },
                 },
+              },
+            },
+            // Issue #102: the failure signal is a COUNT, not a widened list -
+            // ERROR rows inside `reportAiAttempts` would both break its pairing
+            // with a verdict and crowd the take: 5 window.
+            _count: {
+              select: {
+                reportAiAttempts: { where: { outcome: 'ERROR' } },
               },
             },
             reportAiAttempts: {

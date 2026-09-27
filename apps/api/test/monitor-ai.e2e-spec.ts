@@ -83,6 +83,12 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
     diagnosis: string | null;
     keywordMatch: { filtered: boolean } | null;
     attempt: {
+      /**
+       * Defaults to OK. An ERROR attempt (issue #102) carries a failure code
+       * instead of a verdict, and therefore no matches.
+       */
+      outcome?: 'OK' | 'ERROR';
+      error?: string;
       level: 'RED' | 'YELLOW' | 'GREEN' | null;
       matches: {
         name: string;
@@ -188,6 +194,24 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
             evidence: [{ field: 'FINDINGS', start: 0, end: 9999 }],
           },
         ],
+      },
+    },
+    // Issue #102: the AI was asked and could not answer. The record resolved -
+    // no further attempt is coming - so the doctor is looking at a keyword-only
+    // level and must be told that is what it is.
+    {
+      key: 'failed',
+      patientName: '合成己',
+      level: 'RED',
+      aiLevel: null,
+      reportContent: BOTH_REPORT,
+      diagnosis: BOTH_DIAGNOSIS,
+      keywordMatch: { filtered: false },
+      attempt: {
+        outcome: 'ERROR',
+        error: 'INCOHERENT_LEVEL',
+        level: null,
+        matches: [],
       },
     },
   ];
@@ -296,12 +320,12 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
           reportVersion: 1,
           task: 'CLASSIFY_REPORT',
           taskVersion: 'e2e-1',
-          outcome: 'OK',
+          outcome: fixture.attempt.outcome ?? 'OK',
           attentionLevel: fixture.attempt.level,
           modelAttentionLevel: fixture.attempt.level,
           semanticCount: 2,
           matchCount: fixture.attempt.matches.length,
-          error: null,
+          error: fixture.attempt.error ?? null,
           model: 'e2e-synthetic-model',
           modelVersion: 'v0',
           inputHash: sha256Hex('e2e-input'),
@@ -455,12 +479,16 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
       expect(body.attentionSource).toBe('BOTH');
       expect(body.monitorLevel).toBe('RED');
       expect(body.aiJudged).toBe(true);
+      expect(body.aiStatus).toBe('JUDGED');
     });
 
     itWithDb('RULE when only keywords found something and the AI never ran', async () => {
       const body = await detail('ruleOnly');
       expect(body.attentionSource).toBe('RULE');
       expect(body.aiJudged).toBe(false);
+      // Never asked, not failed: there is no failure to report and the drawer
+      // must not imply one.
+      expect(body.aiStatus).toBe('NOT_JUDGED');
       expect(body.aiSemantics).toEqual([]);
     });
 
@@ -481,11 +509,51 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
       // fixture: nothing found is exactly the state that has no level.
       expect(body.monitorLevel).toBe('UNCLASSIFIED');
       expect(body.aiJudged).toBe(true);
+      expect(body.aiStatus).toBe('JUDGED');
       expect(body.aiSemantics).toEqual([]);
       // The filtered hit is still visible - the raw keyword evidence is never
       // hidden - it just does not count.
       expect(body.hits).toHaveLength(1);
       expect(body.hits[0].semanticFiltered).toBe(true);
+    });
+  });
+
+  describe('aiStatus says whether a verdict exists, and whether one is still coming (issue #102)', () => {
+    itWithDb('FAILED when the attempt failed and the record has left the queue', async () => {
+      const body = await detail('failed');
+
+      expect(body.aiStatus).toBe('FAILED');
+      // The same two facts the drawer reads to decide what to render: nothing
+      // to show, and no judgement behind the level.
+      expect(body.aiJudged).toBe(false);
+      expect(body.aiSemantics).toEqual([]);
+      // The level is keyword-only, and the record says so instead of looking
+      // like a clean keyword-only record.
+      expect(body.attentionSource).toBe('RULE');
+      expect(body.monitorLevel).toBe('RED');
+    });
+
+    itWithDb('FAILED tells the doctor THAT it failed, never WHY', async () => {
+      const res = await agent.get(`/api/monitor/exams/${ids.failed}`).expect(200);
+      const serialized = JSON.stringify(res.body);
+
+      // The failure branch is a NEW way for audit data to reach this wire, so
+      // it needs its own check rather than relying on the OK-path one above:
+      // the error code is the one audit value that only exists on this branch.
+      expect(serialized).not.toContain('INCOHERENT_LEVEL');
+      expect(res.body).not.toHaveProperty('error');
+      // And the record still has to look like a record - a warning that came
+      // with a hole where the report was would be a worse bug than the silence
+      // #102 set out to fix.
+      expect(serialized).toContain('合成己');
+    });
+
+    itWithDb('a failure is per record: the healthy fixtures stay JUDGED', async () => {
+      // The failure count is a filtered relation count on ONE record; a suite
+      // fixture set that shares a database must not leak it across rows.
+      expect((await detail('both')).aiStatus).toBe('JUDGED');
+      expect((await detail('none')).aiStatus).toBe('JUDGED');
+      expect((await detail('failed')).aiStatus).toBe('FAILED');
     });
   });
 

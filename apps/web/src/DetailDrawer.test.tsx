@@ -42,6 +42,7 @@ const detail: MonitorExamWorkbenchDetailDto = {
   ],
   attentionSource: 'RULE',
   aiJudged: false,
+  aiStatus: 'NOT_JUDGED',
   aiSemantics: [],
 };
 
@@ -66,6 +67,7 @@ function withAi(
     ...detail,
     attentionSource: 'BOTH',
     aiJudged: true,
+    aiStatus: 'JUDGED',
     aiSemantics: [aiFinding],
     ...overrides,
   };
@@ -609,6 +611,85 @@ describe('DetailDrawer', () => {
       ).not.toBeInTheDocument();
     });
 
+    /**
+     * Issue #102. Before this, a failed judgement resolved the record on the
+     * spot and rendered exactly what "never judged" renders - nothing. A doctor
+     * reading a keyword-only level had no way to know a whole layer was missing.
+     */
+    it('states plainly that the whole-report pass did not complete (issue #102)', async () => {
+      stubDetail({
+        ...detail,
+        attentionSource: 'RULE',
+        aiJudged: false,
+        aiStatus: 'FAILED',
+        aiSemantics: [],
+      });
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      expect(
+        within(dialog).getByText(
+          '本次整份报告核对未能完成，当前关注等级仅依据关键词命中，可能不完整。',
+        ),
+      ).toBeInTheDocument();
+      // The dangerous half: the drawer must NOT claim the report was checked.
+      // That sentence is a statement, and on a failed attempt there is no
+      // statement to make.
+      expect(
+        within(dialog).queryByText('整份报告已核对，未发现需要关注的内容'),
+      ).not.toBeInTheDocument();
+    });
+
+    /**
+     * THE CASE THE ISSUE WAS FILED FOR. TEST-REPLAY-014 hit zero keywords and
+     * was supposed to be found by the whole-report pass; that pass failed, so
+     * the record rendered as an ordinary unclassified one and nothing anywhere
+     * said a layer was missing. Here there is no keyword hit to carry the level,
+     * which is exactly when the warning matters most - the section must not
+     * collapse to its empty state and swallow the sentence.
+     */
+    it('warns even when the failure left no keyword hit to explain the level (issue #102)', async () => {
+      stubDetail({
+        ...detail,
+        monitorLevel: 'UNCLASSIFIED',
+        matchedKeywords: [],
+        hits: [],
+        attentionSource: 'NONE',
+        aiJudged: false,
+        aiStatus: 'FAILED',
+        aiSemantics: [],
+      });
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      expect(reasonSection(dialog).textContent).toContain('暂无关注依据');
+      expect(
+        within(dialog).getByText(
+          '本次整份报告核对未能完成，当前关注等级仅依据关键词命中，可能不完整。',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('does not warn about a failure while a retry is still pending', async () => {
+      // Same truth, different state: the level is keyword-only either way, but
+      // only the FAILED one is final. Saying "did not complete" while another
+      // attempt is queued would send a doctor chasing a stale conclusion.
+      stubDetail({
+        ...detail,
+        aiJudged: false,
+        aiStatus: 'NOT_JUDGED',
+        aiSemantics: [],
+      });
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      expect(
+        within(dialog).queryByText(
+          '本次整份报告核对未能完成，当前关注等级仅依据关键词命中，可能不完整。',
+        ),
+      ).not.toBeInTheDocument();
+    });
+
     it('sorts the merged list by level, hits before findings at the same level', async () => {
       const greenHit = {
         ...detail.hits[0],
@@ -650,37 +731,53 @@ describe('DetailDrawer', () => {
     });
 
     it('uses only doctor-facing wording, never the implementation vocabulary', async () => {
-      stubDetail(withAi());
-      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+      // Both AI-bearing states, not just the happy one: the issue #102 failure
+      // line is the newest wording in the drawer and the likeliest place for an
+      // implementation word to slip in ("判读" and "语义" are both banned, and
+      // both are what the feature is called internally).
+      const payloads = [
+        withAi(),
+        withAi({
+          attentionSource: 'RULE',
+          aiJudged: false,
+          aiStatus: 'FAILED',
+          aiSemantics: [],
+        }),
+      ];
+      for (const payload of payloads) {
+        stubDetail(payload);
+        const view = render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
 
-      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
-      const rendered = dialog.textContent ?? '';
-      for (const leak of [
-        '关键词监控',
-        'AI 语义监控',
-        '语义',
-        '判读',
-        'Prompt',
-        '提示词',
-        'Semantic',
-        'LLM',
-        'Classifier',
-        '分类器',
-        'JSON',
-        '模型',
-        '大模型',
-        'Schema',
-        '置信度',
-        '哈希',
-      ]) {
-        expect(rendered).not.toContain(leak);
+        const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+        const rendered = dialog.textContent ?? '';
+        for (const leak of [
+          '关键词监控',
+          'AI 语义监控',
+          '语义',
+          '判读',
+          'Prompt',
+          '提示词',
+          'Semantic',
+          'LLM',
+          'Classifier',
+          '分类器',
+          'JSON',
+          '模型',
+          '大模型',
+          'Schema',
+          '置信度',
+          '哈希',
+        ]) {
+          expect(rendered).not.toContain(leak);
+        }
+        // Positive controls: the agreed wording really is on screen, so the scan
+        // above cannot pass by rendering nothing.
+        expect(rendered).toContain('关注依据');
+        expect(rendered).toContain('关注等级不是诊断结论');
+        // Issue #87's lines survive inside the merged list.
+        expect(rendered).toContain('报告内容与诊断');
+        view.unmount();
       }
-      // Positive controls: the agreed wording really is on screen, so the scan
-      // above cannot pass by rendering nothing.
-      expect(rendered).toContain('关注依据');
-      expect(rendered).toContain('关注等级不是诊断结论');
-      // Issue #87's lines survive inside the merged list.
-      expect(rendered).toContain('报告内容与诊断');
     });
   });
 });

@@ -63,6 +63,7 @@ function makeDetail(
     // alert-link service receives.
     attentionSource: 'BOTH',
     aiJudged: true,
+    aiStatus: 'JUDGED',
     aiSemantics: [
       {
         semanticId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
@@ -179,6 +180,7 @@ describe('AlertLinksService', () => {
       // the assertion is on the absence, not on a remembered deletion.
       expect(detail).not.toHaveProperty('attentionSource');
       expect(detail).not.toHaveProperty('aiJudged');
+      expect(detail).not.toHaveProperty('aiStatus');
       expect(detail).not.toHaveProperty('aiSemantics');
       // Everything the H5 page does show is still there.
       expect(detail.reportContent).toBe('胃窦见一枚 0.6cm 息肉，息肉待复核。');

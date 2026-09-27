@@ -4,6 +4,7 @@ import {
   ATTENTION_LEVELS_DTO,
   MonitorAiEvidenceDto,
   MonitorAiSemanticDto,
+  MonitorAiStatusDto,
   MonitorAttentionSourceDto,
 } from '@epgs/shared-types';
 
@@ -28,6 +29,15 @@ import {
  * Nothing here reads or returns an audit field: no hash, model, version,
  * latency or error crosses into the DTOs (docs/api/monitor-api.md). The hash is
  * used only as an internal check.
+ *
+ * Issue #102 adds ONE derived signal - `aiStatus` - and it is worth saying
+ * precisely what it does and does not carry. It reads the OUTCOME of the
+ * attempts (OK vs ERROR) and the record's queue state; it never reads the error
+ * CODE, the model, the latency or anything else the audit row holds. So the
+ * doctor learns "the AI layer did not produce a verdict and no more attempts are
+ * coming", which is a fact about the level they are looking at, and not a single
+ * character of the failure itself. Diagnosing it stays an operator job, on the
+ * audit table, where the code lives.
  */
 
 /** One `monitor_report_ai_evidence` row, as DETAIL_INCLUDE selects it. */
@@ -101,6 +111,39 @@ export function toAiJudged(
   record: ReportAiRecordRow,
 ): boolean {
   return selectCurrentAttempt(attempts, record) !== null;
+}
+
+/**
+ * Issue #102: whether the AI produced a verdict for this report version, and if
+ * not, whether one is still coming.
+ *
+ * WHY THE OLD BOOLEAN WAS NOT ENOUGH. An ERROR attempt used to resolve the
+ * record on the spot - so a failed judgement looked exactly like a judgement
+ * that found nothing, to the doctor and to the wire alike. The failure existed
+ * only in the audit table, which by design never reaches the doctor. A level
+ * that is keyword-only because the AI layer never ran is a different claim from
+ * a level that is keyword-only because the AI looked and agreed, and the drawer
+ * must not present them as the same thing.
+ *
+ * `FAILED` REQUIRES `aiResolvedAt`. Without it, a record whose retry is still
+ * pending (issue #102 leaves it in the queue) would be announced as failed while
+ * another attempt is on its way. "Not judged yet" is the truth there, and it is
+ * the truth the doctor can act on: the level shown is keyword-only either way,
+ * but only one of the two is final.
+ *
+ * `hasErrorAttempt` comes from a filtered relation count, not from `attempts` -
+ * that list is filtered to OK in SQL so its matches stay pairable with a level.
+ * A record can hold BOTH an older ERROR and a newer OK for the current version;
+ * `JUDGED` is checked first, so the successful verdict wins, which is the same
+ * precedence `selectCurrentAttempt` already applies to versions.
+ */
+export function toAiStatus(
+  attempts: readonly ReportAiAttemptRow[],
+  record: ReportAiRecordRow,
+  hasErrorAttempt: boolean,
+): MonitorAiStatusDto {
+  if (toAiJudged(attempts, record)) return 'JUDGED';
+  return hasErrorAttempt && record.aiResolvedAt !== null ? 'FAILED' : 'NOT_JUDGED';
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   ReportAiRecordRow,
   toAiJudged,
   toAiSemantics,
+  toAiStatus,
   toAttentionSource,
 } from './report-ai.mapper';
 
@@ -112,6 +113,66 @@ describe('toAiJudged', () => {
 
   it('is false when AI state is present but no attempt was selected', () => {
     expect(toAiJudged([], makeRecord({ aiAttentionLevel: 'YELLOW' }))).toBe(false);
+  });
+});
+
+describe('toAiStatus (issue #102)', () => {
+  it('is JUDGED whenever an OK attempt exists for the current version', () => {
+    expect(toAiStatus([makeAttempt()], makeRecord(), false)).toBe('JUDGED');
+    // A failed attempt earlier in the history does not undo a later verdict:
+    // both flags can be true at once on a record that was retried successfully.
+    expect(toAiStatus([makeAttempt()], makeRecord(), true)).toBe('JUDGED');
+    // Including the "looked and found nothing" verdict.
+    expect(toAiStatus([makeAttempt({ matches: [] })], makeRecord({ aiAttentionLevel: null }), false)).toBe(
+      'JUDGED',
+    );
+  });
+
+  it('is FAILED only when the failure is final', () => {
+    // A failed attempt, no verdict for this version, and the record has left the
+    // queue: nothing further is coming.
+    expect(toAiStatus([], makeRecord({ aiAttentionLevel: null }), true)).toBe('FAILED');
+  });
+
+  it('is NOT_JUDGED while a retry is still pending', () => {
+    // THE BOUNDARY THAT MATTERS. `aiResolvedAt` NULL means the record is still
+    // in the queue, so another attempt is on its way (issue #102 leaves
+    // transport failures there). Announcing FAILED here would tell the doctor a
+    // judgement is not coming while one still is.
+    expect(
+      toAiStatus([], makeRecord({ aiAttentionLevel: null, aiResolvedAt: null }), true),
+    ).toBe('NOT_JUDGED');
+  });
+
+  it('is NOT_JUDGED when the report text has been replaced', () => {
+    // The only attempt is against a version nobody is looking at any more, and
+    // there is no failure to report about the CURRENT text.
+    expect(
+      toAiStatus([makeAttempt({ reportVersion: 2 })], makeRecord({ aiAttentionLevel: null }), false),
+    ).toBe('NOT_JUDGED');
+  });
+
+  it('is NOT_JUDGED for a record the classifier never reached', () => {
+    expect(toAiStatus([], makeRecord({ aiAttentionLevel: null }), false)).toBe('NOT_JUDGED');
+    // Resolved with no OK and no ERROR attempt: the queue drained it without
+    // ever producing a result (resolveExhausted writes no audit row). There is
+    // no failure to point at, so this is "not judged", not "failed".
+    expect(toAiStatus([], makeRecord({ aiAttentionLevel: null }), false)).toBe('NOT_JUDGED');
+  });
+
+  it('cannot disagree with the boolean it is derived from', () => {
+    // `aiJudged` stays on the wire for compatibility, so the two must never
+    // drift: it is exactly the JUDGED case, and nothing else.
+    const cases: Array<[ReportAiAttemptRow[], ReportAiRecordRow, boolean]> = [
+      [[makeAttempt()], makeRecord(), false],
+      [[makeAttempt()], makeRecord(), true],
+      [[], makeRecord({ aiAttentionLevel: null }), true],
+      [[], makeRecord({ aiAttentionLevel: null, aiResolvedAt: null }), true],
+      [[makeAttempt({ reportVersion: 2 })], makeRecord({ aiAttentionLevel: null }), false],
+    ];
+    for (const [attempts, record, hasError] of cases) {
+      expect(toAiStatus(attempts, record, hasError) === 'JUDGED').toBe(toAiJudged(attempts, record));
+    }
   });
 });
 

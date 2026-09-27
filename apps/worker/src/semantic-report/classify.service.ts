@@ -311,9 +311,14 @@ export class ClassifyReportService implements OnModuleInit {
       summary.errored += 1;
       // Every one of these produced NO AI finding. Saying so explicitly matters:
       // "errored" must never read as "the monitor silently dropped something".
+      // Whether this failure will be tried again is the store's call, reported
+      // back so the line can say which of the two happened (issue #102) - an
+      // operator watching a gateway outage needs to tell "it is retrying" from
+      // "it has given up", and the two look identical without this word.
       this.logger.warn(
         `report classification attempt failed, no AI finding recorded: ` +
-          `record=${candidate.monitorRecordId} code=${result.error}`,
+          `record=${candidate.monitorRecordId} code=${result.error} ` +
+          `${outcome.retryScheduled ? 'retrying' : 'final'}`,
       );
     }
     return outcome;

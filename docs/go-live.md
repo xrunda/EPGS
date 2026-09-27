@@ -322,6 +322,20 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
       不确定堡垒机上是哪个版本时，**先在隔离库上用一条 AI-only 的记录试跑**，确认等级
       没掉下来再动生产。
 - [ ] **通知未变**：AI 命中不产生任何逐条推送，通知条数与内容与之前一致。
+- [ ] **失败可重试、也可看见（issue #102）**：两件事各验一次。
+      重试：拔掉 `SEMANTIC_MODEL_*` 的地址跑一轮，确认记录**没有**当场出队——同一份
+      报告连续出现多行 `outcome = ERROR` 的审计行（传输层失败按
+      `SEMANTIC_REPORT_MAX_ATTEMPTS` 重试到上限，见
+      [ai-semantic-monitor-design.md](./ai-semantic-monitor-design.md) §7.1）；同时确认
+      这一轮里医生端是 `NOT_JUDGED`（结论还在路上，不能提前说失败）。恢复地址后确认
+      重试的那一条能拿到结论。
+      可见：制造一次**确定性**失败（例如临时把某条语义的配置改到模型答不上来），确认
+      那份报告的详情页出现"本次整份报告核对未能完成，当前关注等级仅依据关键词命中，
+      可能不完整"，且该记录的 `aiStatus` 为 `FAILED`、等级确实只是关键词等级。
+      **`FAILED` 的正确处置是查 `monitor_report_ai.error` 并修提示词/配置/网关，
+      不是反复重试**；只有传输层故障（网关长时间不可用）恢复之后，才用
+      `pnpm --filter worker run classify:once --requeue --failed-only` 把失败且没有
+      结论的记录重新入队。
 - [ ] **保留策略与隐私复核**：确认 `monitor_report_ai*` 三张表不落报告原文/Prompt/
       模型原始响应（只有哈希与偏移），且 `reason` 对无 `patientDetail` 权限者置空
       （见 [data-dictionary.md](./data-dictionary.md)）。

@@ -441,6 +441,22 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
               {detail.aiJudged && detail.aiSemantics.length === 0 && (
                 <p className="drawer__placeholder">整份报告已核对，未发现需要关注的内容</p>
               )}
+              {/*
+                issue #102：整份报告这一层没做成，必须说出来。在此之前这条路径静默
+                终结——记录当场离开队列，医生端什么都不画，于是「这一层失败了」和
+                「这一层看过、没发现」在医生眼里一模一样。上面那句「已核对」反而是
+                更危险的一半：它是一句明确的结论，而失败时根本得不出结论。
+
+                等级这时往往只由关键词支撑。医生必须知道拿到的是一个不完整的结论，
+                才知道要不要自己再看一遍全文。措辞沿用上面那句的「核对」，不引入
+                任何实现词汇（渲染文本要过 DetailDrawer.test.tsx 的术语扫描，
+                「语义」「判读」「模型」都在禁列）。
+              */}
+              {detail.aiStatus === 'FAILED' && (
+                <p className="drawer__ai-warning">
+                  本次整份报告核对未能完成，当前关注等级仅依据关键词命中，可能不完整。
+                </p>
+              )}
               <p className="drawer__ai-note">关注等级不是诊断结论，也不代表病情严重程度。</p>
             </section>
           </div>

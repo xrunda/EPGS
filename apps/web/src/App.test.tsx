@@ -41,6 +41,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as Response;
 }
 
+/*
+  issue #116：消息推送 / 等级分歧 / 用户管理 从工具栏平铺位置收进「⋯」。下面凡是
+  要点这三个入口的用例，都得先展开菜单 —— 这一步本身就是「入口真的在菜单里」的断言。
+*/
+function openToolbarMenu(): void {
+  fireEvent.click(screen.getByRole('button', { name: '更多配置' }));
+}
+
 function defaultResponse(url: string): Promise<Response> {
   if (url.includes('/api/auth/me')) {
     return Promise.resolve(jsonResponse({ user: authUser }));
@@ -113,7 +121,8 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    fireEvent.click(screen.getByRole('button', { name: '消息推送' }));
+    openToolbarMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: '消息推送' }));
 
     expect(screen.getByRole('dialog', { name: '消息推送配置' })).toBeInTheDocument();
     expect(await screen.findByText('没有符合条件的渠道')).toBeInTheDocument();
@@ -139,7 +148,10 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    expect(screen.queryByRole('button', { name: '用户管理' })).not.toBeInTheDocument();
+    openToolbarMenu();
+    // 菜单确实开着（消息推送在里面），所以下面那条「用户管理不在」不是空断言
+    expect(screen.getByRole('menuitem', { name: '消息推送' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '用户管理' })).not.toBeInTheDocument();
   });
 
   it('shows and opens user management for a USER_ADMIN account', async () => {
@@ -156,7 +168,8 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    fireEvent.click(screen.getByRole('button', { name: '用户管理' }));
+    openToolbarMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: '用户管理' }));
 
     expect(screen.getByRole('dialog', { name: '用户管理' })).toBeInTheDocument();
     expect(await screen.findByText('没有符合条件的账号')).toBeInTheDocument();
@@ -169,7 +182,9 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    expect(screen.queryByRole('button', { name: '等级分歧' })).not.toBeInTheDocument();
+    openToolbarMenu();
+    expect(screen.getByRole('menuitem', { name: '消息推送' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '等级分歧' })).not.toBeInTheDocument();
   });
 
   it('shows and opens the level-conflict list for a RULE_ADMIN account', async () => {
@@ -186,7 +201,8 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    fireEvent.click(screen.getByRole('button', { name: '等级分歧' }));
+    openToolbarMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: '等级分歧' }));
 
     expect(screen.getByRole('dialog', { name: '关注等级分歧' })).toBeInTheDocument();
     expect(await screen.findByText('这段时间内没有发现关注等级分歧')).toBeInTheDocument();

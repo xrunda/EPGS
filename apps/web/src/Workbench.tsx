@@ -6,6 +6,7 @@ import type {
   SyncHealthState,
   SyncStatusDto,
 } from '@epgs/shared-types';
+import { ActionMenu, type ActionMenuItem } from './ActionMenu';
 import { getExamSummary, listExams, MonitorApiError, getSyncStatus } from './monitorApi';
 import { listRules } from './rulesApi';
 import { DetailDrawer } from './DetailDrawer';
@@ -334,6 +335,23 @@ export function Workbench({
     applyFilters(next);
   }
 
+  /*
+    低频入口（issue #116）：消息推送 / 等级分歧 / 用户管理 收进「⋯」，工具栏只留
+    关键词监控与 AI 语义监控两个显性按钮。三者各自的条件渲染原封不动地搬进来 ——
+    prop 没传（App.tsx 按角色决定传不传）就不进这个数组，菜单里也就不会有那一项，
+    不会出现点了没反应的入口。
+  */
+  const toolbarMenuItems: ActionMenuItem[] = [];
+  if (onOpenNotifications) {
+    toolbarMenuItems.push({ label: '消息推送', onSelect: onOpenNotifications });
+  }
+  if (onOpenLevelConflicts) {
+    toolbarMenuItems.push({ label: '等级分歧', onSelect: onOpenLevelConflicts });
+  }
+  if (onOpenUsers) {
+    toolbarMenuItems.push({ label: '用户管理', onSelect: onOpenUsers });
+  }
+
   const syncHealth = syncStatus?.health ?? null;
   const syncLine = syncFailed
     ? '同步状态获取失败'
@@ -375,25 +393,22 @@ export function Workbench({
               AI 语义监控
             </button>
           )}
-          {onOpenNotifications && (
-            <button className="button" type="button" onClick={onOpenNotifications}>
-              消息推送
-            </button>
-          )}
           {/*
-            等级分歧（issue #103）：按钮文案不带机制词，理由同上面两个入口——工作台是
-            医生的临床视图，渲染文本要过 Workbench.test.tsx 的术语扫描。它本身是
-            配置侧入口，非 RULE_ADMIN 根本拿不到这个 prop。
+            消息推送 / 等级分歧 / 用户管理 收进「⋯」（issue #116）。这三个是配置与
+            管理侧的低频入口，和上面两个价值点并排只会把主功能稀释掉。文案、目标
+            弹窗、角色判定一律不变，只是换了入口位置。
+            三项都没得显示时整个「⋯」不渲染 —— 一个展开后空无一物的按钮比没有按钮
+            更糟。
+            术语扫描不受影响：菜单项都不含机制词，而且菜单挂在 .workbench__toolbar
+            里面，扫描本来就把这一整块摘掉再扫（见 Workbench.test.tsx）。
           */}
-          {onOpenLevelConflicts && (
-            <button className="button" type="button" onClick={onOpenLevelConflicts}>
-              等级分歧
-            </button>
-          )}
-          {onOpenUsers && (
-            <button className="button" type="button" onClick={onOpenUsers}>
-              用户管理
-            </button>
+          {toolbarMenuItems.length > 0 && (
+            <ActionMenu
+              label="更多配置"
+              items={toolbarMenuItems}
+              /* 浅底外观复用现成的 .button，跟旁边两个按钮同一个形状 */
+              triggerClassName="button workbench__menu-trigger"
+            />
           )}
         </div>
       </header>

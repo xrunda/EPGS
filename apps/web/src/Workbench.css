@@ -70,6 +70,15 @@
   justify-content: flex-end;
   gap: 8px;
 }
+/*
+  「⋯」触发按钮（issue #116）：外观复用 .button（跟旁边两个按钮同一个形状、同一高度），
+  这里只补字形相关的一点 —— 「⋯」比汉字窄，不给最小宽度就比旁边的按钮瘦一圈、不好点；
+  字号提到 17px 让三个点看得清（顶栏那个 .app-header__menu-trigger 同理）。
+*/
+.workbench__menu-trigger {
+  min-width: 46px;
+  font-size: 17px;
+}
 .workbench__sync {
   display: inline-flex;
   align-items: center;

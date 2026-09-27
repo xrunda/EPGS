@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { MonitorAttentionSourceDto } from '@epgs/shared-types';
@@ -102,5 +102,34 @@ describe('发现来源图标（issue #112）', () => {
       const file = resolve(process.cwd(), 'public', icon.src.slice(1));
       expect(existsSync(file), `${file} 不存在`).toBe(true);
     }
+  });
+
+  /**
+   * 同一个悬停气泡画在两处（列表 22px 图标 / 抽屉 24px 图标），字号必须一样大。
+   *
+   * 这条是真出过问题才补的：第一版两边都写 `font-size: inherit`，想让气泡跟着各自容器
+   * 走，列表那边继承 `.workbench__table` 的 13px、抽屉那边一路继承到浏览器默认的
+   * 16px —— 同一个气泡在两处不一样大（所有者 2026-09-27 指出抽屉太大）。CSS 没有单测，
+   * 这种漂移只能靠读文件比字符串来钉。两处注释都写了「改一个必须改另一个」，这条是它的
+   * 执行版本：只改一处，这里就红。
+   */
+  it('列表与抽屉的悬停气泡字号相同，且都是列表正文的 13px', () => {
+    const fontSizeOf = (cssFile: string, selector: string): string => {
+      const css = readFileSync(resolve(process.cwd(), 'src', cssFile), 'utf8');
+      const at = css.indexOf(selector);
+      expect(at, `${cssFile} 里找不到 ${selector}`).toBeGreaterThan(-1);
+      const body = css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+      const declared = body.match(/font-size:\s*([^;]+);/);
+      expect(declared, `${selector} 没有声明 font-size`).not.toBeNull();
+      return (declared as RegExpMatchArray)[1].trim();
+    };
+
+    const listSize = fontSizeOf('Workbench.css', '.workbench__source-tip::after');
+    const drawerSize = fontSizeOf('DetailDrawer.css', '.drawer__source-tip::after');
+
+    expect(drawerSize).toBe(listSize);
+    // 正面控制：13px 是所有者指定的口径（「和列表里患者姓名同大小」），不是随手
+    // 跟着某一处写死的数字 —— 两边一起漂到别的值同样不合格。
+    expect(listSize).toBe('13px');
   });
 });

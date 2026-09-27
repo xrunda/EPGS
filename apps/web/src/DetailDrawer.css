@@ -219,9 +219,14 @@
   border-radius: 50%;
 }
 /*
-  悬停提示：与列表同一套画法、同一个 26px（见 Workbench.css 的说明 —— 原生 title
+  悬停提示：与列表同一套画法、同一个 13px（见 Workbench.css 的说明 —— 原生 title
   的字号改不动，所以自己画）。这里同样放在图标右侧、垂直居中：`.drawer__body` 是
   `overflow: auto` 的滚动容器，放在正上方的气泡在卡片靠顶时会被切掉。
+
+  字号**写死 13px，不继承**：第一版是 `inherit`，想着「跟着各自容器的字号走」，
+  结果抽屉这边继承到的是 16px（`.drawer` 的正文默认值），同一个气泡在列表里 13px、
+  在抽屉里 16px，两边看着不像一套东西（所有者 2026-09-27 指出）。两处现在都是
+  字面量，改一个就得改另一个 —— 这是这次故意要的耦合。
 */
 .drawer__source-tip::after {
   content: attr(data-tip);
@@ -233,7 +238,7 @@
   border-radius: var(--radius-sm);
   background: var(--ink-900);
   color: #fff;
-  font-size: inherit;
+  font-size: 13px;
   line-height: 1.2;
   white-space: nowrap;
   opacity: 0;

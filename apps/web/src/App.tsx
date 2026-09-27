@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AuthGate } from './AuthGate';
 import type { AuthUser } from './authApi';
+import { LevelConflictsModal } from './LevelConflictsModal';
 import { NotificationModal } from './NotificationModal';
 import { RulesModal } from './RulesModal';
 import { SemanticMonitorModal } from './SemanticMonitorModal';
@@ -28,6 +29,7 @@ function AuthenticatedApp({
   const [rulesOpen, setRulesOpen] = useState(false);
   const [aiSemanticsOpen, setAiSemanticsOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
+  const [levelConflictsOpen, setLevelConflictsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   // The push-assistant「推送日志」link opens the notification modal straight on
   // its 日志 tab; a normal open lands on 渠道.
@@ -66,6 +68,9 @@ function AuthenticatedApp({
         onOpenAiSemantics={() => setAiSemanticsOpen(true)}
         onOpenNotifications={() => openNotifications()}
         onOpenUsers={user.roles.includes('USER_ADMIN') ? () => setUsersOpen(true) : undefined}
+        onOpenLevelConflicts={
+          user.roles.includes('RULE_ADMIN') ? () => setLevelConflictsOpen(true) : undefined
+        }
       />
       <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} actorId={user.username} />
       <SemanticMonitorModal
@@ -75,6 +80,11 @@ function AuthenticatedApp({
         actorId={user.username}
       />
       <UsersModal open={usersOpen} onClose={() => setUsersOpen(false)} />
+      <LevelConflictsModal
+        open={levelConflictsOpen}
+        onClose={() => setLevelConflictsOpen(false)}
+        canMarkRead={user.roles.includes('RULE_ADMIN')}
+      />
       <NotificationModal
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}

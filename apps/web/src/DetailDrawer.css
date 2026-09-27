@@ -333,3 +333,25 @@
   font-weight: 500;
   line-height: 1.7;
 }
+/*
+  同一处两种关注等级的提醒（issue #103）。
+
+  配色与上面那条失败提示完全相同，理由也一样：这句话讲的就是「两个颜色对不上」，
+  它自己再挑红/黄/绿中的任何一个，都等于在这种不一致里站了边。中性色 + 左侧粗边
+  把它从依据列表里分出来，去掉颜色这页仍然读得懂。
+
+  和上面那条不同的一点：这条可以连续出现多条（同一份报告里可以有多处分歧）。间距
+  一律留在下方 —— 它渲染在依据列表**之上**，所以下方既是「下一条提醒」也是「列表
+  的开头」，一处间距同时管住两种相邻关系。
+*/
+.drawer__level-conflict {
+  margin: 0 0 10px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--border-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-sunken);
+  color: var(--ink-800);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.7;
+}

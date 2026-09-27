@@ -298,6 +298,15 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
         { "field": "IMPRESSION", "text": "胃腺癌" }
       ]
     }
+  ],
+  "levelConflicts": [
+    {
+      "keyword": "息肉样",
+      "keywordLevel": "YELLOW",
+      "semanticName": "明确或高度疑似恶性病变",
+      "semanticLevel": "RED",
+      "field": "FINDINGS"
+    }
   ]
 }
 ```
@@ -368,6 +377,10 @@ DIAGNOSIS)`，实现沿用 issue #5/#26 收敛后的 `MatchField` 枚举，二�
 | `aiSemantics[].evidence` | array                            | 证据引用；无 `patientDetail` 权限时整体置 `[]`                              |
 | `evidence[].field`      | `EXAM_ITEM`/`FINDINGS`/`IMPRESSION` | 片段出自哪一列：检查项目 / 报告内容 / 诊断                                |
 | `evidence[].text`       | string                            | **服务端按偏移从报告原文重算出的片段**，与库中正文逐字节相同                |
+| `levelConflicts`        | array                             | 同一处两边等级不同的位置（issue #103，见下）。无分歧时为 `[]`               |
+| `levelConflicts[].keyword` / `.keywordLevel` | string / `RED`/`YELLOW`/`GREEN`/`UNCLASSIFIED` | 关键词那一侧（与 `hits[].keyword`/`.level` 同源）        |
+| `levelConflicts[].semanticName` / `.semanticLevel` | string / `RED`/`YELLOW`/`GREEN` | 报告级判读那一侧（与 `aiSemantics[].name`/`.attentionLevel` 同源） |
+| `levelConflicts[].field` | `FINDINGS`/`IMPRESSION`          | 两边落在**同一列**才配对：报告内容 / 诊断                                  |
 
 **`attentionSource` 真值表**（只由记录上已有的两个输入决定，不看谁高谁低）：
 
@@ -411,6 +424,28 @@ issue #94 之前，调用方用这个字段渲染一个中性灰的「来源徽�
 - **失败分级与重试次数**见 [ai-semantic-monitor-design.md](../ai-semantic-monitor-design.md)
   §7.1：传输层失败会留在队列里重试到上限，因此同一份报告可能有多行 `ERROR` 审计，
   期间 `aiStatus` 是 `NOT_JUDGED`，跑满之后才变 `FAILED`。
+
+### 等级分歧（issue #103）
+
+`levelConflicts` 说的是：关键词路径与报告级判读路径**落在同一列、区间相交，但给出
+了不同的关注等级**。在它之前，医生端把这样一对显示成合并列表里一条红、一条黄并排，
+摘要句用「；」把两侧并列——读起来像两条互相印证的独立理由，而真相是两条规则指着
+**同一处**、要的关注等级不一样，需要有人裁定。
+
+- **它报的是分歧，不是胜负。** 不说哪边对，也不改任何等级。
+- **等级相同不报**；两侧不在同一列不报（关键词侧只存实际命中的那一列，两边只有
+  `FINDINGS`/`IMPRESSION` 有文本来源，AI 的 `EXAM_ITEM` 恒不参与）。
+- **为空是常态**，空数组时医生端**什么都不渲染**——一条天天挂着的提醒等于没有提醒。
+- 判定只有一份实现（`apps/api/src/monitor/level-conflict.ts`），医生端这个字段与
+  管理员待办列表（[monitor-level-conflict-api.md](../monitor-level-conflict-api.md)）
+  共用它，不可能各说各的。
+- **不是新的正文出口**：`keyword`/`semanticName`/两个等级本来就同在这条响应里，
+  `field` 是列名而不是文本；偏移与证据原文一概不上 wire。因此
+  [脱敏（`patientDetail` 缺失）](../auth.md)时这个字段**原样保留**——它由调用方本来
+  就看得见的关键词与发现名推导而来。每条分歧点名的发现必然也出现在 `aiSemantics`
+  里（同一份尝试、同一个闸门推导），不会出现"提醒指着一个界面没画出来的东西"。
+- 医学上它不是诊断分歧，是**配置**分歧：规则的等级划高了，或那条关注语义的等级
+  划低了。
 
 **证据为什么是重算的。** `monitor_report_ai_evidence` 只存 `evidence_hash` 与
 `evidence_start`/`evidence_end`（UTF-16 码元，左闭右开，指向 `monitor_record` 的
@@ -498,7 +533,15 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
   基类型行。issue #102 另有一组：种一条 `ERROR` 尝试断言 `aiStatus: 'FAILED'` 且
   等级退回纯关键词路径，并单独断言**失败原因本身**（错误码字符串、`error` 字段）不
   出现在这份响应里。脱敏与 H5 边界的成对断言分别在 `security.e2e-spec.ts` 与
-  `alert-links.e2e-spec.ts`。
+  `alert-links.e2e-spec.ts`。issue #103 又加了一组：`levelConflicts` 在分歧存在时
+  逐字给出两边的名字与等级（键集合固定为
+  `field/keyword/keywordLevel/semanticLevel/semanticName`），**等级一致时为 `[]`**，
+  且它**不出现在列表信封上**（列表行没有这个字段）。
+- 等级分歧的判定单测（纯函数，issue #103）：`apps/api/src/monitor/level-conflict.spec.ts`
+  —— 区间相交/不相交/首尾相接不算相交、偏移缺失时退回"证据原文包含关键词"、
+  两套枚举映射不上的组合恒不配对、等级相同不报、一命中对多发现与一发现对多命中
+  各自成条、输出去重与排序。同一条判定的聚合与已读状态另有
+  `apps/api/src/level-conflicts/` 下的三个 spec。
 
 本地验证 real Postgres 的临时实例方式（与 `docs/rules-api.md` 相同）：
 

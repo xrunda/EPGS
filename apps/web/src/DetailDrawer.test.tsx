@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type {
   MonitorAiSemanticDto,
   MonitorExamWorkbenchDetailDto,
+  MonitorLevelConflictDto,
 } from '@epgs/shared-types';
 import { DetailDrawer } from './DetailDrawer';
 
@@ -44,6 +45,22 @@ const detail: MonitorExamWorkbenchDetailDto = {
   aiJudged: false,
   aiStatus: 'NOT_JUDGED',
   aiSemantics: [],
+  // Issue #103: no disagreement is the normal case, and it renders nothing.
+  levelConflicts: [],
+};
+
+/**
+ * Issue #103: the two paths landing on the SAME place and asking for different
+ * amounts of attention. Both sides are already elsewhere on this payload
+ * (`hits[].keyword` + `.level`, `aiSemantics[].name` + `.attentionLevel`) - the
+ * server only adds the fact that they are about one place.
+ */
+const levelConflict: MonitorLevelConflictDto = {
+  keyword: '腺癌',
+  keywordLevel: 'YELLOW',
+  semanticName: '明确或高度疑似恶性病变',
+  semanticLevel: 'RED',
+  field: 'FINDINGS',
 };
 
 /** Issue #88: a report-level finding, with the model's sentence and verbatim quotes. */
@@ -731,10 +748,13 @@ describe('DetailDrawer', () => {
     });
 
     it('uses only doctor-facing wording, never the implementation vocabulary', async () => {
-      // Both AI-bearing states, not just the happy one: the issue #102 failure
-      // line is the newest wording in the drawer and the likeliest place for an
-      // implementation word to slip in ("判读" and "语义" are both banned, and
-      // both are what the feature is called internally).
+      // Every AI-bearing state, not just the happy one: the issue #102 failure
+      // line and the issue #103 disagreement line are the newest wording in the
+      // drawer and the likeliest places for an implementation word to slip in
+      // ("判读" and "语义" are both banned, and both are what the features are
+      // called internally - the disagreement notice in particular sits right on
+      // top of the vocabulary that would give away which two engines produced
+      // it).
       const payloads = [
         withAi(),
         withAi({
@@ -743,6 +763,7 @@ describe('DetailDrawer', () => {
           aiStatus: 'FAILED',
           aiSemantics: [],
         }),
+        withAi({ levelConflicts: [levelConflict] }),
       ];
       for (const payload of payloads) {
         stubDetail(payload);
@@ -776,8 +797,146 @@ describe('DetailDrawer', () => {
         expect(rendered).toContain('关注等级不是诊断结论');
         // Issue #87's lines survive inside the merged list.
         expect(rendered).toContain('报告内容与诊断');
+        if (payload.levelConflicts.length > 0) {
+          expect(rendered).toContain('同一处有两种关注等级');
+        }
         view.unmount();
       }
+    });
+  });
+
+  /**
+   * Issue #103. The drawer used to show a disagreement as two ordinary rows in
+   * one merged list - a red one and a yellow one, side by side - and the summary
+   * sentence joined them with a 「；」, which reads as corroboration when the two
+   * are actually about ONE place and ask for different things. Nothing on screen
+   * said so. These tests are about that missing sentence.
+   */
+  describe('等级分歧提醒', () => {
+    /** The disagreement as the server reports it, on a payload that shows it. */
+    function withConflict(
+      overrides: Partial<MonitorExamWorkbenchDetailDto> = {},
+    ): MonitorExamWorkbenchDetailDto {
+      return withAi({
+        // The keyword side is the YELLOW one here (the fixture's own hit is RED),
+        // so the sentence cannot pass by reading one level twice.
+        hits: [{ ...detail.hits[0], level: 'YELLOW' }],
+        levelConflicts: [levelConflict],
+        ...overrides,
+      });
+    }
+
+    it('says in one sentence that the two paths disagree about the same place', async () => {
+      stubDetail(withConflict());
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      const notices = reasonSection(dialog).querySelectorAll('p.drawer__level-conflict');
+      expect(notices).toHaveLength(1);
+      // Both sides are named, with the level each one asked for - a notice that
+      // only said "there is a disagreement" would send the doctor hunting for
+      // which two rows it meant.
+      expect(notices[0].textContent).toBe(
+        '报告内容中同一处有两种关注等级：「腺癌」为黄色关注，' +
+          '报告提示「明确或高度疑似恶性病变」为红色关注，请一并核对。',
+      );
+    });
+
+    it('is read before the merged list it is talking about', async () => {
+      // Issue #103 asks for it "在既有合并列表之上", and the order is the point:
+      // the sentence explains that the red row and the yellow row below are one
+      // place disagreeing, not two independent reasons. Read after them, it
+      // arrives once the wrong reading has already landed.
+      stubDetail(withConflict());
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      const section = reasonSection(dialog);
+      const notice = section.querySelector('p.drawer__level-conflict');
+      const list = section.querySelector('ul.drawer__hits');
+      expect(notice).not.toBeNull();
+      expect(list).not.toBeNull();
+      expect(
+        (notice as Node).compareDocumentPosition(list as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('names the column the two sides met in, not a fixed one', async () => {
+      // 报告内容 and 诊断 are different places even for the same words, so the
+      // sentence has to follow the field the server reports.
+      stubDetail(withConflict({ levelConflicts: [{ ...levelConflict, field: 'IMPRESSION' }] }));
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      const notice = reasonSection(dialog).querySelector('p.drawer__level-conflict');
+      expect(notice?.textContent).toMatch(/^诊断中同一处有两种关注等级：/);
+    });
+
+    it('renders one sentence per disagreement', async () => {
+      // One report can disagree in more than one place; each is its own sentence
+      // rather than being collapsed into a count.
+      stubDetail(
+        withConflict({
+          levelConflicts: [
+            levelConflict,
+            { ...levelConflict, keyword: '糜烂', field: 'IMPRESSION' },
+          ],
+        }),
+      );
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      const notices = reasonSection(dialog).querySelectorAll('p.drawer__level-conflict');
+      expect(notices).toHaveLength(2);
+      expect(notices[0].textContent).toContain('「腺癌」');
+      expect(notices[1].textContent).toContain('「糜烂」');
+    });
+
+    it('says nothing at all when the two paths agree', async () => {
+      // The normal case. A notice that appears on every record stops being read,
+      // and a level that both paths agree on is not a problem anyone has to fix.
+      stubDetail(withAi());
+      const view = render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      expect(dialog.querySelector('p.drawer__level-conflict')).toBeNull();
+      // Positive control: the section really did render its content, so the
+      // assertion above cannot pass by rendering nothing.
+      expect(within(reasonSection(dialog)).getByText('明确或高度疑似恶性病变')).toBeInTheDocument();
+      view.unmount();
+    });
+
+    it('is not swallowed by the empty-reasons state', async () => {
+      // Issue #102's lesson, pinned structurally: the notice is rendered OUTSIDE
+      // the `reasonItems.length === 0` ternary.
+      //
+      // The server cannot actually send this shape - the notice and the findings
+      // are derived from one attempt under one gate, so a notice always has its
+      // finding on screen next to it. That is the point: this test is not about
+      // a reachable payload, it is about WHERE the notice is rendered. Sitting
+      // inside the list branch would make its visibility depend on a condition
+      // that has nothing to do with it, and a later change to that condition
+      // would silently eat the sentence.
+      stubDetail(
+        withAi({
+          monitorLevel: 'UNCLASSIFIED',
+          matchedKeywords: [],
+          hits: [],
+          attentionSource: 'NONE',
+          aiJudged: false,
+          aiStatus: 'NOT_JUDGED',
+          aiSemantics: [],
+          levelConflicts: [levelConflict],
+        }),
+      );
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const dialog = await screen.findByRole('dialog', { name: '检查详情' });
+      expect(reasonSection(dialog).textContent).toContain('暂无关注依据');
+      expect(reasonSection(dialog).querySelector('p.drawer__level-conflict')?.textContent).toBe(
+        '报告内容中同一处有两种关注等级：「腺癌」为黄色关注，' +
+          '报告提示「明确或高度疑似恶性病变」为红色关注，请一并核对。',
+      );
     });
   });
 });

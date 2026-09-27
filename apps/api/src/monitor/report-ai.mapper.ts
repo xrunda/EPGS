@@ -6,7 +6,14 @@ import {
   MonitorAiSemanticDto,
   MonitorAiStatusDto,
   MonitorAttentionSourceDto,
+  MonitorLevelConflictDto,
 } from '@epgs/shared-types';
+import {
+  ConflictFindingInput,
+  ConflictHitInput,
+  LevelConflict,
+  findLevelConflicts,
+} from './level-conflict';
 
 /**
  * Issue #88 (PR-B): turns the report-level AI audit rows into the doctor-facing
@@ -38,6 +45,12 @@ import {
  * coming", which is a fact about the level they are looking at, and not a single
  * character of the failure itself. Diagnosing it stays an operator job, on the
  * audit table, where the code lives.
+ *
+ * Issue #103 adds `toLevelConflicts`, the one function here that reads BOTH
+ * sides: it needs the keyword hits to notice that they and a finding are talking
+ * about the same place at different levels. It is a sibling of `toAiSemantics`,
+ * not a layer on top - same gate, same attempt - and it reports only what that
+ * list already shows.
  */
 
 /** One `monitor_report_ai_evidence` row, as DETAIL_INCLUDE selects it. */
@@ -59,6 +72,14 @@ export interface ReportAiMatchRow {
   reason: string;
   ordinal: number;
   evidence: ReportAiEvidenceRow[];
+  /**
+   * Issue #103: the semantic's stable group anchor, via the `semantic` relation.
+   * The conflict key is built from this rather than from `semanticId` (a version
+   * row) so that re-wording a semantic does not resurrect a todo an admin has
+   * already read. Never reaches the wire - `MonitorLevelConflictDto` names the
+   * finding by `semanticName`.
+   */
+  semantic: { semanticGroupId: string };
 }
 
 /** One `monitor_report_ai` attempt (outcome OK only - see selectCurrentAttempt). */
@@ -156,16 +177,8 @@ export function toAiSemantics(
   attempts: readonly ReportAiAttemptRow[],
   record: ReportAiRecordRow,
 ): MonitorAiSemanticDto[] {
-  const attempt = selectCurrentAttempt(attempts, record);
+  const attempt = showableAttempt(attempts, record);
   if (attempt === null) return [];
-
-  // The load-bearing guard. `aiAttentionLevel` is the SAME input the level
-  // recomputation reads (record-level.ts), so gating on it makes it impossible
-  // for the drawer to show a finding while the level says the AI found nothing.
-  // This is what closes the window between a re-sync replacing the report text
-  // (which nulls the AI state and leaves the old append-only rows behind) and
-  // the re-classification landing: the stale rows stay invisible throughout.
-  if (record.aiAttentionLevel === null) return [];
 
   return [...attempt.matches].sort(byAttentionThenOrdinal).map((match) => ({
     semanticId: match.semanticId,
@@ -179,6 +192,116 @@ export function toAiSemantics(
       .map((row) => reconstructEvidence(row, record))
       .filter((excerpt): excerpt is MonitorAiEvidenceDto => excerpt !== null),
   }));
+}
+
+/**
+ * Issue #103: the places where the keyword path and the report-level path found
+ * something in the SAME place but asked for DIFFERENT levels.
+ *
+ * Runs under exactly the same gate as `toAiSemantics` - one shared
+ * `showableAttempt` - and that is the point, not a coincidence. The notice stands
+ * next to a list of findings and names one of them; if the two were gated
+ * separately, a change to one gate could leave the drawer announcing a conflict
+ * with a finding it is not showing. Sharing the gate makes that unrepresentable
+ * rather than merely tested.
+ *
+ * `hits` are the record's EFFECTIVE keyword hits (semanticFiltered === false).
+ * A hit the AI ruled out is not a disagreement about attention - it is #87's
+ * story, already told by the "未计入关注" annotation.
+ */
+export function toLevelConflicts(
+  attempts: readonly ReportAiAttemptRow[],
+  record: ReportAiRecordRow,
+  hits: readonly ConflictHitInput[],
+): MonitorLevelConflictDto[] {
+  const seen = new Set<string>();
+  const conflicts: MonitorLevelConflictDto[] = [];
+
+  for (const conflict of findRecordLevelConflicts(attempts, record, hits)) {
+    // The doctor-facing shape has no group ids, so two rules configured with the
+    // same keyword and level against the same finding collapse to one sentence
+    // here. The admin list - which does show them apart, because they are two
+    // separate pieces of configuration to fix - keeps them.
+    const identity = [
+      conflict.keyword,
+      conflict.keywordLevel,
+      conflict.semanticName,
+      conflict.semanticLevel,
+      conflict.field,
+    ].join('\u0000');
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+
+    conflicts.push({
+      keyword: conflict.keyword,
+      keywordLevel: conflict.keywordLevel,
+      semanticName: conflict.semanticName,
+      semanticLevel: conflict.semanticLevel,
+      field: conflict.field,
+    });
+  }
+
+  return conflicts;
+}
+
+/**
+ * The same conflicts, with the group ids the wire shape drops.
+ *
+ * This is what the ADMIN side consumes (issue #103): its todo identity is built
+ * from `ruleGroupId`/`semanticGroupId`, so two rules configured with the same
+ * keyword and level must stay apart there - they are two separate pieces of
+ * configuration to fix. `toLevelConflicts` collapses them for the doctor, who
+ * only ever reads one sentence about one report.
+ *
+ * Both are the same computation up to the last step, which is why this is a
+ * separate function rather than a second implementation of the rule.
+ */
+export function findRecordLevelConflicts(
+  attempts: readonly ReportAiAttemptRow[],
+  record: ReportAiRecordRow,
+  hits: readonly ConflictHitInput[],
+): LevelConflict[] {
+  const attempt = showableAttempt(attempts, record);
+  if (attempt === null || hits.length === 0) return [];
+
+  const findings: ConflictFindingInput[] = attempt.matches.map((match) => ({
+    semanticGroupId: match.semantic.semanticGroupId,
+    semanticName: match.semanticName,
+    attentionLevel: match.attentionLevel,
+    // Only the fallback path reads the text, and it reads it recomputed - the
+    // audit table stores the hash and the offsets, never the excerpt.
+    evidence: match.evidence.map((row) => ({
+      field: row.field,
+      start: row.evidenceStart,
+      end: row.evidenceEnd,
+      text: reconstructEvidence(row, record)?.text ?? null,
+    })),
+  }));
+
+  return findLevelConflicts({ hits, findings });
+}
+
+/**
+ * The attempt whose findings may be shown, or null when none may.
+ *
+ * The load-bearing guard is the second check. `aiAttentionLevel` is the SAME
+ * input the level recomputation reads (record-level.ts), so gating on it makes it
+ * impossible for the drawer to show a finding while the level says the AI found
+ * nothing. This is what closes the window between a re-sync replacing the report
+ * text (which nulls the AI state and leaves the old append-only rows behind) and
+ * the re-classification landing: the stale rows stay invisible throughout.
+ *
+ * `toAiJudged` deliberately does NOT call this - it answers a different question
+ * ("did the AI look at this text at all"), which stays true in exactly the window
+ * where this gate closes.
+ */
+function showableAttempt(
+  attempts: readonly ReportAiAttemptRow[],
+  record: ReportAiRecordRow,
+): ReportAiAttemptRow | null {
+  const attempt = selectCurrentAttempt(attempts, record);
+  if (attempt === null) return null;
+  return record.aiAttentionLevel === null ? null : attempt;
 }
 
 /**

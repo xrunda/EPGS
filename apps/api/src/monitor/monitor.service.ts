@@ -95,8 +95,18 @@ export class MonitorService {
       UNCLASSIFIED: 'unclassified',
     };
 
-  /** Detail hit evidence + rule provenance (issue #8) - shared by both lookup paths. */
-  private static readonly DETAIL_INCLUDE = {
+  /**
+   * Detail hit evidence + rule provenance (issue #8) - shared by both lookup
+   * paths.
+   *
+   * PUBLIC since issue #103, and reused verbatim by LevelConflictsService. That
+   * is deliberate: the admin's conflict list must be computed from EXACTLY the
+   * rows the doctor's drawer reads, or an admin would be shown conflicts the
+   * drawer does not render (or miss ones it does). A second, slightly different
+   * select here would be a second definition of "what the drawer knows", and the
+   * two would drift the first time either side gained a field.
+   */
+  static readonly DETAIL_INCLUDE = {
     matches: {
       orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
       // Issue #8: each hit carries the exact rule version that produced
@@ -104,7 +114,12 @@ export class MonitorService {
       // versioned, never-deleted rule). list() never needs this - only
       // the detail endpoint surfaces hit evidence.
       include: {
-        rule: { select: { version: true } },
+        // ruleGroupId (issue #103) is the hit's stable anchor across rule
+        // versions: the conflict key is built from it, not from ruleId, so
+        // re-wording a rule does not resurrect a todo an admin has read. It
+        // never reaches the wire - MonitorExamHitDto carries ruleId/ruleVersion,
+        // which is what makes a hit auditable back to the exact version.
+        rule: { select: { version: true, ruleGroupId: true } },
         // Issue #87: the NEWEST successful judgement, for the explainability
         // line in the drawer. Filtered to outcome OK because a failed attempt
         // wrote no verdict (its row exists to record the failure, and pairing
@@ -169,6 +184,9 @@ export class MonitorService {
             confidence: true,
             reason: true,
             ordinal: true,
+            // Issue #103: the finding's stable anchor, for the same reason as
+            // the hit's ruleGroupId above - and, like it, off the wire.
+            semantic: { select: { semanticGroupId: true } },
             evidence: {
               orderBy: { ordinal: 'asc' },
               select: {

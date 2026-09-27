@@ -83,6 +83,7 @@
 | [api/monitor-api.md](./api/monitor-api.md)               | 只读工作台 API：列表、筛选、汇总、详情与命中证据            |
 | [api/pacs-ris-data-api.md](./api/pacs-ris-data-api.md)   | 医院只读数据网关向 EPGS 提供的 REST 契约（附 OpenAPI YAML） |
 | [rules-api.md](./rules-api.md)                           | `monitor_rule` 关键词规则 CRUD 与 CSV 批量导入              |
+| [monitor-level-conflict-api.md](./monitor-level-conflict-api.md) | 关注等级分歧待办（issue #103）：判定规则、已读/未读、为什么不是闭环 |
 | [notification-api.md](./notification-api.md)             | 企微渠道与推送模板的管理 API、发送测试                      |
 | [notification-rules-api.md](./notification-rules-api.md) | 定时推送规则 CRUD、手动补推、推送日志查询                   |
 | [user-admin-api.md](./user-admin-api.md)                 | 账号 CRUD、启停、重置密码、授权查看与整表替换               |

@@ -58,6 +58,14 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
   const AI_EVIDENCE_IMPRESSION = '胃腺癌'; // A1 diagnosis.slice(0, 3)
   const AI_SEMANTIC_NAME = '明确或高度疑似恶性病变';
 
+  /**
+   * Issue #103: a keyword that lands INSIDE the span A1's AI finding quotes
+   * (3..10 = 一处隆起性病变), at a different level - the disagreement the
+   * conflict rule exists for. Deliberately not the same keyword as A1's own hit,
+   * which is stored against REPORT_TEXT and therefore cannot pair with anything.
+   */
+  const CONFLICT_KEYWORD = '一处隆起';
+
   function sha256Hex(value: string): string {
     return createHash('sha256').update(value, 'utf8').digest('hex');
   }
@@ -135,6 +143,21 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       ruleByKeyword[keyword] = id;
     }
 
+    // Issue #103: the rule behind A1's level disagreement (see the extra match
+    // row below). Configured for FINDINGS because that is the column the hit is
+    // stored against - the conflict rule reads the stored column, not the config.
+    const conflictRule = await prisma.monitorRule.create({
+      data: {
+        id: randomUUID(),
+        keyword: CONFLICT_KEYWORD,
+        level: 'YELLOW' as never,
+        matchField: 'FINDINGS' as never,
+        ruleGroupId: randomUUID(),
+        createdBy: 'security-e2e',
+        updatedBy: 'security-e2e',
+      },
+    });
+
     for (const row of records) {
       const record = await prisma.monitorRecord.create({
         data: {
@@ -177,6 +200,26 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
         },
       });
     }
+
+    // Issue #103: A1's level disagreement. A hit at 3..7 sits inside the 3..10
+    // span its AI finding quotes and asks for YELLOW where the finding says RED.
+    // Added after the loop rather than in it because only A1 has an AI finding
+    // to disagree with. matchedAt is LATER than the loop's, so the drawer's
+    // hits[0] assertions above keep pointing at the original hit.
+    await prisma.monitorMatch.create({
+      data: {
+        monitorRecordId: ids.A1,
+        ruleId: conflictRule.id,
+        keyword: CONFLICT_KEYWORD,
+        level: 'YELLOW' as never,
+        matchedField: 'FINDINGS' as never,
+        contextSnippet: '…一处隆起…',
+        reportVersion: 1,
+        matchedAt: new Date('2026-08-20T08:15:40Z'),
+        matchStart: 3,
+        matchEnd: 7,
+      },
+    });
 
     // Issue #88: the audit rows behind A1's AI level. Append-only and written
     // here exactly as the worker writes them - the excerpt itself is NOT
@@ -569,6 +612,31 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       // Which path produced the level is provenance, not patient data - this
       // caller already sees the level itself.
       expect(masked.body.attentionSource).toBe('BOTH');
+
+      // Issue #103: the disagreement notice is the ONE derived AI-side field
+      // that survives masking intact, and the assertion is deliberately the same
+      // on both callers. Every value in it is already on this response to this
+      // caller - the hit row's keyword and level above, the finding's name and
+      // colour below - and it carries no excerpt and no offset, so masking it
+      // would remove no report text and would only take away the sentence that
+      // says those two visible things are about the same place.
+      const expectedNotices = [
+        {
+          keyword: CONFLICT_KEYWORD,
+          keywordLevel: 'YELLOW',
+          semanticName: AI_SEMANTIC_NAME,
+          semanticLevel: 'RED',
+          field: 'FINDINGS',
+        },
+      ];
+      expect(full.body.levelConflicts).toEqual(expectedNotices);
+      expect(masked.body.levelConflicts).toEqual(expectedNotices);
+      // The two values it names really are visible to the masked caller - so
+      // this is a survival, not a leak of something masking removed.
+      expect(masked.body.hits.map((hit: { keyword: string }) => hit.keyword)).toContain(
+        CONFLICT_KEYWORD,
+      );
+      expect(masked.body.aiSemantics[0].name).toBe(AI_SEMANTIC_NAME);
 
       // And none of it reaches the audit trail: the EXAM_DETAIL meta records
       // the level and the masking flag, never the excerpt or the model's words.

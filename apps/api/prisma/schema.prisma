@@ -295,6 +295,16 @@ enum AuditAction {
   /// hospital's attention semantics was in force" answerable from the audit log.
   ATTENTION_SEMANTIC_CREATE
   ATTENTION_SEMANTIC_UPDATE
+  /// Issue #103: an admin marking a level-conflict todo read or unread.
+  ///
+  /// Read state, NOT the closed loop issue #26 forbids: what is marked is a
+  /// CONFIGURATION disagreement (a rule and a semantic that disagree about one
+  /// place in the report), keyed by group ids and the two levels - not a
+  /// patient's report and not a person's handling of it. Nothing here records
+  /// that anyone read, acknowledged or acted on a report, and no patient id is
+  /// ever part of it.
+  MONITOR_LEVEL_CONFLICT_READ
+  MONITOR_LEVEL_CONFLICT_UNREAD
 }
 
 /// Message shape for a notification_template. Deliberately mirrors what the
@@ -1580,4 +1590,74 @@ model AlertLink {
   @@index([expiresAt])
   @@index([pushLogId])
   @@map("alert_link")
+}
+
+// ---------------------------------------------------------------------------
+// monitor_level_conflict_read - admin read state for level conflicts (issue #103)
+// ---------------------------------------------------------------------------
+
+/// Read state for ONE configuration disagreement: a keyword rule and an
+/// attention semantic that both landed on the same place in a report and asked
+/// for different attention levels.
+///
+/// WHY THE ROW EXISTS AT ALL. The conflicts themselves are NOT stored - they are
+/// recomputed on every read from monitor_match's offsets and the AI audit rows,
+/// through the same `findLevelConflicts` the doctor's drawer uses. Storing a copy
+/// would create a second source of truth that silently drifts the moment a rule
+/// is edited, and there is nothing to gain: the entry count is a function of the
+/// configuration (rules x semantics), not of the record volume. So this table
+/// holds only the one thing that cannot be recomputed - which of those problems
+/// a human has already looked at.
+///
+/// NOT A CLOSED LOOP (issue #26). It keys a CONFIGURATION defect - rule group +
+/// semantic group + column + the two levels - and never a patient, a report or a
+/// person's handling of one. `docs/ai-semantic-monitor-design.md` states the
+/// same thing in prose; the wording here ("已读/未读", not "已处理/已知晓") follows
+/// from it.
+model MonitorLevelConflictRead {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// `ruleGroupId:semanticGroupId:field:keywordLevel:aiLevel`.
+  ///
+  /// Built from GROUP ids rather than the versioned rule/semantic rows: those
+  /// are immutable and versioned, so a re-worded rule or a re-coloured semantic
+  /// produces new rows and would otherwise resurrect a todo an admin has already
+  /// read. `field` IS in the key - one rule can hit both reportContent and
+  /// diagnosis, and those are two different places in the report, so they are
+  /// two different problems to settle.
+  conflictKey String @unique @map("conflict_key") @db.VarChar(200)
+
+  /// The remaining key parts, denormalized for querying/debugging - every part of
+  /// the key has a column, so a row can be read without parsing anything. No FK
+  /// on the two group ids: rules and semantics are soft-disabled, never deleted,
+  /// and a plain uuid means this table needs no cascade behaviour at all.
+  ruleGroupId     String @map("rule_group_id") @db.Uuid
+  semanticGroupId String @map("semantic_group_id") @db.Uuid
+
+  /// The report column the two sides met in (`FINDINGS` = report body,
+  /// `IMPRESSION` = diagnosis; nothing else can pair).
+  field MatchField @map("field")
+
+  /// The two levels are part of the KEY's meaning: if either side is re-coloured
+  /// the disagreement is a different one and comes back unread.
+  keywordLevel MonitorLevel   @map("keyword_level")
+  aiLevel      AttentionLevel @map("ai_level")
+
+  /// NULL = unread, following the same "a terminal timestamp marks the todo as
+  /// done" convention as MonitorRecord.aiResolvedAt.
+  readAt DateTime? @map("read_at") @db.Timestamptz(6)
+
+  /// The actor of the LAST state change, NOT "who read it": an admin who marks a
+  /// conflict back to unread overwrites this. That is deliberate - the useful
+  /// fact later is "the last person to look at this decided it was not worth
+  /// acting on", and it is why the row is kept rather than deleted on unread.
+  /// Non-FK, same convention as MonitorRule.createdBy.
+  readBy String? @map("read_by") @db.VarChar(100)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// "未读优先" is the list's default order, so the unread set is read first.
+  @@index([readAt])
+  @@map("monitor_level_conflict_read")
 }

@@ -13,6 +13,11 @@ describe('MonitorService', () => {
   let prisma: any;
   let service: MonitorService;
 
+  /** Issue #103 fixtures: a body whose char 8..10 is '隆起'. */
+  const REPORT_BODY = '胃体见巨大不规则隆起，表面糜烂，质脆。';
+  const RULE_GROUP = '11111111-1111-4111-8111-111111111111';
+  const SEMANTIC_GROUP = '22222222-2222-4222-8222-222222222222';
+
   function makeRow(overrides: Record<string, unknown> = {}): any {
     return {
       id: '00000000-0000-0000-0000-000000000001',
@@ -377,7 +382,10 @@ describe('MonitorService', () => {
             matches: {
               orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
               include: {
-                rule: { select: { version: true } },
+                // Issue #103 adds ruleGroupId, and it is safe to add precisely
+                // because it is a group ANCHOR - a fixed identifier with no text
+                // and no version history in it. It never reaches the wire.
+                rule: { select: { version: true, ruleGroupId: true } },
                 semanticJudgements: {
                   where: { outcome: 'OK' },
                   orderBy: { createdAt: 'desc' },
@@ -416,6 +424,9 @@ describe('MonitorService', () => {
                     confidence: true,
                     reason: true,
                     ordinal: true,
+                    // Issue #103: the finding's group anchor, for the same
+                    // reason as the hit's ruleGroupId above.
+                    semantic: { select: { semanticGroupId: true } },
                     evidence: {
                       orderBy: { ordinal: 'asc' },
                       select: {
@@ -453,6 +464,84 @@ describe('MonitorService', () => {
         },
       });
       expect(dto.matchedKeywords).toEqual(['腺癌']);
+      // Issue #103: this record has no AI attempt at all, and the hit's field
+      // is REPORT_TEXT (which names no single column), so there is nothing to
+      // report - and, importantly, no attempt to report it from.
+      expect(dto.levelConflicts).toEqual([]);
+    });
+
+    it('reports the level disagreement on the detail DTO (issue #103)', async () => {
+      // The end-to-end shape of the notice: a keyword hit at one level and an AI
+      // finding at another, over the same text, resolved from the same rows the
+      // drawer already reads.
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow(),
+        reportContent: REPORT_BODY,
+        diagnosis: null,
+        reportVersion: 1,
+        aiResolvedAt: new Date('2026-08-20T01:30:05Z'),
+        aiAttentionLevel: 'RED',
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1, ruleGroupId: RULE_GROUP },
+            keyword: '隆起',
+            level: 'YELLOW',
+            matchedField: 'FINDINGS',
+            contextSnippet: '…隆起…',
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            matchStart: 8,
+            matchEnd: 10,
+            semanticFiltered: false,
+            semanticJudgements: [],
+          },
+        ],
+        reportAiAttempts: [
+          {
+            reportVersion: 1,
+            createdAt: new Date('2026-08-20T01:30:05Z'),
+            matches: [
+              {
+                semanticId: '00000000-0000-0000-0000-0000000000bb',
+                semanticVersion: 3,
+                semanticName: '性质待定、需活检或短期复查的病变',
+                attentionLevel: 'RED',
+                confidence: 'HIGH',
+                reason: '报告描述了不规则隆起。',
+                ordinal: 0,
+                semantic: { semanticGroupId: SEMANTIC_GROUP },
+                evidence: [
+                  {
+                    ordinal: 0,
+                    field: 'FINDINGS',
+                    evidenceHash: createHash('sha256').update(REPORT_BODY, 'utf8').digest('hex'),
+                    evidenceStart: 0,
+                    evidenceEnd: REPORT_BODY.length,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        _count: { reportAiAttempts: 0 },
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      expect(dto.levelConflicts).toEqual([
+        {
+          keyword: '隆起',
+          keywordLevel: 'YELLOW',
+          semanticName: '性质待定、需活检或短期复查的病变',
+          semanticLevel: 'RED',
+          field: 'FINDINGS',
+        },
+      ]);
+      // The invariant that makes the notice safe to render: it names a finding
+      // the drawer is also showing.
+      expect(dto.aiSemantics.map((finding) => finding.name)).toEqual([
+        '性质待定、需活检或短期复查的病变',
+      ]);
     });
 
     it('reports an unjudged hit as semantic: null rather than inventing a verdict', async () => {

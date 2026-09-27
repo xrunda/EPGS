@@ -74,6 +74,9 @@ function defaultResponse(url: string): Promise<Response> {
   if (url.includes('/api/users')) {
     return Promise.resolve(jsonResponse({ items: [], total: 0, page: 1, pageSize: 20 }));
   }
+  if (url.includes('/api/monitor/level-conflicts')) {
+    return Promise.resolve(jsonResponse({ items: [], days: 90, unreadCount: 0 }));
+  }
   return Promise.resolve(jsonResponse({ error: { message: '未知请求' } }, 404));
 }
 
@@ -159,6 +162,38 @@ describe('App', () => {
     expect(await screen.findByText('没有符合条件的账号')).toBeInTheDocument();
   });
 
+  it('hides the level-conflict entry for a user without RULE_ADMIN', async () => {
+    // Issue #103: the list is a configuration-triage surface - a doctor has no
+    // use for it, and the server enforces RULE_ADMIN on every one of its routes
+    // regardless of what this button does.
+    render(<App />);
+    await screen.findByText('测试患者甲');
+
+    expect(screen.queryByRole('button', { name: '等级分歧' })).not.toBeInTheDocument();
+  });
+
+  it('shows and opens the level-conflict list for a RULE_ADMIN account', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(jsonResponse({ user: { ...authUser, roles: ['RULE_ADMIN'] } }));
+        }
+        return defaultResponse(url);
+      }),
+    );
+    render(<App />);
+    await screen.findByText('测试患者甲');
+
+    fireEvent.click(screen.getByRole('button', { name: '等级分歧' }));
+
+    expect(screen.getByRole('dialog', { name: '关注等级分歧' })).toBeInTheDocument();
+    expect(await screen.findByText('这段时间内没有发现关注等级分歧')).toBeInTheDocument();
+    // The workbench stays behind it, like every other config modal here.
+    expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
+  });
+
   it('shows password and logout actions for the current user', async () => {
     render(<App />);
 
@@ -195,6 +230,7 @@ describe('App', () => {
               attentionSource: 'RULE',
               aiJudged: false,
               aiSemantics: [],
+              levelConflicts: [],
             }),
           );
         }

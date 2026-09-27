@@ -28,6 +28,11 @@
  * base detail type - cannot name them. Levels and names here are configured
  * values snapshotted at judge time, not a model's classification, and no audit
  * field (hash, model, latency, error) ever crosses this boundary.
+ *
+ * Issue #103 adds `levelConflicts`: the keyword path and the report-level path
+ * agreeing on WHERE something is but disagreeing on how much attention it needs.
+ * It names both sides, and both names are already on this same response - so it
+ * opens no new report-text exit. It carries no offsets and no excerpt.
  */
 
 import { AttentionLevelDto } from './attention-semantics';
@@ -274,6 +279,134 @@ export interface MonitorAiSemanticDto {
 }
 
 /**
+ * Issue #103: one place in the report where the keyword path and the report-level
+ * path BOTH found something, but asked for different levels of attention.
+ *
+ * Until now the drawer showed such a pair as two ordinary rows in one merged list
+ * - a red one and a yellow one, side by side - which reads as "this report has
+ * two things worth reading", when the truth is "two rules disagree about one
+ * thing and a human has to settle it". This type is that missing sentence.
+ *
+ * Scope, deliberately narrow:
+ *
+ * - It reports a DISAGREEMENT, never a winner. Neither side is called wrong.
+ * - Equal levels are not a conflict and are never reported.
+ * - The pair must land in the SAME report column. A keyword hit in the findings
+ *   and a finding in the impression are two different places even when the words
+ *   overlap, so they are not a conflict.
+ *
+ * Both sides are already on this response (`hits[].keyword` + `.level`,
+ * `aiSemantics[].name` + `.attentionLevel`), so nothing here is new patient data;
+ * `field` is the enum name of a column, not text. No offset and no excerpt is
+ * ever carried - the agreement test itself is computed server-side.
+ */
+export interface MonitorLevelConflictDto {
+  /** The matched keyword. Also visible as `hits[].keyword`. */
+  keyword: string;
+  /** The level the KEYWORD rule asked for. Not adjusted by anything. */
+  keywordLevel: MonitorLevelDto;
+  /** The configured name of the finding. Also visible as `aiSemantics[].name`. */
+  semanticName: string;
+  /** The level that finding asked for. */
+  semanticLevel: AttentionLevelDto;
+  /**
+   * The report column both sides landed in. Only `FINDINGS` (reportContent) and
+   * `IMPRESSION` (diagnosis) can ever appear: the matcher stores the concrete
+   * column a rule actually hit, and only those two have a text source on both
+   * sides (see apps/api/src/monitor/level-conflict.ts).
+   */
+  field: MatchFieldDto;
+}
+
+/**
+ * Issue #103: one entry of the admin's level-conflict list - a configuration
+ * disagreement, aggregated over the records that exhibit it.
+ *
+ * The doctor's drawer shows the same disagreement in prose on one record; this is
+ * that same sentence turned into a piece of work with a stable identity, so an
+ * admin can find it, fix the configuration, and record that they looked at it.
+ *
+ * `conflictKey` is the identity, and it is built from GROUP ids plus the report
+ * column plus the two levels - never from a rule or semantic VERSION row. Rules
+ * and semantics are immutable and versioned, so a key built from version rows
+ * would make every re-wording look like a brand new problem, and an admin who
+ * had already dealt with one would keep seeing it come back. Re-colouring either
+ * side DOES produce a new key, because that is a genuinely different
+ * disagreement.
+ *
+ * Nothing here is patient data: a keyword, a configured semantic name, two
+ * levels, a column name and two numbers. No report text, no offsets, no record
+ * ids.
+ */
+export interface MonitorLevelConflictTodoDto {
+  /** Stable across rule and semantic version bumps. See the type comment. */
+  conflictKey: string;
+  keyword: string;
+  keywordLevel: MonitorLevelDto;
+  semanticName: string;
+  semanticLevel: AttentionLevelDto;
+  /** The report column both sides landed in: FINDINGS or IMPRESSION. */
+  field: MatchFieldDto;
+  /**
+   * How many records inside the requested window show this conflict. It is the
+   * only sense of scale the list has, and it is what separates a problem worth
+   * fixing from a one-off: a rule and a semantic that disagree on one report are
+   * a curiosity, on forty they are a live misconfiguration.
+   */
+  recordCount: number;
+  /** ISO 8601 UTC instant of the most recent matching record in the window. */
+  lastSeenAt: string;
+  /** ISO 8601 UTC instant an admin marked this read; null = unread. */
+  readAt: string | null;
+}
+
+/**
+ * Response for the two write endpoints - the read state of one conflict, after
+ * the write.
+ *
+ * Returned rather than 204 so a client can update one row without refetching the
+ * list, and so the response is a statement of the state that now holds rather
+ * than an acknowledgement that something happened.
+ */
+export interface MonitorLevelConflictStateDto {
+  conflictKey: string;
+  /** ISO 8601 UTC instant; null = unread. */
+  readAt: string | null;
+}
+
+/** Response for `GET /api/monitor/level-conflicts`. Not paginated - see below. */
+export interface MonitorLevelConflictListDto {
+  items: MonitorLevelConflictTodoDto[];
+  /** The window actually applied, echoed so the client need not re-derive it. */
+  days: number;
+  /** Entries with `readAt === null`, so the toolbar/tab can count without filtering. */
+  unreadCount: number;
+}
+
+/**
+ * Query params for `GET /api/monitor/level-conflicts`.
+ *
+ * NOT PAGINATED, deliberately: the entry count is a function of the
+ * CONFIGURATION (rules x semantics x columns), not of record volume, so it is
+ * bounded by something an admin controls by hand. The two list endpoints that do
+ * paginate (`rules`, `attention-semantics`) are per-row tables that grow with
+ * use; this one cannot.
+ */
+export interface MonitorLevelConflictListQuery {
+  /** Trailing window in days. Defaults to LEVEL_CONFLICT_DEFAULT_DAYS, capped at LEVEL_CONFLICT_MAX_DAYS. */
+  days?: number;
+  /** Filter to only unread (false) or only read (true) entries. Omit for both. */
+  read?: boolean;
+}
+
+/** Default trailing window for the admin list, in days. */
+export const LEVEL_CONFLICT_DEFAULT_DAYS = 90;
+/** Hard cap on the window - bounds the aggregation scan. */
+export const LEVEL_CONFLICT_MAX_DAYS = 365;
+/** The windows the UI offers. Every value must be <= LEVEL_CONFLICT_MAX_DAYS. */
+export const LEVEL_CONFLICT_DAY_PRESETS = [7, 30, 90, 180, 365] as const;
+
+/**
  * Issue #88 (PR-B): the workbench list row. An EXTENSION of MonitorExamDto, not
  * a change to it, so `AlertLinkExamListDto` (which keeps `MonitorExamDto[]`)
  * is structurally incapable of carrying the new field to the alert-link H5
@@ -317,6 +450,17 @@ export interface MonitorExamWorkbenchDetailDto extends MonitorExamDetailDto {
    * no current finding is showable; see aiJudged.
    */
   aiSemantics: MonitorAiSemanticDto[];
+  /**
+   * Issue #103: places where the two paths agree on WHERE but not on HOW MUCH.
+   * Empty is the normal case and renders nothing at all - this is a notice about
+   * a configuration problem, and one that appears on every record stops being
+   * read.
+   *
+   * Every entry names a finding that is also in `aiSemantics` above (they are
+   * derived from the same attempt, under the same gate), so the notice can never
+   * point at something the drawer does not show.
+   */
+  levelConflicts: MonitorLevelConflictDto[];
 }
 
 /** Paginated response envelope for `GET /api/monitor/exams`. */

@@ -15,6 +15,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AlertLinksModule } from './alert-links/alert-links.module';
 import { UsersModule } from './users/users.module';
 import { AttentionSemanticsModule } from './attention-semantics/attention-semantics.module';
+import { LevelConflictsModule } from './level-conflicts/level-conflicts.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AttentionSemanticsModule } from './attention-semantics/attention-semant
     AlertLinksModule,
     RulesModule,
     AttentionSemanticsModule,
+    LevelConflictsModule,
     SystemModule,
     UsersModule,
   ],

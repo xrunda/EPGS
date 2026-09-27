@@ -1,0 +1,140 @@
+/* 关注等级分歧弹窗 chrome（issue #103）。
+   共享原语（.button / .icon-button / .feedback--* / .rules-filters /
+   .rules-content / .rules-table-wrap / .rules-table / .rules-state /
+   .rules-toolbar / .level-tag / .status / .readonly-label / .table-actions）
+   定义于 RulesModal.css，经 App.tsx 引入 RulesModal 模块副作用全局生效——
+   本文件只定义 .level-conflict-* 命名空间；唯一的例外是文件末尾那处
+   .rules-filters 列数覆盖，它在 .level-conflict-modal 作用域内，理由见该处注释。 */
+
+.level-conflict-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 31, 34, 0.58);
+  backdrop-filter: blur(3px);
+  animation: level-conflict-backdrop-in var(--dur-base) var(--ease-out);
+}
+
+/* 筛选行（issue #103 目视验证发现）：.rules-filters 的桌面栅格是
+   minmax(190px, 1fr) 160px 140px auto，按关键词监控的四个控件排的 —— 第一列
+   留给可伸缩的文本输入框。这一页只有两个下拉加一个按钮，那条 1fr 就落在
+   「最近 90 天」这种定长选项上，1920×1080 下下拉被拉到 1200px 宽，按钮还被挤进
+   第三列、右边空着一格。这里只改列数，padding / gap / 边框仍来自共享原语；
+   作用域限定在 .level-conflict-modal 内，且只在 >900px 生效 —— 900px 以下的
+   响应式列数仍归 RulesModal.css 管（同 .semantic-modal 的做法）。 */
+@media (min-width: 901px) {
+  .level-conflict-modal .rules-filters {
+    grid-template-columns: 200px 160px auto;
+  }
+}
+
+.level-conflict-modal {
+  width: min(1240px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  outline: none;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-lg);
+  animation: level-conflict-modal-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes level-conflict-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes level-conflict-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+.level-conflict-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 28px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.level-conflict-modal__header h2 {
+  margin: 2px 0 0;
+  color: var(--ink-800);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.level-conflict-modal__eyebrow {
+  margin: 0;
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/*
+  说明块沿用语义配置页那块的样子（同一套「先说清楚这是什么、不是什么」的读法）。
+
+  与那边唯一的差别：这里是段落而不是单段，所以用两列网格——图标占第一列、两段文字
+  占第二列，图标那格 row span 到底。用 flex 的话第二段会折到图标下面，读起来像另一
+  个层级的说明。
+*/
+.level-conflict-modal__notice {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: start;
+  gap: 0 10px;
+  margin: 18px 28px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--teal-600);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: #eaf4f5;
+  color: #315b62;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.level-conflict-modal__notice > span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  place-items: center;
+  border: 1px solid #70a7b1;
+  border-radius: 50%;
+  font-weight: 700;
+  grid-row: span 2;
+}
+.level-conflict-modal__notice p {
+  margin: 0;
+}
+.level-conflict-modal__notice p + p {
+  margin-top: 6px;
+}
+
+/*
+  分歧的两条配置：上下两行，各是「等级标签 + 名字」。两行上下对齐而不是左右并排，
+  是因为它们讲的是同一处的两种说法，并排会再次读成「两条独立依据」——正是这一页
+  要消灭的读法。
+*/
+.level-conflict-table__pair > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.level-conflict-table__pair > div + div {
+  margin-top: 6px;
+}
+.level-conflict-table__field {
+  color: #687b7e;
+}
+.level-conflict-table__meta {
+  color: #687b7e !important;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}

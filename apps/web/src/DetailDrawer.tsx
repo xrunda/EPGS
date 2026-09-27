@@ -4,6 +4,7 @@ import type {
   MonitorAiSemanticDto,
   MonitorExamHitDto,
   MonitorExamWorkbenchDetailDto,
+  MonitorLevelConflictDto,
   MonitorLevelDto,
   ReportAiFieldDto,
   SemanticConfidenceDto,
@@ -72,6 +73,37 @@ const REPORT_AI_FIELD_LABELS: Record<ReportAiFieldDto, string> = {
   FINDINGS: '报告内容',
   IMPRESSION: '诊断',
 };
+
+/**
+ * Issue #103: one sentence for one place where the two paths disagree about how
+ * much attention a finding deserves.
+ *
+ * Why this sentence has to exist at all: the drawer used to show the pair as two
+ * ordinary rows in one merged list - a red one and a yellow one, side by side -
+ * and the summary sentence joined them with a 「；」. Read that way it looks like
+ * two independent reasons, i.e. corroboration, when in fact two rules are
+ * pointing at the SAME place and asking for different things. Nothing on screen
+ * said the two rows were about one lesion. This does.
+ *
+ * Naming both sides is the whole point: a notice that only said 「存在等级分歧」
+ * would send the doctor hunting for which two rows it meant.
+ *
+ * Wording rules, both load-bearing:
+ *  - No mechanism vocabulary (术语扫描 in DetailDrawer.test.tsx bans 语义 / 判读 /
+ *    模型 / 关键词监控). The doctor is told about the report and the two levels,
+ *    not about the engines that produced them.
+ *  - Levels are spelled with ATTENTION_LEVEL_LABELS, never as a bare colour, so
+ *    this line matches every other level on screen (issue #92/#94).
+ */
+function levelConflictSentence(conflict: MonitorLevelConflictDto): string {
+  const place = FIELD_LABELS[conflict.field];
+  return (
+    `${place}中同一处有两种关注等级：` +
+    `「${conflict.keyword}」为${ATTENTION_LEVEL_LABELS[conflict.keywordLevel]}，` +
+    `报告提示「${conflict.semanticName}」为${ATTENTION_LEVEL_LABELS[conflict.semanticLevel]}，` +
+    '请一并核对。'
+  );
+}
 
 function friendlyError(error: unknown): string {
   if (error instanceof MonitorApiError && error.status === 404) {
@@ -341,6 +373,29 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                   <span className="drawer__count-note">其中 {filteredCount} 条未计入关注</span>
                 )}
               </h3>
+              {/*
+                issue #103：同一处出现两种关注等级时，把这件事本身说出来。
+
+                位置在合并列表**之上**，理由有两层。一是 issue #103 的验收写的是
+                「在既有合并列表之上加一条明确说明」—— 这条提醒说的是下面这份列表
+                该怎么读，先读到它，两条并排的依据才不会继续被读成互相印证。二是
+                issue #102 的教训：它必须在空状态三元判断**之外**，否则一个讲这份
+                列表的提醒，可见性就依赖了一个与它无关的判断，哪天列表渲染条件变了
+                就会被静默吃掉。空列表时它也自然不渲染 —— `levelConflicts` 为空是
+                常态，那也是它唯一该消失的条件。
+
+                等级色的规矩照旧（见本文件 CSS 里 `.drawer__ai-warning` 的注释）：
+                这句话讲的正是「颜色不一致」，所以它自己绝不能再借用红/黄/绿中的
+                任何一个，否则就成了一条偏向某一方的提示。
+              */}
+              {detail.levelConflicts.map((conflict) => (
+                <p
+                  className="drawer__level-conflict"
+                  key={`${conflict.field}-${conflict.keyword}-${conflict.keywordLevel}-${conflict.semanticName}-${conflict.semanticLevel}`}
+                >
+                  {levelConflictSentence(conflict)}
+                </p>
+              ))}
               {reasonItems.length === 0 ? (
                 <p className="drawer__placeholder">暂无关注依据</p>
               ) : (

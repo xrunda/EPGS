@@ -385,7 +385,17 @@ export function Workbench({
             医生真正在读的内容（等级、理由、依据）一个机制词都不许有。
             只改字：目标弹窗、权限、行为一律不变。
           */}
-          <button className="button button--primary" type="button" onClick={onOpenRules}>
+          {/*
+            两个入口都不实心（issue #125）。原来是「关键词监控」带 .button--primary、
+            「AI 语义监控」不带，从 #9 带过来的：那时工具栏只有这一个入口，实心是在
+            强调主操作。#88 加了平级的 AI 入口、#116 又把其余入口收进「⋯」之后，
+            这个强调就成了没来由的偏袒 —— 两个按钮都只是「点开某个配置弹层」，谁也不
+            比谁更当前，实心那个看起来却像已选中的标签页。
+            更深一层的理由是 .button--primary 在产品里只该有一个含义：**表单里的确认
+            动作**（查询、新建、确认载入）。借用它来表示「入口」是同一套视觉语言指两
+            件事。入口不表示任何状态，弹层开了关了外观都不变，所以它不该有状态外观。
+          */}
+          <button className="button" type="button" onClick={onOpenRules}>
             关键词监控
           </button>
           {onOpenAiSemantics && (

@@ -144,6 +144,38 @@ describe('SemanticMonitorModal', () => {
     expect(within(yellowRow).getByText('v3')).toBeInTheDocument();
   });
 
+  // Issue #108：说明整段展示，不再截断成两行、也不再靠 title 悬停看全文。
+  //
+  // jsdom 不排版，量不到「有没有省略号」——那一半由 PR 里的两个分辨率实测兜底
+  // （1440×900 / 1920×1080，逐格比对 scrollHeight 与 clientHeight）。这里钉的是
+  // DOM 契约：**完整原文就在单元格里**，且不再有那个「只挂在鼠标悬停上」的出口。
+  // 用一个真长度的说明（对照线上一份 134 字的预置语义），否则把文字切一半的写法
+  // 也能骗过断言。
+  it('shows the whole description instead of clipping it behind a hover', async () => {
+    const longDescription =
+      '报告明确描述了良性、但需要临床处理、随访或告知患者的器质性或功能性病变，' +
+      '例如：贲门失弛缓症（贲门松弛、食管体部扩张、食物潴留、镜身通过受阻）、' +
+      '食管裂孔疝（齿状线上移、局部疝囊形成）、明确的良性管腔狭窄或动力障碍。' +
+      '含义是"本次确实存在需要跟进的病变，只是性质不是恶性"。';
+    expect(longDescription.length).toBeGreaterThan(120);
+
+    installFetch({ items: [{ ...redSemantic, description: longDescription }] });
+    render(<SemanticMonitorModal open onClose={vi.fn()} />);
+
+    const row = await screen.findByRole('row', { name: /明确或高度疑似恶性病变/ });
+    const cell = row.querySelector('.semantic-table__description');
+    expect(cell).not.toBeNull();
+
+    // 原文一字不少地渲染出来，没有任何截断或省略号。
+    expect(cell?.textContent).toBe(longDescription);
+    expect(cell?.textContent).not.toMatch(/…|\.\.\./);
+
+    // title 是「全文只在悬停时可见」的载体，说明整段展示之后它必须消失，
+    // 否则同一段文字会被悬停再弹一遍，盖住相邻行。
+    expect(cell?.querySelector('span')?.hasAttribute('title')).toBe(false);
+    expect(cell?.querySelector('[title]')).toBeNull();
+  });
+
   // Issue #88 定稿文案：入口叫「AI 语义监控」，一条配置叫「关注语义」，等级叫
   // 「关注等级」；页面上不得出现 Prompt / 提示词 / 大模型 / 分类器 这类实现词汇，
   // 且「仅用于监测，不作为正式诊断」必须常驻。

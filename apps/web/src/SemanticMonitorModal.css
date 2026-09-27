@@ -158,16 +158,31 @@
   line-height: 1.7;
 }
 
-/* 语义说明整段展示会撑宽表格，截断并用 title 提供全文（同 .rules-table__intent）。 */
+/*
+  语义说明（issue #108）：整段展示，不再截断成两行。
+
+  原来这里是 `max-width: 320px` + `-webkit-line-clamp: 2`，全文靠单元格上的
+  `title` 悬停才能看到（同 .rules-table__intent）。改成整段展示有两个理由。一是
+  说明是管理员判断「这条语义到底管什么」的唯一依据，也是两条同名语义之间唯一
+  的区分点，而仓库既有的规矩是**关键信息不能只挂在鼠标悬停上**（同一条规矩
+  让等级标签不许只写颜色）。二是预置的 7 条说明长度是 67–134 字，320px 宽下
+  没有一条能读完，等于这一列默认什么都看不全。
+
+  **列宽一个字不改**，只去掉行数限制：文字在这个宽度里换行，行高按需要长。
+  这不是偷懒，是量出来的 —— 试过两种放宽，两种都更差：
+
+  - `width: 100%`（让它吃掉剩余宽度）→ 说明列涨到 777px，「关注语义」列被挤成
+    3–5 行；
+  - 干脆去掉 `max-width` → 说明列 697px，「关注语义」列掉到 158px、还是 3 行。
+
+  原因是弹窗**定宽**（1440 与 1920 下七列总宽完全一样，约 1240px），没有富余
+  可分：「关注语义」列本身就要 360px 才放得下最长的那条名称，`max-width` 一直在
+  替说明列压着需求。拿一列的可读性换另一列的不划算，所以宁可让行变高。
+*/
 .semantic-table__description {
   max-width: 320px;
   color: #687b7e !important;
-}
-.semantic-table__description span {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  line-height: 1.7;
 }
 .semantic-table__version {
   color: var(--ink-300);

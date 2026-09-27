@@ -10,6 +10,7 @@ import { getExamSummary, listExams, MonitorApiError, getSyncStatus } from './mon
 import { listRules } from './rulesApi';
 import { DetailDrawer } from './DetailDrawer';
 import { ATTENTION_LEVEL_LABELS } from './attentionSource';
+import { findingSourceIcons } from './findingSource';
 import { rowAttentionReason } from './attentionReason';
 import './Workbench.css';
 
@@ -602,6 +603,7 @@ export function Workbench({
               <thead>
                 <tr>
                   <th>关注等级</th>
+                  <th>发现来源</th>
                   <th>姓名</th>
                   <th>科室</th>
                   <th>床号</th>
@@ -628,6 +630,39 @@ export function Workbench({
                         {ATTENTION_LEVEL_LABELS[exam.monitorLevel]}
                       </span>
                     </td>
+                    {/*
+                      发现来源（issue #112）：这一行是哪一路发现的。单独一列而不是塞进
+                      「关注等级」格子里 —— 图标跟着色标宽度跑的话，「红色关注」和「未分级」
+                      的图标起止位置差十几个像素，竖着扫会抖；单独一列两枚图标上下对齐。
+                      图标不带文字（见 findingSource.ts），同一件事的完整说法在右边
+                      「关注理由」列里，图标是它的可扫版本。
+                    */}
+                    <td className="workbench__source">
+                      {/*
+                        NONE 是唯一没有图标的来源（findingSource.ts 的 switch 已经穷举了
+                        四个取值），所以这里显式判它、渲染占位符：留空会被读成没渲染出来。
+                        findingSource.test.ts 钉住「非 NONE 至少一枚图标」，两边不会漂。
+                      */}
+                      {exam.attentionSource === 'NONE' ? (
+                        <span className="workbench__source-none">—</span>
+                      ) : (
+                        <span className="workbench__source-icons">
+                          {findingSourceIcons(exam.attentionSource).map((icon) => (
+                            <span
+                              className="workbench__source-tip"
+                              key={icon.src}
+                              data-tip={icon.tip}
+                            >
+                              <img
+                                className="workbench__source-icon"
+                                src={icon.src}
+                                alt={icon.alt}
+                              />
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </td>
                     <td>{exam.patientName ?? '—'}</td>
                     <td>{exam.department ?? '—'}</td>
                     <td>{exam.bedNo ?? '—'}</td>
@@ -636,10 +671,11 @@ export function Workbench({
                     <td>{exam.examDate ?? '—'}</td>
                     <td>{exam.examTime ?? '—'}</td>
                     {/*
-                    关注理由（issue #94）：这一列回答「为什么这位患者需要我关注」。
-                    来源徽标（issue #88）已从临床视图移除，理由句由 attentionReason.ts
-                    拼出；没有理由的行显示占位符，不编造理由。
-                  */}
+                      关注理由（issue #94）：这一列回答「为什么这位患者需要我关注」。
+                      理由句由 attentionReason.ts 拼出，没有理由的行显示占位符，不编造
+                      理由。来源徽标（issue #88 的文字徽标）仍然不在这里 —— 左边「发现来源」
+                      那列是图标，两者说的是同一件事的两种表达（issue #112）。
+                    */}
                     <td className="workbench__reason">{rowAttentionReason(exam) ?? '—'}</td>
                     <td>
                       <button

@@ -195,7 +195,9 @@ describe('Workbench', () => {
     expect(within(row2).getByText('绿色关注')).toBeInTheDocument();
     expect(within(row2).getByText('门诊（O）')).toBeInTheDocument();
     // Nothing found it, so there is no reason to state - and none is invented.
-    expect(within(row2).getAllByText('—')).toHaveLength(7);
+    // The 8 placeholders are 发现来源 + 姓名 + 科室 + 床号 + 检查项目 + 检查日期 +
+    // 检查时间 + 关注理由 (issue #112 added the first); every other cell has a value.
+    expect(within(row2).getAllByText('—')).toHaveLength(8);
   });
 
   /**
@@ -282,6 +284,60 @@ describe('Workbench', () => {
     expect(reasonOf(/测试患者乙/)).toBe('报告提示需要关注');
     expect(reasonOf(/测试患者丙/)).toBe('命中「溃疡」；报告提示需要关注');
     expect(reasonOf(/测试患者丁/)).toBe('—');
+  });
+
+  /**
+   * Issue #112: each row says which side found it, as an icon.
+   *
+   * Same four rows as the reason test above, so the icon column and the 关注理由
+   * sentence are pinned to say the same thing: 甲 keyword-only, 乙 report-only,
+   * 丙 both, 丁 neither.
+   */
+  it('marks each row with the icon of the side that found it (issue #112)', async () => {
+    stubExams([
+      examRow('测试患者甲', 'RED', ['腺癌'], 'RULE'),
+      examRow('测试患者乙', 'RED', [], 'AI_REPORT'),
+      examRow('测试患者丙', 'RED', ['溃疡'], 'BOTH'),
+      examRow('测试患者丁', 'UNCLASSIFIED', [], 'NONE'),
+    ]);
+
+    const { container } = render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const rowOf = (name: RegExp): HTMLElement => screen.getByRole('row', { name });
+    const iconsOf = (name: RegExp): HTMLImageElement[] => [
+      ...rowOf(name).querySelectorAll<HTMLImageElement>('.workbench__source-icon'),
+    ];
+    const sourcesOf = (name: RegExp): string[] =>
+      iconsOf(name).map((img) => img.getAttribute('alt') ?? '');
+    // The hover text lives on the wrapper (it is a ::after, not a title attribute:
+    // browser tooltips can't be resized and the owner wanted it twice as big).
+    const tipsOf = (name: RegExp): string[] =>
+      [...rowOf(name).querySelectorAll('.workbench__source-tip')].map(
+        (span) => span.getAttribute('data-tip') ?? '',
+      );
+
+    expect(sourcesOf(/测试患者甲/)).toEqual(['命中']);
+    expect(sourcesOf(/测试患者乙/)).toEqual(['报告提示']);
+    expect(sourcesOf(/测试患者丙/)).toEqual(['命中', '报告提示']);
+    // Neither side found anything: no icon at all, plus a visible placeholder
+    // (a blank cell reads as "failed to render", not as "nothing found it").
+    expect(sourcesOf(/测试患者丁/)).toEqual([]);
+    expect(rowOf(/测试患者丁/).querySelector('.workbench__source-none')?.textContent).toBe('—');
+
+    // Hovering tells the doctor what the icon means - a bare glyph in a dense
+    // table is just "some icon" the first time you see it.
+    expect(tipsOf(/测试患者甲/)).toEqual(['关键词命中']);
+    expect(tipsOf(/测试患者乙/)).toEqual(['AI 语义命中']);
+    expect(tipsOf(/测试患者丙/)).toEqual(['关键词命中', 'AI 语义命中']);
+    // One tip per icon: a wrapper without data-tip renders an empty bubble.
+    expect(tipsOf(/测试患者丙/)).toHaveLength(iconsOf(/测试患者丙/).length);
+
+    // The column is labelled and sits between the level and the patient name.
+    const headers = [...container.querySelectorAll('.workbench__table thead th')].map(
+      (th) => th.textContent,
+    );
+    expect(headers.slice(0, 3)).toEqual(['关注等级', '发现来源', '姓名']);
   });
 
   /**

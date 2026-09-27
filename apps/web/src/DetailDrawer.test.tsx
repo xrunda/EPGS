@@ -430,9 +430,7 @@ describe('DetailDrawer', () => {
     it('says the report itself prompted the visit when no keyword matched', async () => {
       // The failure this exists for: a red record with zero keyword hits. The
       // sentence has to name what the report said, not leave the level bare.
-      stubDetail(
-        withAi({ attentionSource: 'AI_REPORT', hits: [], matchedKeywords: [] }),
-      );
+      stubDetail(withAi({ attentionSource: 'AI_REPORT', hits: [], matchedKeywords: [] }));
       render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
 
       const dialog = await screen.findByRole('dialog', { name: '检查详情' });
@@ -499,6 +497,48 @@ describe('DetailDrawer', () => {
       }
     });
 
+    it('marks each reason card with the icon of the side that produced it (issue #112)', async () => {
+      // withAi() carries one keyword hit and one report-level finding, so both
+      // card kinds are on screen - before #112 they differed only by whether the
+      // right-hand label was a column name (报告内容 / 诊断) or 把握高 / 把握中.
+      stubDetail(withAi());
+      render(<DetailDrawer recordId={detail.recordId} onClose={vi.fn()} />);
+
+      const section = reasonSection(await screen.findByRole('dialog', { name: '检查详情' }));
+      const keywordCard = section.querySelector('.drawer__hit');
+      const reportCard = section.querySelector('.drawer__ai-item');
+      expect(keywordCard).not.toBeNull();
+      expect(reportCard).not.toBeNull();
+
+      const iconOf = (
+        card: Element | null,
+      ): { src: string | null; alt: string | null; tip: string | null } | null => {
+        const img = card?.querySelector('.drawer__source-icon');
+        if (!img) return null;
+        return {
+          src: img.getAttribute('src'),
+          alt: img.getAttribute('alt'),
+          // The hover text sits on the wrapper - it is a CSS bubble, not a title
+          // attribute (browser tooltips can't be resized).
+          tip: img.closest('.drawer__source-tip')?.getAttribute('data-tip') ?? null,
+        };
+      };
+      expect(iconOf(keywordCard)).toEqual({
+        src: '/finding-keyword.png',
+        alt: '命中',
+        tip: '关键词命中',
+      });
+      expect(iconOf(reportCard)).toEqual({
+        src: '/finding-ai.png',
+        alt: '报告提示',
+        tip: 'AI 语义命中',
+      });
+
+      // Exactly one per card, so a card can never carry both or neither.
+      expect(keywordCard!.querySelectorAll('.drawer__source-icon')).toHaveLength(1);
+      expect(reportCard!.querySelectorAll('.drawer__source-icon')).toHaveLength(1);
+    });
+
     it('builds the reason for a masked caller from what it is still allowed to see', async () => {
       // Issue #13/#88 masking strips everything report-adjacent - the report
       // body, the hit's quote and verdict, the finding's sentence and quotes -
@@ -520,9 +560,7 @@ describe('DetailDrawer', () => {
       const reason = dialog.querySelector('.drawer__reason')?.textContent;
       // Same sentence as the unmasked BOTH case above - the text did not
       // change, only the material it was allowed to read.
-      expect(reason).toBe(
-        '报告内容或诊断中发现「腺癌」；报告提示「明确或高度疑似恶性病变」',
-      );
+      expect(reason).toBe('报告内容或诊断中发现「腺癌」；报告提示「明确或高度疑似恶性病变」');
       for (const freeText of [
         '胃体见多发隆起型病变，考虑腺癌。',
         '胃体腺癌。',
@@ -564,7 +602,9 @@ describe('DetailDrawer', () => {
       expect(quotes[0].textContent).toBe('报告内容多发隆起型病变');
       expect(quotes[1].textContent).toBe('诊断胃体腺癌');
       // The standing disclaimer, same sentence as the config page.
-      expect(within(dialog).getByText('关注等级不是诊断结论，也不代表病情严重程度。')).toBeInTheDocument();
+      expect(
+        within(dialog).getByText('关注等级不是诊断结论，也不代表病情严重程度。'),
+      ).toBeInTheDocument();
     });
 
     it('never rewrites the report body to build a quote', async () => {

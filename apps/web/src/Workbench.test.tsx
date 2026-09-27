@@ -477,19 +477,34 @@ describe('Workbench', () => {
     expect(screen.getByRole('button', { name: '下一页' })).toBeDisabled();
   });
 
+  /**
+   * Issue #114: the button moved and turned into an icon, so its contract needs
+   * to be asserted for what the title claims. The old body only counted
+   * /api/monitor/exams while the name promised three surfaces; the summary and
+   * the sync status are what a viewer watches after a night shift, so the test
+   * now counts all three endpoints.
+   */
   it('refreshes list, summary, and sync status when 刷新列表 is clicked', async () => {
     render(<Workbench onOpenRules={vi.fn()} />);
     await screen.findByText('测试患者甲');
-    const examsCalls = () =>
+    const callsTo = (fragment: string) =>
       vi
         .mocked(fetch)
         .mock.calls.map(([url]) => String(url))
-        .filter((url) => url.includes('/api/monitor/exams'));
-    const before = examsCalls().length;
+        .filter((url) => url.includes(fragment)).length;
+    const before = {
+      exams: callsTo('/api/monitor/exams'),
+      summary: callsTo('/api/monitor/summary'),
+      sync: callsTo('/api/system/sync-status'),
+    };
 
     fireEvent.click(screen.getByRole('button', { name: '刷新列表' }));
 
-    await waitFor(() => expect(examsCalls().length).toBeGreaterThan(before));
+    await waitFor(() => {
+      expect(callsTo('/api/monitor/exams')).toBeGreaterThan(before.exams);
+      expect(callsTo('/api/monitor/summary')).toBeGreaterThan(before.summary);
+      expect(callsTo('/api/system/sync-status')).toBeGreaterThan(before.sync);
+    });
   });
 
   it('shows an error state with a working retry', async () => {

@@ -4,10 +4,14 @@
 # 用法:
 #   bash start.sh          先 git pull 拉最新代码，再重启全部服务
 #   bash start.sh nopull    跳过 git pull，仅重启（用于 .env 手动改完后快速重启）
-#   bash start.sh stop      仅停止 api/worker，并 reload nginx（不动 Postgres 容器）
+#   bash start.sh stop      仅停止 api/worker，并 reload nginx（不碰 PostgreSQL）
+#
+#   PG_MODE=docker|native|auto（默认 auto）强制指定 PostgreSQL 形态，见 [1/8]
 #
 # 前置条件:
-#   - node/pnpm/docker/nginx 已装好 (node -v / pnpm -v / docker -v / nginx -v 确认)
+#   - node/pnpm/nginx 已装好 (node -v / pnpm -v / nginx -v 确认)
+#   - PostgreSQL：宿主机形态（apt/系统包装在机器上）**不需要 docker**；
+#     容器形态才需要 docker。两种形态由 [1/8] 自动识别（issue #121）。
 #   - apps/api/.env、apps/worker/.env 已手动创建好
 #     (.env 从不进 git，git pull 不会自动生成它们 - 首次部署需要手动
 #     创建，参考本仓库 README 或直接问维护者要一份现成的)
@@ -137,8 +141,8 @@ check_required_api_env "NOTIFICATION_SECRET_KEY" 32 \
 # 关闭（只推文本，行为与之前完全一致）；配了则 api（手动"立即执行一次"）与
 # worker（定时推送）**必须同值**：worker 签发链接、api 解析链接，两端不一致
 # 会签出医生手机打不开的地址，而且不会报错——这是静默陷阱，所以在这里
-# fail-fast。值应为医生手机在医院网络下能打开的 web 入口（即 nginx 单端口
-# 对外地址，如 http://10.10.10.91:5173），不是 localhost。
+# fail-fast。值应为医生手机在医院网络下能打开的 web 入口（即本机 nginx 单端口
+# 对外地址，形如 http://<堡垒机地址>:5173），不是 localhost。
 read_env_value() {
   local file="$1" key="$2" line val
   line=$(grep -E "^${key}=" "$file" | head -n 1 || true)
@@ -176,30 +180,97 @@ else
   fi
 fi
 
+# 目标库是否已经能接受连接（只探连通性，不认证）。优先 pg_isready —— 它认得出
+# 「端口开着但还在恢复中」这种半活状态；机器上没装客户端工具时退化成 TCP 探测。
+postgres_reachable() {
+  if command -v pg_isready >/dev/null 2>&1; then
+    pg_isready -h "$PG_HOST" -p "$PG_PORT" -q
+  else
+    (exec 3<>"/dev/tcp/$PG_HOST/$PG_PORT") >/dev/null 2>&1
+  fi
+}
+
 echo ""
-echo "===== [1/8] 启动 Postgres (Docker) ====="
-if docker ps --filter "name=^epgs-postgres$" --filter "health=healthy" --format '{{.Names}}' \
-    | grep -q epgs-postgres; then
-  echo "epgs-postgres 容器已在运行且健康，跳过重建。"
-else
-  if docker ps -a --filter "name=^epgs-postgres$" --format '{{.Names}}' | grep -q epgs-postgres; then
-    echo "epgs-postgres 容器存在但不健康，先移除再重建。"
-    docker rm -f epgs-postgres >/dev/null
-  fi
-  docker compose up -d postgres
+echo "===== [1/8] 准备 Postgres ====="
+# 目标库地址：从 DATABASE_URL 里取 host 与 port，只用于探测「库活了没有」。
+# 用户名密码不取、也不打印——整条连接串绝不进输出（备份/排查时贴日志也不会泄密）。
+PG_URL=$(grep -m1 '^DATABASE_URL=' apps/api/.env | cut -d= -f2- | tr -d '"' || true)
+PG_HOSTPORT=$(printf '%s' "${PG_URL:-}" | sed -E 's#^[a-zA-Z]+://([^@/]*@)?([^/?]+).*#\2#')
+PG_HOST="${PG_HOSTPORT%%:*}"
+PG_PORT="${PG_HOSTPORT##*:}"
+# 写成 if 而不是 `[ ... ] && x=y`：后者在 set -e 下是踩雷的写法（判断为假时
+# 整条语句返回非零，脚本直接退出）。
+if [ -z "$PG_HOST" ]; then
+  PG_HOST=127.0.0.1
 fi
-echo "等待 Postgres 就绪..."
-for i in $(seq 1 30); do
-  if docker exec epgs-postgres pg_isready -U epgs -d epgs >/dev/null 2>&1; then
-    echo "Postgres 就绪。"
-    break
-  fi
-  sleep 1
-  if [ "$i" = "30" ]; then
-    echo "Postgres 30 秒内未就绪，检查 docker logs epgs-postgres"
+if [ "$PG_PORT" = "$PG_HOSTPORT" ]; then   # 连接串里没写端口 -> 取 PG 默认值
+  PG_PORT=5432
+fi
+
+# issue #121：PostgreSQL 有两种形态，默认自动识别，PG_MODE=docker|native 可强制。
+#   1) docker：本仓库 docker-compose.yml 起的 epgs-postgres 容器（旧堡垒机是这种）；
+#   2) native：apt/系统包直接装在宿主机上、监听 5432（新堡垒机是这种，机器上根本没有
+#      Docker）。
+# 判定顺序刻意把「已存在 epgs-postgres 容器」放在最前：绝不能因为容器一时不健康
+# 就静默切到宿主机上的另一个库——那等于悄无声息地换了一个数据库。
+PG_MODE="${PG_MODE:-auto}"
+if [ "$PG_MODE" = auto ]; then
+  if command -v docker >/dev/null 2>&1 \
+      && docker ps -a --filter "name=^epgs-postgres$" --format '{{.Names}}' 2>/dev/null \
+        | grep -q epgs-postgres; then
+    PG_MODE=docker
+  elif postgres_reachable; then
+    PG_MODE=native
+  elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    PG_MODE=docker   # 有 Docker、库还不存在 -> 首次安装，仍按老办法交给 compose 引导
+  else
+    echo ""
+    echo "错误: 既没有 epgs-postgres 容器，也连不上 ${PG_HOST}:${PG_PORT}（DATABASE_URL 指向的库），"
+    echo "      本机还没有可用的 Docker。先确认 PostgreSQL 已启动、DATABASE_URL 写对了，"
+    echo "      或用 PG_MODE=docker 显式要求容器形态。"
     exit 1
   fi
-done
+fi
+echo "Postgres 形态: ${PG_MODE}，目标 ${PG_HOST}:${PG_PORT}"
+
+if [ "$PG_MODE" = docker ]; then
+  if docker ps --filter "name=^epgs-postgres$" --filter "health=healthy" --format '{{.Names}}' \
+      | grep -q epgs-postgres; then
+    echo "epgs-postgres 容器已在运行且健康，跳过重建。"
+  else
+    if docker ps -a --filter "name=^epgs-postgres$" --format '{{.Names}}' | grep -q epgs-postgres; then
+      echo "epgs-postgres 容器存在但不健康，先移除再重建。"
+      docker rm -f epgs-postgres >/dev/null
+    fi
+    docker compose up -d postgres
+  fi
+  echo "等待 Postgres 就绪..."
+  for i in $(seq 1 30); do
+    if docker exec epgs-postgres pg_isready -U epgs -d epgs >/dev/null 2>&1; then
+      echo "Postgres 就绪。"
+      break
+    fi
+    sleep 1
+    if [ "$i" = "30" ]; then
+      echo "Postgres 30 秒内未就绪，检查 docker logs epgs-postgres"
+      exit 1
+    fi
+  done
+else
+  echo "等待 Postgres 就绪（宿主机形态，全程不碰 Docker）..."
+  for i in $(seq 1 30); do
+    if postgres_reachable; then
+      echo "Postgres 就绪。"
+      break
+    fi
+    sleep 1
+    if [ "$i" = "30" ]; then
+      echo "Postgres 30 秒内未就绪: 连不上 ${PG_HOST}:${PG_PORT}。"
+      echo "      宿主机形态请检查服务: systemctl status postgresql"
+      exit 1
+    fi
+  done
+fi
 
 echo ""
 echo "===== [2/8] 校正 .env（首次部署才需要改；已配好则跳过）====="

@@ -526,12 +526,12 @@ describe('DetailDrawer', () => {
       expect(iconOf(keywordCard)).toEqual({
         src: '/finding-keyword.png',
         alt: '命中',
-        tip: '监测规则命中',
+        tip: '关键词命中',
       });
       expect(iconOf(reportCard)).toEqual({
         src: '/finding-ai.png',
         alt: '报告提示',
-        tip: '报告全文提示',
+        tip: 'AI 语义命中',
       });
 
       // Exactly one per card, so a card can never carry both or neither.

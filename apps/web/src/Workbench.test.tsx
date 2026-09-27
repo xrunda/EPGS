@@ -264,9 +264,9 @@ describe('Workbench', () => {
 
     // Hovering tells the doctor what the icon means - a bare glyph in a dense
     // table is just "some icon" the first time you see it.
-    expect(tipsOf(/测试患者甲/)).toEqual(['监测规则命中']);
-    expect(tipsOf(/测试患者乙/)).toEqual(['报告全文提示']);
-    expect(tipsOf(/测试患者丙/)).toEqual(['监测规则命中', '报告全文提示']);
+    expect(tipsOf(/测试患者甲/)).toEqual(['关键词命中']);
+    expect(tipsOf(/测试患者乙/)).toEqual(['AI 语义命中']);
+    expect(tipsOf(/测试患者丙/)).toEqual(['关键词命中', 'AI 语义命中']);
     // One tip per icon: a wrapper without data-tip renders an empty bubble.
     expect(tipsOf(/测试患者丙/)).toHaveLength(iconsOf(/测试患者丙/).length);
 

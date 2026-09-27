@@ -32,23 +32,45 @@ describe('发现来源图标（issue #112）', () => {
   });
 
   /**
-   * `alt` 是读屏软件唯一拿得到的说明；`tip` 是鼠标悬停时浏览器画在图标旁边的文字。
-   * 两处术语扫描盯的是**渲染文本**（container.textContent），属性都不在里面 ——
-   * 所以这里单独钉一次，防止有人顺手把「关键词命中」「AI 语义」写进去、绕过了那两道闸门。
-   * `tip` 尤其容易漏：它是唯一一个真的会显示成文字的部分，只是不在 textContent 里。
+   * `alt` 是读屏软件唯一拿得到的说明。两处术语扫描盯的是**渲染文本**
+   * （container.textContent），属性都不在里面 —— 所以这里单独钉一次。
    */
-  it('alt 与 tip 只用界面里既有的说法，不含任何机制词', () => {
-    const texts = [
-      KEYWORD_SOURCE_ICON.alt,
-      KEYWORD_SOURCE_ICON.tip,
-      REPORT_SOURCE_ICON.alt,
-      REPORT_SOURCE_ICON.tip,
-    ];
+  it('alt 只用界面里既有的说法，不含任何机制词', () => {
+    const alts = [KEYWORD_SOURCE_ICON.alt, REPORT_SOURCE_ICON.alt];
     for (const leak of ['关键词', 'AI', '语义', '判读', '模型', '置信度', '哈希', 'LLM']) {
-      for (const text of texts) expect(text, text).not.toContain(leak);
+      for (const alt of alts) expect(alt, alt).not.toContain(leak);
     }
-    // 正面控制：确认上面扫的确实是这几个词，而不是空字符串在通过。
-    expect(texts).toEqual(['命中', '监测规则命中', '报告提示', '报告全文提示']);
+    // 正面控制：确认上面扫的确实是这两个词，而不是空字符串在通过。
+    expect(alts).toEqual(['命中', '报告提示']);
+  });
+
+  /**
+   * 悬停提示（`data-tip`）走另一套说法：跟着设置入口的按钮名（所有者 2026-09-27 定，
+   * 对应顶栏的「关键词监控」「AI 语义监控」）。所以这里**故意**含「关键词 / AI / 语义」
+   * —— 它们是对外的产品词，不再是禁列；把这条与上一条分开写，就是为了让这个放宽
+   * 是显式的、有人看得见的，而不是顺手从禁列里删掉几个词。
+   *
+   * 实现词（判读 / 模型 / 置信度 …）照旧一个都不许有：提示是医生看得见的渲染文本。
+   */
+  it('提示词跟设置入口同名，但实现词照旧不许出现', () => {
+    const tips = [KEYWORD_SOURCE_ICON.tip, REPORT_SOURCE_ICON.tip];
+    // 正面控制：先钉死这两个字符串确实是跟着入口走的那两个词。
+    expect(tips).toEqual(['关键词命中', 'AI 语义命中']);
+    for (const leak of [
+      '判读',
+      'Prompt',
+      '提示词',
+      'LLM',
+      '模型',
+      '分类器',
+      'JSON',
+      'Schema',
+      '置信度',
+      '哈希',
+      '大模型',
+    ]) {
+      for (const tip of tips) expect(tip, tip).not.toContain(leak);
+    }
   });
 
   /**

@@ -95,8 +95,18 @@ export class MonitorService {
       UNCLASSIFIED: 'unclassified',
     };
 
-  /** Detail hit evidence + rule provenance (issue #8) - shared by both lookup paths. */
-  private static readonly DETAIL_INCLUDE = {
+  /**
+   * Detail hit evidence + rule provenance (issue #8) - shared by both lookup
+   * paths.
+   *
+   * PUBLIC since issue #103, and reused verbatim by LevelConflictsService. That
+   * is deliberate: the admin's conflict list must be computed from EXACTLY the
+   * rows the doctor's drawer reads, or an admin would be shown conflicts the
+   * drawer does not render (or miss ones it does). A second, slightly different
+   * select here would be a second definition of "what the drawer knows", and the
+   * two would drift the first time either side gained a field.
+   */
+  static readonly DETAIL_INCLUDE = {
     matches: {
       orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
       // Issue #8: each hit carries the exact rule version that produced

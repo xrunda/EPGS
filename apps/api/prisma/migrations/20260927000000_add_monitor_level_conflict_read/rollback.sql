@@ -1,0 +1,23 @@
+-- Rollback for add_monitor_level_conflict_read (issue #103).
+--
+-- Small and total: the table holds nothing but read state, and the conflicts it
+-- annotates are DERIVED at read time, so dropping it loses no data that anything
+-- else depends on. After this runs, every conflict is simply unread again -
+-- which is the same state a fresh environment starts in.
+--
+-- Nothing else in the schema references this table (no foreign key in either
+-- direction, no column anywhere else), so no other object has to change.
+--
+-- What this does NOT undo - two AuditAction values, because PostgreSQL cannot
+-- remove a value from a type:
+--   * AuditAction  still contains 'MONITOR_LEVEL_CONFLICT_READ' / '_UNREAD'
+-- Rebuilding that type would mean rewriting audit_log, a far bigger and riskier
+-- operation than leaving two unused values in place. audit_log rows that already
+-- recorded an admin marking a conflict read must keep their action regardless,
+-- and no code path can produce either value once the endpoints are gone.
+--
+-- Safe to run in any order relative to the code rollback: the endpoints fail
+-- closed (a missing table surfaces as a 500 on the admin list, which no doctor
+-- surface touches), and the doctor-facing drawer never reads this table at all.
+
+DROP TABLE IF EXISTS "monitor_level_conflict_read";

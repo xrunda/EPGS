@@ -8,7 +8,12 @@ import {
   MonitorAttentionSourceDto,
   MonitorLevelConflictDto,
 } from '@epgs/shared-types';
-import { ConflictFindingInput, ConflictHitInput, findLevelConflicts } from './level-conflict';
+import {
+  ConflictFindingInput,
+  ConflictHitInput,
+  LevelConflict,
+  findLevelConflicts,
+} from './level-conflict';
 
 /**
  * Issue #88 (PR-B): turns the report-level AI audit rows into the doctor-facing
@@ -209,27 +214,10 @@ export function toLevelConflicts(
   record: ReportAiRecordRow,
   hits: readonly ConflictHitInput[],
 ): MonitorLevelConflictDto[] {
-  const attempt = showableAttempt(attempts, record);
-  if (attempt === null || hits.length === 0) return [];
-
-  const findings: ConflictFindingInput[] = attempt.matches.map((match) => ({
-    semanticGroupId: match.semantic.semanticGroupId,
-    semanticName: match.semanticName,
-    attentionLevel: match.attentionLevel,
-    // Only the fallback path reads the text, and it reads it recomputed - the
-    // audit table stores the hash and the offsets, never the excerpt.
-    evidence: match.evidence.map((row) => ({
-      field: row.field,
-      start: row.evidenceStart,
-      end: row.evidenceEnd,
-      text: reconstructEvidence(row, record)?.text ?? null,
-    })),
-  }));
-
   const seen = new Set<string>();
   const conflicts: MonitorLevelConflictDto[] = [];
 
-  for (const conflict of findLevelConflicts({ hits, findings })) {
+  for (const conflict of findRecordLevelConflicts(attempts, record, hits)) {
     // The doctor-facing shape has no group ids, so two rules configured with the
     // same keyword and level against the same finding collapse to one sentence
     // here. The admin list - which does show them apart, because they are two
@@ -254,6 +242,43 @@ export function toLevelConflicts(
   }
 
   return conflicts;
+}
+
+/**
+ * The same conflicts, with the group ids the wire shape drops.
+ *
+ * This is what the ADMIN side consumes (issue #103): its todo identity is built
+ * from `ruleGroupId`/`semanticGroupId`, so two rules configured with the same
+ * keyword and level must stay apart there - they are two separate pieces of
+ * configuration to fix. `toLevelConflicts` collapses them for the doctor, who
+ * only ever reads one sentence about one report.
+ *
+ * Both are the same computation up to the last step, which is why this is a
+ * separate function rather than a second implementation of the rule.
+ */
+export function findRecordLevelConflicts(
+  attempts: readonly ReportAiAttemptRow[],
+  record: ReportAiRecordRow,
+  hits: readonly ConflictHitInput[],
+): LevelConflict[] {
+  const attempt = showableAttempt(attempts, record);
+  if (attempt === null || hits.length === 0) return [];
+
+  const findings: ConflictFindingInput[] = attempt.matches.map((match) => ({
+    semanticGroupId: match.semantic.semanticGroupId,
+    semanticName: match.semanticName,
+    attentionLevel: match.attentionLevel,
+    // Only the fallback path reads the text, and it reads it recomputed - the
+    // audit table stores the hash and the offsets, never the excerpt.
+    evidence: match.evidence.map((row) => ({
+      field: row.field,
+      start: row.evidenceStart,
+      end: row.evidenceEnd,
+      text: reconstructEvidence(row, record)?.text ?? null,
+    })),
+  }));
+
+  return findLevelConflicts({ hits, findings });
 }
 
 /**

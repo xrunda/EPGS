@@ -96,6 +96,17 @@ export interface MonitorExamDetailRow extends MonitorExamListRow {
   diagnosis: string | null;
   reportVersion: number;
   aiResolvedAt: Date | null;
+  /**
+   * When the keyword path last found something on this record. On the DETAIL row
+   * (not the list row) because only the detail include selects all scalars; the
+   * list select deliberately names its columns.
+   *
+   * Issue #103's admin aggregation uses it as the window bound and as each
+   * conflict's "last seen" instant - a level conflict needs a keyword hit to
+   * exist at all, so "nothing has matched this record for N days" is what makes
+   * a conflict stale.
+   */
+  lastMatchedAt: Date | null;
   matches: MonitorExamHitRow[];
   /** OK-outcome attempts, newest first. Empty when the report was never judged. */
   reportAiAttempts: ReportAiAttemptRow[];
@@ -180,7 +191,7 @@ export function toExamDetailDto(row: MonitorExamDetailRow): MonitorExamWorkbench
  * refuses the field values that do not name a single column instead of guessing,
  * and centralising that refusal in the pure module is what lets it be tested.
  */
-function toLevelConflictHits(hits: readonly MonitorExamHitRow[]): ConflictHitInput[] {
+export function toLevelConflictHits(hits: readonly MonitorExamHitRow[]): ConflictHitInput[] {
   return hits
     .filter((hit) => !hit.semanticFiltered)
     .map((hit) => ({

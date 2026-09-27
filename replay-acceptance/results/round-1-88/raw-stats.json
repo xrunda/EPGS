@@ -1,0 +1,29 @@
+{
+  "model": "dsv4-flash",
+  "gateway": "hospital (10.10.11.200:8080)",
+  "cases": 50,
+  "level_keyword": {
+    "RED": 15,
+    "YELLOW": 10,
+    "GREEN": 0,
+    "UNCLASSIFIED": 25
+  },
+  "level_final": {
+    "RED": 31,
+    "YELLOW": 12,
+    "GREEN": 0,
+    "UNCLASSIFIED": 7
+  },
+  "latency_ms": {
+    "min": 327,
+    "p50": 1894,
+    "max": 5274,
+    "avg": 1940
+  },
+  "outcomes": {
+    "OK": 50
+  },
+  "with_matches": 30,
+  "raised": 20,
+  "lowered": 0
+}

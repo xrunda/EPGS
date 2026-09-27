@@ -1,0 +1,1584 @@
+[
+  {
+    "case_id": "TEST-REPLAY-001",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 3,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 2557,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-002",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 5,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 2258,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-003",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 1,
+      "ai_level": null,
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 372,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-004",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 2,
+      "ai_level": null,
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 372,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-005",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 2,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3356,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 3,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-006",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 3,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3652,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 3,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-007",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 3,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 2057,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-008",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 1,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 2981,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-009",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "YELLOW",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 2,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3063,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 3,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-010",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "YELLOW",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 1,
+      "ai_level": "YELLOW",
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 1805,
+      "ai_error": null,
+      "ai_semantics": [
+        "治疗后并发症或术后异常征象(YELLOW)"
+      ],
+      "ai_evidence_count": 1,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-011",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 2,
+      "ai_level": "YELLOW",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 1849,
+      "ai_error": null,
+      "ai_semantics": [
+        "多发病变或累及范围广泛(YELLOW)"
+      ],
+      "ai_evidence_count": 1,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-012",
+    "scenario_type": "A",
+    "scenario_label": "A 关键词明显命中，语义也应关注",
+    "expected_attention": "YES",
+    "expected_level": "YELLOW",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 2,
+      "ai_level": "YELLOW",
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 1891,
+      "ai_error": null,
+      "ai_semantics": [
+        "多发病变或累及范围广泛(YELLOW)"
+      ],
+      "ai_evidence_count": 1,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-013",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3795,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 3,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-014",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3388,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-015",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3487,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 3,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-016",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 3,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 4212,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "活动性出血或近期出血征象(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 3,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-017",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3532,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-018",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3207,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-019",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "YELLOW",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 4,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 5274,
+      "ai_error": null,
+      "ai_semantics": [
+        "多发病变或累及范围广泛(YELLOW)",
+        "明确或高度疑似恶性病变(RED)",
+        "活动性出血或近期出血征象(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 5,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 3,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-020",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3402,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 3,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-021",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "YELLOW",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "YELLOW",
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 2075,
+      "ai_error": null,
+      "ai_semantics": [
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-022",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "YELLOW",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3135,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-023",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3417,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-024",
+    "scenario_type": "B",
+    "scenario_label": "B 关键词不命中，整份报告语义应关注",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3501,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 3,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-025",
+    "scenario_type": "C",
+    "scenario_label": "C 关键词命中，但上下文是否定/排除",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 1,
+      "ai_level": null,
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 369,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-026",
+    "scenario_type": "C",
+    "scenario_label": "C 关键词命中，但上下文是否定/排除",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 2,
+      "ai_level": null,
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 369,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-027",
+    "scenario_type": "C",
+    "scenario_label": "C 关键词命中，但上下文是否定/排除",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 2,
+      "ai_level": null,
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 370,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-028",
+    "scenario_type": "C",
+    "scenario_label": "C 关键词命中，但上下文是否定/排除",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 2,
+      "ai_level": null,
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 370,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-029",
+    "scenario_type": "C",
+    "scenario_label": "C 关键词命中，但上下文是否定/排除",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 2,
+      "ai_level": null,
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 372,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-030",
+    "scenario_type": "C",
+    "scenario_label": "C 关键词命中，但上下文是否定/排除",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 2,
+      "ai_level": null,
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 369,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-031",
+    "scenario_type": "C",
+    "scenario_label": "C 关键词命中，但上下文是否定/排除",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 1,
+      "ai_level": null,
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 373,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-032",
+    "scenario_type": "C",
+    "scenario_label": "C 关键词命中，但上下文是否定/排除",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 1,
+      "ai_level": null,
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 370,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-033",
+    "scenario_type": "D",
+    "scenario_label": "D 关键词命中，但属于既往史",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 2,
+      "ai_level": null,
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 373,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-034",
+    "scenario_type": "D",
+    "scenario_label": "D 关键词命中，但属于既往史",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 2,
+      "ai_level": null,
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 372,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-035",
+    "scenario_type": "D",
+    "scenario_label": "D 关键词命中，但属于既往史",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 2,
+      "ai_level": null,
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 370,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-036",
+    "scenario_type": "D",
+    "scenario_label": "D 关键词命中，但属于既往史",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_FILTER",
+    "round1": {
+      "keyword_level": "RED",
+      "keyword_hits": 4,
+      "ai_level": "GREEN",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 1515,
+      "ai_error": null,
+      "ai_semantics": [
+        "与既往检查相比出现变化(GREEN)"
+      ],
+      "ai_evidence_count": 1,
+      "raised": false,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-037",
+    "scenario_type": "CROSS_PATH",
+    "scenario_label": "CROSS_PATH 组合路径：既往史命中应被 #87 过滤，本次真异常应由 #88 独立发现",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FILTER_AND_FIND",
+    "round1": {
+      "keyword_level": "YELLOW",
+      "keyword_hits": 2,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3473,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 3,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "RED",
+      "ai_match_count": 2,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-038",
+    "scenario_type": "E",
+    "scenario_label": "E 模糊/疑似/不确定表达",
+    "expected_attention": "YES",
+    "expected_level": "YELLOW",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "YELLOW",
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 1923,
+      "ai_error": null,
+      "ai_semantics": [
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 1,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-039",
+    "scenario_type": "E",
+    "scenario_label": "E 模糊/疑似/不确定表达",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3348,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 2,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-040",
+    "scenario_type": "E",
+    "scenario_label": "E 模糊/疑似/不确定表达",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 4045,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 4,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-041",
+    "scenario_type": "E",
+    "scenario_label": "E 模糊/疑似/不确定表达",
+    "expected_attention": "YES",
+    "expected_level": "YELLOW",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "YELLOW",
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 1880,
+      "ai_error": null,
+      "ai_semantics": [
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 1,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-042",
+    "scenario_type": "E",
+    "scenario_label": "E 模糊/疑似/不确定表达",
+    "expected_attention": "YES",
+    "expected_level": "RED",
+    "expected_ai_behavior": "SHOULD_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "RED",
+      "final_level": "RED",
+      "ai_outcome": "OK",
+      "ai_match_count": 2,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 3669,
+      "ai_error": null,
+      "ai_semantics": [
+        "明确或高度疑似恶性病变(RED)",
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 4,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-043",
+    "scenario_type": "E",
+    "scenario_label": "E 模糊/疑似/不确定表达",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "UNCERTAIN",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": "YELLOW",
+      "final_level": "YELLOW",
+      "ai_outcome": "OK",
+      "ai_match_count": 1,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 1894,
+      "ai_error": null,
+      "ai_semantics": [
+        "性质待定、需活检或短期复查的病变(YELLOW)"
+      ],
+      "ai_evidence_count": 1,
+      "raised": true,
+      "lowered": false,
+      "found": true
+    },
+    "round0": {
+      "current_level": "YELLOW",
+      "ai_match_count": 1,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-044",
+    "scenario_type": "F",
+    "scenario_label": "F 普通、低风险、基本正常",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_NOT_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": null,
+      "final_level": "UNCLASSIFIED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 372,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "UNCLASSIFIED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-045",
+    "scenario_type": "F",
+    "scenario_label": "F 普通、低风险、基本正常",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_NOT_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": null,
+      "final_level": "UNCLASSIFIED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 372,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "UNCLASSIFIED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-046",
+    "scenario_type": "F",
+    "scenario_label": "F 普通、低风险、基本正常",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_NOT_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": null,
+      "final_level": "UNCLASSIFIED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 328,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "UNCLASSIFIED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-047",
+    "scenario_type": "F",
+    "scenario_label": "F 普通、低风险、基本正常",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_NOT_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": null,
+      "final_level": "UNCLASSIFIED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 327,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "UNCLASSIFIED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-048",
+    "scenario_type": "F",
+    "scenario_label": "F 普通、低风险、基本正常",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_NOT_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": null,
+      "final_level": "UNCLASSIFIED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 375,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "UNCLASSIFIED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-049",
+    "scenario_type": "F",
+    "scenario_label": "F 普通、低风险、基本正常",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_NOT_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": null,
+      "final_level": "UNCLASSIFIED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 372,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "UNCLASSIFIED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  },
+  {
+    "case_id": "TEST-REPLAY-050",
+    "scenario_type": "F",
+    "scenario_label": "F 普通、低风险、基本正常",
+    "expected_attention": "NO",
+    "expected_level": "NONE",
+    "expected_ai_behavior": "SHOULD_NOT_FIND",
+    "round1": {
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "ai_level": null,
+      "final_level": "UNCLASSIFIED",
+      "ai_outcome": "OK",
+      "ai_match_count": 0,
+      "ai_semantic_count": 6,
+      "ai_model": "dsv4-flash",
+      "ai_latency_ms": 372,
+      "ai_error": null,
+      "ai_semantics": [],
+      "ai_evidence_count": 0,
+      "raised": false,
+      "lowered": false,
+      "found": false
+    },
+    "round0": {
+      "current_level": "UNCLASSIFIED",
+      "ai_match_count": 0,
+      "ai_latency_ms": null
+    }
+  }
+]

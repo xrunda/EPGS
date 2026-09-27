@@ -144,6 +144,18 @@ case ID 不变，总数仍是 50：
 | `cases.review.csv` | 生成物，50 行 × 19 列，**给人读**的合并导出（正文 + 设计预期 + 引擎实测 + 理由），带 BOM |
 | `replay-db.mjs` | 唯一的运维脚本：`--load` / `--verify` / `--drop`，带 fail-closed 守卫 |
 
+**实际回放的结果**（issue #106）放在 `results/` 下，是**跑出来的存档**、不是生成物，
+按轮次分目录（每轮一份 `CONDITIONS.md` 记录实验条件、`RESULTS.md` 写结论、逐例明细 CSV/JSON）：
+
+| 目录 | 轮次 | 网关 |
+| --- | --- | --- |
+| `results/round-0-pipeline-dryrun/` | 链路预演 | 公网网关 |
+| `results/round-1-88/` | 第一轮 `#88` 回放 | 医院内网网关 `10.10.11.200:8080`（堡垒机 `10.10.11.91`） |
+
+结果目录与实际运行环境一一对应，**不要把不同轮次的结果混在一起比较**——
+实验条件不同，`CONDITIONS.md` 里写明了每轮跑的是什么。结论只以对应轮次的
+`RESULTS.md` 为准；它们是**链路验收**，不是临床验收（见 §1）。
+
 不要手改这三个 CSV —— 它们全部由 `build-dataset.mjs` 从 `cases.mjs` 生成。
 
 ### `cases.review.csv`：给人看的那一份

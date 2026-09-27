@@ -1,0 +1,51 @@
+case_id,keyword_level,keyword_hits,ai_level,final_level,ai_outcome,ai_match_count,ai_semantic_count,ai_model,ai_latency_ms,ai_error,ai_semantics,ai_evidence_count
+TEST-REPLAY-001,RED,3,RED,RED,OK,1,6,dsv4-flash,2557,"",明确或高度疑似恶性病变(RED),2
+TEST-REPLAY-002,RED,5,RED,RED,OK,1,6,dsv4-flash,2258,"",明确或高度疑似恶性病变(RED),2
+TEST-REPLAY-003,RED,1,-,RED,OK,0,6,dsv4-flash,372,"","",0
+TEST-REPLAY-004,RED,2,-,RED,OK,0,6,dsv4-flash,372,"","",0
+TEST-REPLAY-005,RED,2,RED,RED,OK,2,6,dsv4-flash,3356,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),3
+TEST-REPLAY-006,RED,3,RED,RED,OK,2,6,dsv4-flash,3652,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),3
+TEST-REPLAY-007,RED,3,RED,RED,OK,1,6,dsv4-flash,2057,"",明确或高度疑似恶性病变(RED),2
+TEST-REPLAY-008,RED,1,RED,RED,OK,2,6,dsv4-flash,2981,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),2
+TEST-REPLAY-009,YELLOW,2,RED,RED,OK,2,6,dsv4-flash,3063,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),3
+TEST-REPLAY-010,YELLOW,1,YELLOW,YELLOW,OK,1,6,dsv4-flash,1805,"",治疗后并发症或术后异常征象(YELLOW),1
+TEST-REPLAY-011,RED,2,YELLOW,RED,OK,1,6,dsv4-flash,1849,"",多发病变或累及范围广泛(YELLOW),1
+TEST-REPLAY-012,YELLOW,2,YELLOW,YELLOW,OK,1,6,dsv4-flash,1891,"",多发病变或累及范围广泛(YELLOW),1
+TEST-REPLAY-013,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3795,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),3
+TEST-REPLAY-014,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3388,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),2
+TEST-REPLAY-015,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3487,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),3
+TEST-REPLAY-016,UNCLASSIFIED,0,RED,RED,OK,3,6,dsv4-flash,4212,"",明确或高度疑似恶性病变(RED) | 活动性出血或近期出血征象(RED) | 性质待定、需活检或短期复查的病变(YELLOW),3
+TEST-REPLAY-017,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3532,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),2
+TEST-REPLAY-018,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3207,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),2
+TEST-REPLAY-019,UNCLASSIFIED,0,RED,RED,OK,4,6,dsv4-flash,5274,"",多发病变或累及范围广泛(YELLOW) | 明确或高度疑似恶性病变(RED) | 活动性出血或近期出血征象(RED) | 性质待定、需活检或短期复查的病变(YELLOW),5
+TEST-REPLAY-020,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3402,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),3
+TEST-REPLAY-021,UNCLASSIFIED,0,YELLOW,YELLOW,OK,1,6,dsv4-flash,2075,"",性质待定、需活检或短期复查的病变(YELLOW),2
+TEST-REPLAY-022,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3135,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),2
+TEST-REPLAY-023,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3417,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),2
+TEST-REPLAY-024,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3501,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),3
+TEST-REPLAY-025,YELLOW,1,-,YELLOW,OK,0,6,dsv4-flash,369,"","",0
+TEST-REPLAY-026,RED,2,-,RED,OK,0,6,dsv4-flash,369,"","",0
+TEST-REPLAY-027,YELLOW,2,-,YELLOW,OK,0,6,dsv4-flash,370,"","",0
+TEST-REPLAY-028,YELLOW,2,-,YELLOW,OK,0,6,dsv4-flash,370,"","",0
+TEST-REPLAY-029,RED,2,-,RED,OK,0,6,dsv4-flash,372,"","",0
+TEST-REPLAY-030,YELLOW,2,-,YELLOW,OK,0,6,dsv4-flash,369,"","",0
+TEST-REPLAY-031,YELLOW,1,-,YELLOW,OK,0,6,dsv4-flash,373,"","",0
+TEST-REPLAY-032,RED,1,-,RED,OK,0,6,dsv4-flash,370,"","",0
+TEST-REPLAY-033,RED,2,-,RED,OK,0,6,dsv4-flash,373,"","",0
+TEST-REPLAY-034,RED,2,-,RED,OK,0,6,dsv4-flash,372,"","",0
+TEST-REPLAY-035,YELLOW,2,-,YELLOW,OK,0,6,dsv4-flash,370,"","",0
+TEST-REPLAY-036,RED,4,GREEN,RED,OK,1,6,dsv4-flash,1515,"",与既往检查相比出现变化(GREEN),1
+TEST-REPLAY-037,YELLOW,2,RED,RED,OK,2,6,dsv4-flash,3473,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),3
+TEST-REPLAY-038,UNCLASSIFIED,0,YELLOW,YELLOW,OK,1,6,dsv4-flash,1923,"",性质待定、需活检或短期复查的病变(YELLOW),1
+TEST-REPLAY-039,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3348,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),2
+TEST-REPLAY-040,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,4045,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),4
+TEST-REPLAY-041,UNCLASSIFIED,0,YELLOW,YELLOW,OK,1,6,dsv4-flash,1880,"",性质待定、需活检或短期复查的病变(YELLOW),1
+TEST-REPLAY-042,UNCLASSIFIED,0,RED,RED,OK,2,6,dsv4-flash,3669,"",明确或高度疑似恶性病变(RED) | 性质待定、需活检或短期复查的病变(YELLOW),4
+TEST-REPLAY-043,UNCLASSIFIED,0,YELLOW,YELLOW,OK,1,6,dsv4-flash,1894,"",性质待定、需活检或短期复查的病变(YELLOW),1
+TEST-REPLAY-044,UNCLASSIFIED,0,-,UNCLASSIFIED,OK,0,6,dsv4-flash,372,"","",0
+TEST-REPLAY-045,UNCLASSIFIED,0,-,UNCLASSIFIED,OK,0,6,dsv4-flash,372,"","",0
+TEST-REPLAY-046,UNCLASSIFIED,0,-,UNCLASSIFIED,OK,0,6,dsv4-flash,328,"","",0
+TEST-REPLAY-047,UNCLASSIFIED,0,-,UNCLASSIFIED,OK,0,6,dsv4-flash,327,"","",0
+TEST-REPLAY-048,UNCLASSIFIED,0,-,UNCLASSIFIED,OK,0,6,dsv4-flash,375,"","",0
+TEST-REPLAY-049,UNCLASSIFIED,0,-,UNCLASSIFIED,OK,0,6,dsv4-flash,372,"","",0
+TEST-REPLAY-050,UNCLASSIFIED,0,-,UNCLASSIFIED,OK,0,6,dsv4-flash,372,"","",0

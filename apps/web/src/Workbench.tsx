@@ -22,6 +22,8 @@ interface WorkbenchProps {
   onOpenNotifications?: () => void;
   /** Opens the user-management modal (owned by App). undefined when the current user lacks USER_ADMIN - button hidden (server still enforces via RolesGuard). */
   onOpenUsers?: () => void;
+  /** Opens the level-conflict list (owned by App, issue #103). undefined when the current user lacks RULE_ADMIN. */
+  onOpenLevelConflicts?: () => void;
 }
 
 interface WorkbenchFilters {
@@ -180,6 +182,7 @@ export function Workbench({
   onOpenAiSemantics,
   onOpenNotifications,
   onOpenUsers,
+  onOpenLevelConflicts,
 }: WorkbenchProps): JSX.Element {
   const [items, setItems] = useState<MonitorExamWorkbenchDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -368,6 +371,17 @@ export function Workbench({
           {onOpenNotifications && (
             <button className="button" type="button" onClick={onOpenNotifications}>
               消息推送
+            </button>
+          )}
+          {/*
+            等级分歧（issue #103）：按钮文案不带机制词（「关键词」「整份报告核对」
+            「语义」都不出现），理由同上面两个入口——工作台是医生的临床视图，
+            渲染文本要过 Workbench.test.tsx 的术语扫描。它本身是配置侧入口，
+            非 RULE_ADMIN 根本拿不到这个 prop。
+          */}
+          {onOpenLevelConflicts && (
+            <button className="button" type="button" onClick={onOpenLevelConflicts}>
+              等级分歧
             </button>
           )}
           {onOpenUsers && (

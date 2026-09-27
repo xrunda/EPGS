@@ -28,6 +28,11 @@
  * base detail type - cannot name them. Levels and names here are configured
  * values snapshotted at judge time, not a model's classification, and no audit
  * field (hash, model, latency, error) ever crosses this boundary.
+ *
+ * Issue #103 adds `levelConflicts`: the keyword path and the report-level path
+ * agreeing on WHERE something is but disagreeing on how much attention it needs.
+ * It names both sides, and both names are already on this same response - so it
+ * opens no new report-text exit. It carries no offsets and no excerpt.
  */
 
 import { AttentionLevelDto } from './attention-semantics';
@@ -274,6 +279,46 @@ export interface MonitorAiSemanticDto {
 }
 
 /**
+ * Issue #103: one place in the report where the keyword path and the report-level
+ * path BOTH found something, but asked for different levels of attention.
+ *
+ * Until now the drawer showed such a pair as two ordinary rows in one merged list
+ * - a red one and a yellow one, side by side - which reads as "this report has
+ * two things worth reading", when the truth is "two rules disagree about one
+ * thing and a human has to settle it". This type is that missing sentence.
+ *
+ * Scope, deliberately narrow:
+ *
+ * - It reports a DISAGREEMENT, never a winner. Neither side is called wrong.
+ * - Equal levels are not a conflict and are never reported.
+ * - The pair must land in the SAME report column. A keyword hit in the findings
+ *   and a finding in the impression are two different places even when the words
+ *   overlap, so they are not a conflict.
+ *
+ * Both sides are already on this response (`hits[].keyword` + `.level`,
+ * `aiSemantics[].name` + `.attentionLevel`), so nothing here is new patient data;
+ * `field` is the enum name of a column, not text. No offset and no excerpt is
+ * ever carried - the agreement test itself is computed server-side.
+ */
+export interface MonitorLevelConflictDto {
+  /** The matched keyword. Also visible as `hits[].keyword`. */
+  keyword: string;
+  /** The level the KEYWORD rule asked for. Not adjusted by anything. */
+  keywordLevel: MonitorLevelDto;
+  /** The configured name of the finding. Also visible as `aiSemantics[].name`. */
+  semanticName: string;
+  /** The level that finding asked for. */
+  semanticLevel: AttentionLevelDto;
+  /**
+   * The report column both sides landed in. Only `FINDINGS` (reportContent) and
+   * `IMPRESSION` (diagnosis) can ever appear: the matcher stores the concrete
+   * column a rule actually hit, and only those two have a text source on both
+   * sides (see apps/api/src/monitor/level-conflict.ts).
+   */
+  field: MatchFieldDto;
+}
+
+/**
  * Issue #88 (PR-B): the workbench list row. An EXTENSION of MonitorExamDto, not
  * a change to it, so `AlertLinkExamListDto` (which keeps `MonitorExamDto[]`)
  * is structurally incapable of carrying the new field to the alert-link H5
@@ -317,6 +362,17 @@ export interface MonitorExamWorkbenchDetailDto extends MonitorExamDetailDto {
    * no current finding is showable; see aiJudged.
    */
   aiSemantics: MonitorAiSemanticDto[];
+  /**
+   * Issue #103: places where the two paths agree on WHERE but not on HOW MUCH.
+   * Empty is the normal case and renders nothing at all - this is a notice about
+   * a configuration problem, and one that appears on every record stops being
+   * read.
+   *
+   * Every entry names a finding that is also in `aiSemantics` above (they are
+   * derived from the same attempt, under the same gate), so the notice can never
+   * point at something the drawer does not show.
+   */
+  levelConflicts: MonitorLevelConflictDto[];
 }
 
 /** Paginated response envelope for `GET /api/monitor/exams`. */

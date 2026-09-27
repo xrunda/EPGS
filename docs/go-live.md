@@ -63,7 +63,7 @@
       worker（定时推送）所在主机都能出站访问 `https://qyapi.weixin.qq.com`
       （群机器人 Webhook）；否则推送记录为 `FAILED`、`wecomErrMsg` 为网络错误。
 - [ ] **预警卡片链接可达**（#72/#76）：`ALERT_LINK_BASE_URL` 必须是**医生手机在医院
-      网络下**能打开的 web 入口（nginx 单端口对外地址，如 `http://10.10.10.91:5173`），
+      网络下**能打开的 web 入口（nginx 单端口对外地址，形如 `http://<堡垒机地址>:5173`），
       手机需能访问 `/alert` 与封面 `/alert-cover.jpg`；用 4G 看企微的场景下若入口
       不可达，卡片可显示但点不开。未确认前**不要配置**该变量（不配 = 只推文本，
       行为与之前一致），确认后 api 与 worker 配同值（`start.sh` 会校验一致性）。

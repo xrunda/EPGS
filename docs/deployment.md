@@ -14,7 +14,29 @@
 - 前端请求一律相对路径（同源），构建产物不含任何内网 IP
 - 配置模板：`deploy/nginx.conf.template`；`start.sh` 自动替换占位符、`nginx -t` 校验后 (re)load
 
+### 1.1 运行环境：PostgreSQL 有两种形态（issue #121）
+
+堡垒机换过机，两台的 PostgreSQL 装法不同，`start.sh` 的 `[1/8]` 步**自动识别**，`PG_MODE=docker|native|auto`（默认 auto）可强制：
+
+|            | 旧堡垒机                                               | 新堡垒机                                                          |
+| ---------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| 仓库路径   | `/data/epgs-git`                                       | `/root/EPGS`                                                      |
+| PostgreSQL | Docker 容器 `epgs-postgres`（`docker-compose.yml` 起） | **宿主机原生 18.x**（apt 安装，本机 5432），**机器上没有 Docker** |
+| 形态       | `PG_MODE=docker`                                       | `PG_MODE=native`                                                  |
+
+本文按**形态**区分两台机器，不记录具体 IP 与入口地址（需要时向项目所有者索取）；想知道自己
+站在哪台机器上，看仓库路径、以及 `docker ps` 里有没有 `epgs-postgres` 就够了。§2 里保留的旧 IP
+是当时故障的原始描述，不再追加新地址。
+
+判定顺序是「**已存在 `epgs-postgres` 容器 → docker**，否则探测 `DATABASE_URL` 指向的地址有没有响应 → native，都不行才 `docker compose up` 引导首次安装」。容器优先是刻意的：绝不能因为容器一时不健康就静默切到宿主机上的另一个库——那等于悄无声息换了一个数据库。三种形态都不成立时脚本**报错退出**，不会带着一个连不上的库往下走。
+
+> **新堡垒机是首次安装，本文档不是首次安装 runbook。** 那台机器上有代码，但没有 `epgs` 库、
+> 没有任何 `.env`，`start.sh` 从未在那里跑过；建库建角色、三个 `.env` 填什么、网闸怎么映射，
+> 目前没有文档，待补（要先定下医生侧入口地址、以及旧机器的账号与规则配置要不要迁过来）。
+
 ## 2. 故障记录
+
+> **本节是历史记录，不是操作指引。** 里面的 IP（`10.10.10.91`）、路径（`/data/epgs-git`）与容器名都是**旧堡垒机**的；按原样照抄会指到不存在的主机上。当前环境见 §1.1。
 
 ### 2.1 网闸登录失败（硬编码 IP）
 
@@ -55,7 +77,8 @@
 ## 3. start.sh 运维要点
 
 - 用法：`bash start.sh`（git pull + 重启）/ `bash start.sh nopull`（改完 .env 快速重启）/ `bash start.sh stop`
-- 流程：git pull → env 校验 → docker postgres → 构建 libs → prisma migrate → 构建 web → 后台启动 api/worker → 生成并 reload nginx → 就绪等待
+- 流程：git pull → env 校验 → 准备 postgres（自动识别容器/宿主机形态，见 §1.1）→ 构建 libs → prisma migrate → 构建 web → 后台启动 api/worker → 生成并 reload nginx → 就绪等待
+- `PG_MODE=docker|native|auto`（默认 auto）强制 PostgreSQL 形态；宿主机形态下脚本全程不调用 docker，机器上没装 docker 也能跑（issue #121）
 - env fail-fast 预检：`NOTIFICATION_SECRET_KEY` 强制必填（`openssl rand -hex 24` 生成），缺了立刻报错，避免 60 秒等待后以「未就绪」收场
 - env 预检（#72/#76）：`ALERT_LINK_BASE_URL` 可选——两端都不配 = 卡片关闭（打印提示）；只配一端或两端不同值 → **报错退出**（否则 worker 签出的链接医生打不开且不报错）；指向 `localhost`/`127.0.0.1` → 报错退出；`ALERT_LINK_TTL_HOURS` 两端不一致仅警告
 - `.env` 不进 git，缺失即报错

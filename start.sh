@@ -6,12 +6,12 @@
 #   bash start.sh nopull    跳过 git pull，仅重启（用于 .env 手动改完后快速重启）
 #   bash start.sh stop      仅停止 api/worker，并 reload nginx（不碰 PostgreSQL）
 #
-#   PG_MODE=docker|native|auto（默认 auto）强制指定 PostgreSQL 形态，见 [1/8]
+#   PG_MODE=docker|native|auto（默认 auto）强制指定 PostgreSQL 形态，见 [1/7]
 #
 # 前置条件:
 #   - node/pnpm/nginx 已装好 (node -v / pnpm -v / nginx -v 确认)
 #   - PostgreSQL：宿主机形态（apt/系统包装在机器上）**不需要 docker**；
-#     容器形态才需要 docker。两种形态由 [1/8] 自动识别（issue #121）。
+#     容器形态才需要 docker。两种形态由 [1/7] 自动识别（issue #121）。
 #   - apps/api/.env、apps/worker/.env 已手动创建好
 #     (.env 从不进 git，git pull 不会自动生成它们 - 首次部署需要手动
 #     创建，参考本仓库 README 或直接问维护者要一份现成的)
@@ -57,12 +57,15 @@ stop_all() {
     rm -f "$PID_FILE"
   fi
   for port in 3000 3001; do
-    # lsof isn't installed on every host this runs on, and `nest start
-    # --watch` spawns a `dist/main` child that survives its parent being
-    # killed (reparented to PID 1) still holding the port - so this must
-    # find listeners by port, not rely on the PID_FILE loop above. `ss`
-    # is present on any modern distro (part of iproute2); fall back to
-    # /proc/net/tcp parsing only if even that is missing.
+    # 防御性清扫（issue #129）：api/worker 现在以 `node dist/main.js` 启动，
+    # 而 `pnpm` 会把信号转给它拉起的 node 子进程 —— 实测 kill 掉 PID_FILE 里
+    # 记的那个 pnpm PID，服务立即停止、端口立即释放，不留孤儿。所以上面那轮
+    # 通常就杀干净了；这里仍按端口查一遍，是为了清掉两类 PID_FILE 管不到的
+    # 东西：改用 start:prod 之前遗留的 `nest start --watch` 孤儿（它们被
+    # reparent 到 PID 1 后继续占着端口，见 docs/first-install.md §11），以及
+    # 有人在机器上手工起的进程。代价只有一次 `ss`。
+    # `ss` is present on any modern distro (part of iproute2); fall back to
+    # lsof only if even that is missing.
     pids=""
     if command -v ss >/dev/null 2>&1; then
       pids=$(ss -tlnp "sport = :$port" 2>/dev/null \
@@ -93,7 +96,7 @@ stop_all
 
 if [ "${1:-}" != "nopull" ]; then
   echo ""
-  echo "===== [0/8] git pull 最新代码 ====="
+  echo "===== [0/7] git pull 最新代码 ====="
   # --ff-only（issue #127）：堡垒机是只读的部署目标，不该在那里产生合并提交。
   # 一旦有人在那儿改过文件或有本地提交，这里会快速失败并说清楚，而不是悄悄
   # 合出一个没人看过的 merge commit。
@@ -229,7 +232,7 @@ postgres_reachable() {
 }
 
 echo ""
-echo "===== [1/8] 准备 Postgres ====="
+echo "===== [1/7] 准备 Postgres ====="
 # 目标库地址：从 DATABASE_URL 里取 host 与 port，只用于探测「库活了没有」。
 # 用户名密码不取、也不打印——整条连接串绝不进输出（备份/排查时贴日志也不会泄密）。
 PG_URL=$(grep -m1 '^DATABASE_URL=' apps/api/.env | cut -d= -f2- | tr -d '"' || true)
@@ -311,7 +314,7 @@ else
 fi
 
 echo ""
-echo "===== [2/8] 校正 .env（首次部署才需要改；已配好则跳过）====="
+echo "===== [2/7] 校正 .env（首次部署才需要改；已配好则跳过）====="
 # 修改前先备份一份 .env，防止意外覆盖后无法恢复（.env.bak 已加入 .gitignore，
 # 不会被误提交；需要回滚时 cp .env.bak .env 即可）。
 for env_file in apps/api/.env apps/worker/.env; do
@@ -353,29 +356,35 @@ if ! grep -q "^PACS_ADAPTER_MODE=soap" apps/worker/.env; then
 fi
 
 echo ""
-echo "===== [3/8] 安装依赖 (pnpm install) ====="
+echo "===== [3/7] 安装依赖 (pnpm install) ====="
 pnpm install --frozen-lockfile
 
 echo ""
-echo "===== [4/8] 构建 shared-types / matching-engine ====="
-pnpm run build:libs
+echo "===== [4/7] 构建全部产物 (libs + web + api + worker) ====="
+# 一条 `pnpm run build` 覆盖四样：shared-types/matching-engine 等 libs、web 静态
+# 文件、以及 api/worker 的 dist。后两者是 issue #129 新增的必需项 —— api/worker
+# 现在以 `node dist/main.js` 启动，dist 必须先存在；改用 start:prod 之前是
+# `nest start --watch` 边跑边编译，所以当时不必构建它们。
+#
+# 每次启动都重新构建。**不做「dist 已存在就跳过」的优化** —— 拿陈旧产物启动
+# 出的问题（代码是上一版、迁移已经跑过）比多花这几十秒危险得多。
+pnpm run build
 
 echo ""
-echo "===== [5/8] 数据库迁移 (prisma migrate deploy) ====="
+echo "===== [5/7] 数据库迁移 (prisma migrate deploy) ====="
 pnpm --filter api exec prisma migrate deploy
 
 echo ""
-echo "===== [6/8] 构建 web 静态文件 ====="
-pnpm --filter web run build
-
-echo ""
-echo "===== [7/8] 后台启动 api / worker，生成并 reload nginx ====="
+echo "===== [6/7] 后台启动 api / worker，生成并 reload nginx ====="
 : > "$PID_FILE"
 
-nohup pnpm --filter api run start:dev > "$LOG_DIR/api.log" 2>&1 &
+# start:prod = `node dist/main.js`。不用 `nest start --watch`（原先的 start:dev）：
+# watch 会派生一个 dist/main 子进程，父进程被杀后它被 reparent 到 PID 1 继续占着
+# 端口，下次启动就以 EADDRINUSE 收场，而人只看到"api 未就绪"（issue #129）。
+nohup pnpm --filter api run start:prod > "$LOG_DIR/api.log" 2>&1 &
 echo $! >> "$PID_FILE"
 
-nohup env PORT=3001 pnpm --filter worker run start:dev > "$LOG_DIR/worker.log" 2>&1 &
+nohup env PORT=3001 pnpm --filter worker run start:prod > "$LOG_DIR/worker.log" 2>&1 &
 echo $! >> "$PID_FILE"
 
 sed -e "s#__LISTEN_PORT__#$LISTEN_PORT#" -e "s#__WEB_ROOT__#$WEB_DIST#" \
@@ -391,7 +400,7 @@ sudo nginx -c "$NGINX_CONF"
 echo "nginx 已启动，监听 :$LISTEN_PORT，配置见 $NGINX_CONF"
 
 echo ""
-echo "===== [8/8] 等待服务就绪 ====="
+echo "===== [7/7] 等待服务就绪 ====="
 for i in $(seq 1 60); do
   api_up=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/health" || true)
   worker_up=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3001/health" || true)

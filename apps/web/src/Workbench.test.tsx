@@ -244,6 +244,38 @@ describe('Workbench', () => {
   });
 
   /**
+   * Issue #125: neither toolbar entry may carry `.button--primary`.
+   *
+   * The two entries open configuration modals; neither is "the current one", and
+   * neither does anything at load time. `.button--primary` is this product's
+   * filled affirmative-action style (查询 / 新建 / 确认载入) — on an entry it
+   * reads as a selected tab, which is a state that does not exist here. The
+   * class was inherited from #9, when the toolbar held a single entry.
+   *
+   * Pinned as a class assertion rather than a screenshot because the failure is
+   * invisible to every other test: a filled entry breaks no behaviour, it just
+   * tells the user something untrue.
+   */
+  it('gives both toolbar entries the same plain button style, with no filled entry (issue #125)', async () => {
+    const { container } = render(
+      <Workbench onOpenRules={vi.fn()} onOpenAiSemantics={vi.fn()} />,
+    );
+    await screen.findByText('测试患者甲');
+
+    const toolbar = container.querySelector('.workbench__toolbar') as HTMLElement;
+    const rulesEntry = within(toolbar).getByRole('button', { name: '关键词监控' });
+    const semanticEntry = within(toolbar).getByRole('button', { name: 'AI 语义监控' });
+
+    expect(rulesEntry).toHaveClass('button');
+    expect(rulesEntry).not.toHaveClass('button--primary');
+    expect(semanticEntry).toHaveClass('button');
+    expect(semanticEntry).not.toHaveClass('button--primary');
+
+    // 两个入口外观必须完全一致：类名逐字相同，不只是「都不实心」。
+    expect(rulesEntry.className).toBe(semanticEntry.className);
+  });
+
+  /**
    * Issue #116: the toolbar keeps the two entries that are the product's value
    * proposition visible, and folds the three configuration/administration ones
    * into a「⋯」.

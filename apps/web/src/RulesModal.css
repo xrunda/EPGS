@@ -411,6 +411,25 @@ textarea:focus {
   background: #eef2f2;
   color: var(--ink-300);
 }
+/*
+  操作列按钮（issue #110）：标签内部不许断行。
+
+  `.table-actions` 是会收缩的 flex 行，而这些按钮 `padding: 0`、标签只有两三个
+  汉字。中文没有空格，浏览器可以在任意两个字之间断行，所以按钮的 min-content
+  宽度只有一个字 —— 表格把操作列压到多窄，按钮就折成多窄。实测用户管理弹窗在
+  1024px 及以下，「授权」「停用」「删除」被压成 18–23px 竖排，16 个按钮全部折行。
+
+  钉住 `white-space: nowrap` 之后，按钮的 min-content 变成完整标签宽度，操作列的
+  最小宽度随之上来，表格放不下时由 `.users-table-wrap` 的 `overflow-x: auto` 向
+  横向滚动兜底（`.rules-table` 已有 `min-width: 820px`）。
+
+  只加这一条，不动字号、内边距、颜色 —— 1280px 及以上本来就放得下，按钮宽度
+  与改动前逐像素一致。
+
+  AI 语义监控弹窗（`SemanticMonitorModal.css`）里有一份同样作用的、限定在该弹窗
+  内的写法，是 issue #88 目视验证时先加的；它现在成为冗余，但本 Issue 不动它，
+  因为那个文件正被在飞的 PR #109 改动，同时改会制造冲突。
+*/
 .table-actions button,
 .text-button {
   padding: 0;
@@ -424,6 +443,9 @@ textarea:focus {
 .text-button:hover {
   color: var(--teal-800);
   text-decoration: underline;
+}
+.table-actions button {
+  white-space: nowrap;
 }
 
 .rules-state {

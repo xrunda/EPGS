@@ -147,6 +147,41 @@ describe('Workbench', () => {
     vi.unstubAllGlobals();
   });
 
+  /*
+    issue #110：六个操作按钮在同一个组里。工具栏内容比容器宽，必须占两行，但换行
+    要**成组**发生 —— 否则断点落在按钮之间，最后一个按钮会单独掉到第二行。这条断言
+    钉住结构；「两行、按钮不折字」的渲染证据是 1440/1920 下的实测（见 PR #110）。
+  */
+  it('groups the six toolbar actions so they wrap as a unit (issue #110)', async () => {
+    render(
+      <Workbench
+        onOpenRules={vi.fn()}
+        onOpenAiSemantics={vi.fn()}
+        onOpenNotifications={vi.fn()}
+        onOpenUsers={vi.fn()}
+        onOpenLevelConflicts={vi.fn()}
+      />,
+    );
+    await screen.findByText('测试患者甲');
+
+    const group = document.querySelector('.workbench__toolbar-actions');
+    expect(group).not.toBeNull();
+    expect([...group!.querySelectorAll('button')].map((b) => b.textContent)).toEqual([
+      '立即刷新',
+      '监测规则',
+      '关注设置',
+      '消息推送',
+      '等级分歧',
+      '用户管理',
+    ]);
+
+    // 状态与倒计时留在组外：它们跟着按钮一起换行的话，第一行就空了。
+    const toolbar = group!.parentElement!;
+    expect(toolbar.querySelectorAll(':scope > button')).toHaveLength(0);
+    expect(toolbar.querySelector('.workbench__sync')).not.toBeNull();
+    expect(toolbar.querySelector('.workbench__countdown')).not.toBeNull();
+  });
+
   it('shows the loading state, then the toolbar, summary cards, and table', async () => {
     render(<Workbench onOpenRules={vi.fn()} />);
 

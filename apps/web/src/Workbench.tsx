@@ -351,44 +351,51 @@ export function Workbench({
         <div className="workbench__toolbar">
           <span className="workbench__sync">{syncLine}</span>
           <span className="workbench__countdown">{secondsUntilRefresh} 秒后刷新</span>
-          <button className="button" type="button" onClick={() => setReloadKey((c) => c + 1)}>
-            立即刷新
-          </button>
           {/*
-            两个配置入口的按钮文案（issue #94）：工作台是医生的临床视图，渲染文本里
-            不出现「关键词监控 / AI 语义监控」这类机制词。弹窗内部保留机制说法 ——
-            配置者需要知道自己在调整哪一种识别方式（所有者 Review 划的边界）。
-            只改字：目标弹窗、权限、行为一律不变。
+            六个操作按钮成组（issue #110）：工具栏内容比容器宽 22px，必须占两行；
+            分组之后断行只发生在「状态」与「整组按钮」之间，不会出现某一个按钮被
+            单独挤到第二行、也不会因为倒计时位数变化而每秒抖动。详见 Workbench.css。
           */}
-          <button className="button button--primary" type="button" onClick={onOpenRules}>
-            监测规则
-          </button>
-          {onOpenAiSemantics && (
-            <button className="button" type="button" onClick={onOpenAiSemantics}>
-              关注设置
+          <div className="workbench__toolbar-actions">
+            <button className="button" type="button" onClick={() => setReloadKey((c) => c + 1)}>
+              立即刷新
             </button>
-          )}
-          {onOpenNotifications && (
-            <button className="button" type="button" onClick={onOpenNotifications}>
-              消息推送
+            {/*
+              两个配置入口的按钮文案（issue #94）：工作台是医生的临床视图，渲染文本里
+              不出现「关键词监控 / AI 语义监控」这类机制词。弹窗内部保留机制说法 ——
+              配置者需要知道自己在调整哪一种识别方式（所有者 Review 划的边界）。
+              只改字：目标弹窗、权限、行为一律不变。
+            */}
+            <button className="button button--primary" type="button" onClick={onOpenRules}>
+              监测规则
             </button>
-          )}
-          {/*
-            等级分歧（issue #103）：按钮文案不带机制词（「关键词」「整份报告核对」
-            「语义」都不出现），理由同上面两个入口——工作台是医生的临床视图，
-            渲染文本要过 Workbench.test.tsx 的术语扫描。它本身是配置侧入口，
-            非 RULE_ADMIN 根本拿不到这个 prop。
-          */}
-          {onOpenLevelConflicts && (
-            <button className="button" type="button" onClick={onOpenLevelConflicts}>
-              等级分歧
-            </button>
-          )}
-          {onOpenUsers && (
-            <button className="button" type="button" onClick={onOpenUsers}>
-              用户管理
-            </button>
-          )}
+            {onOpenAiSemantics && (
+              <button className="button" type="button" onClick={onOpenAiSemantics}>
+                关注设置
+              </button>
+            )}
+            {onOpenNotifications && (
+              <button className="button" type="button" onClick={onOpenNotifications}>
+                消息推送
+              </button>
+            )}
+            {/*
+              等级分歧（issue #103）：按钮文案不带机制词（「关键词」「整份报告核对」
+              「语义」都不出现），理由同上面两个入口——工作台是医生的临床视图，
+              渲染文本要过 Workbench.test.tsx 的术语扫描。它本身是配置侧入口，
+              非 RULE_ADMIN 根本拿不到这个 prop。
+            */}
+            {onOpenLevelConflicts && (
+              <button className="button" type="button" onClick={onOpenLevelConflicts}>
+                等级分歧
+              </button>
+            )}
+            {onOpenUsers && (
+              <button className="button" type="button" onClick={onOpenUsers}>
+                用户管理
+              </button>
+            )}
+          </div>
         </div>
       </header>
 

@@ -30,8 +30,42 @@
 .workbench__subtitle {
   font-size: 13px;
 }
+/*
+  工具栏（issue #110）：状态一行、操作一行，换行**成组**发生。
+
+  原来 `flex-wrap: wrap` 只写在 `@media (max-width: 900px)` 里，于是 901px 以上是
+  nowrap：工具栏里那两个 `white-space: nowrap` 的跨度（同步状态句、倒计时）不肯
+  收缩，全部收缩量就落到 6 个按钮上。按钮里的中文没有空格，浏览器可以在任意两个
+  字之间断行，按钮又没有 `white-space: nowrap`，于是被压到比标签还窄 —— 1440 与
+  1920 下按钮 93×46、内容盒 61px，而四个汉字在 16px 字号下需要 64px。
+
+  实测工具栏内容要 1006px，容器只给 984px（`.workbench` 定宽 1180，减去标题块
+  172 与间隙 24），差 22px —— 正好是 6 个按钮各被压掉 3.7px。这 22px 不是靠调
+  字号或内边距能补回来的，所以工具栏必须占两行。
+
+  但**不能只是允许折行**：那样断点会落在按钮之间，「用户管理」会单独掉到第二行、
+  且左对齐，比折字更难看；更要命的是内容宽度随倒计时位数（「9 秒」/「180 秒」）
+  在 984px 上下摆动，版式会每秒抖一次。
+
+  所以按钮先成组（`.workbench__toolbar-actions`），断行只发生在组与状态之间：
+  第一行状态、第二行六个按钮，尺寸固定、不随秒数变化。`justify-content: flex-end`
+  让两行都贴右，与改动前按钮贴右的观感一致。
+
+  竖向没有代价：标题块本身 98px 高，工具栏从 84px 变成 20+8+38=66px，标题行总高
+  仍是 98px，与改动前逐像素相同。
+*/
 .workbench__toolbar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+/* 操作按钮成组：组内一行放不下时也不会各自折字（按钮标签内部本来就不许断行），
+   组作为整体参与上面的换行。 */
+.workbench__toolbar-actions {
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
 }
@@ -355,9 +389,8 @@
     align-items: flex-start;
     flex-direction: column;
   }
-  .workbench__toolbar {
-    flex-wrap: wrap;
-  }
+  /* .workbench__toolbar 的 flex-wrap 已提升为所有宽度的行为（issue #110），
+     这里不再重复。本断点下标题改为纵向排列，工具栏随之占满整行。 */
   .workbench__filters {
     grid-template-columns: 1fr 1fr;
   }

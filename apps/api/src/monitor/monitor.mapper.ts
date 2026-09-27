@@ -19,7 +19,9 @@ import {
   toAiSemantics,
   toAiStatus,
   toAttentionSource,
+  toLevelConflicts,
 } from './report-ai.mapper';
+import { ConflictHitInput } from './level-conflict';
 import { formatShanghaiDateTime } from './monitor-time';
 
 /**
@@ -68,7 +70,8 @@ export interface MonitorExamListRow {
  * judge being off, or every attempt having failed.
  */
 export type MonitorExamHitRow = MonitorMatch & {
-  rule: { version: number };
+  /** `ruleGroupId` is issue #103's stable anchor; see toLevelConflictHits. */
+  rule: { version: number; ruleGroupId: string };
   semanticJudgements: SemanticJudgementRow[];
 };
 
@@ -159,7 +162,35 @@ export function toExamDetailDto(row: MonitorExamDetailRow): MonitorExamWorkbench
     aiJudged: toAiJudged(row.reportAiAttempts, row),
     aiStatus: toAiStatus(row.reportAiAttempts, row, row._count.reportAiAttempts > 0),
     aiSemantics: toAiSemantics(row.reportAiAttempts, row),
+    // Issue #103. Derived from the findings ABOVE plus the effective hits, so it
+    // needs the hits mapped into the pure rule's own input shape first.
+    levelConflicts: toLevelConflicts(row.reportAiAttempts, row, toLevelConflictHits(row.matches)),
   };
+}
+
+/**
+ * Issue #103: the effective hits, as the conflict rule wants them.
+ *
+ * `semanticFiltered === true` hits are left out on purpose: the AI already ruled
+ * them out, so they are not a second opinion about attention - they are #87's
+ * "未计入关注" case, which the drawer states on the hit row itself. Counting them
+ * here would report a conflict between the AI and a hit the AI had just rejected.
+ *
+ * `matchedField` is passed through as stored rather than resolved. The rule
+ * refuses the field values that do not name a single column instead of guessing,
+ * and centralising that refusal in the pure module is what lets it be tested.
+ */
+function toLevelConflictHits(hits: readonly MonitorExamHitRow[]): ConflictHitInput[] {
+  return hits
+    .filter((hit) => !hit.semanticFiltered)
+    .map((hit) => ({
+      ruleGroupId: hit.rule.ruleGroupId,
+      keyword: hit.keyword,
+      level: hit.level,
+      matchedField: hit.matchedField,
+      matchStart: hit.matchStart,
+      matchEnd: hit.matchEnd,
+    }));
 }
 
 function toPatientType(code: string | null, name: string | null): MonitorPatientTypeDto {

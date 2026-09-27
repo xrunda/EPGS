@@ -100,6 +100,21 @@ export function maskExamDetail(
       reason: null,
       evidence: [],
     })),
+    // Issue #103: `levelConflicts` survives INTACT, and that is the deliberate
+    // call rather than an oversight. It reads as AI-side content, but every one
+    // of its five fields is already on this same response to this same caller:
+    // `keyword` and `keywordLevel` are the hit row's own keyword and level,
+    // `semanticName` and `semanticLevel` are the `aiSemantics` entry's name and
+    // attentionLevel (both kept above, for the reason stated there), and `field`
+    // is the name of a report column, not text. It carries no excerpt and no
+    // offset - the agreement test itself is computed server-side and the
+    // evidence never crosses the boundary in either direction.
+    //
+    // So masking it would not remove a single character of report text; it would
+    // only remove the sentence that says "these two things you can see are about
+    // the same place and disagree", leaving a reader who cannot open the report
+    // with two unexplained colours and no statement that they are related.
+    levelConflicts: dto.levelConflicts,
     dataAccess: { masked: true },
   };
 }

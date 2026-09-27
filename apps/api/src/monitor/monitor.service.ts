@@ -104,7 +104,12 @@ export class MonitorService {
       // versioned, never-deleted rule). list() never needs this - only
       // the detail endpoint surfaces hit evidence.
       include: {
-        rule: { select: { version: true } },
+        // ruleGroupId (issue #103) is the hit's stable anchor across rule
+        // versions: the conflict key is built from it, not from ruleId, so
+        // re-wording a rule does not resurrect a todo an admin has read. It
+        // never reaches the wire - MonitorExamHitDto carries ruleId/ruleVersion,
+        // which is what makes a hit auditable back to the exact version.
+        rule: { select: { version: true, ruleGroupId: true } },
         // Issue #87: the NEWEST successful judgement, for the explainability
         // line in the drawer. Filtered to outcome OK because a failed attempt
         // wrote no verdict (its row exists to record the failure, and pairing
@@ -169,6 +174,9 @@ export class MonitorService {
             confidence: true,
             reason: true,
             ordinal: true,
+            // Issue #103: the finding's stable anchor, for the same reason as
+            // the hit's ruleGroupId above - and, like it, off the wire.
+            semantic: { select: { semanticGroupId: true } },
             evidence: {
               orderBy: { ordinal: 'asc' },
               select: {

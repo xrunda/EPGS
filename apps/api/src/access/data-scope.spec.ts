@@ -1,8 +1,10 @@
 import {
+  AttentionLevelDto,
   MonitorAiSemanticDto,
   MonitorExamDto,
   MonitorExamHitDto,
   MonitorExamWorkbenchDetailDto,
+  MonitorLevelConflictDto,
   MonitorLevelDto,
   SemanticConfidenceDto,
   SemanticStatusDto,
@@ -79,6 +81,28 @@ describe('data-scope helpers (issue #13)', () => {
     evidence: [{ field: 'FINDINGS', text: '胃窦见一处隆起性病变' }],
   };
 
+  /**
+   * Issue #103. Deliberately DERIVED from the two things it names - the hit's
+   * keyword at its own level, the finding's name at its own level - so the
+   * fixture cannot drift into a state the real mapper could not produce, and so
+   * "masking must not touch this" is a claim about content a masked caller
+   * genuinely still has in front of them.
+   */
+  const yellowFinding: MonitorAiSemanticDto = {
+    ...aiFinding,
+    semanticId: '00000000-0000-0000-0000-000000000021',
+    name: '性质待定、需活检或短期复查的病变',
+    attentionLevel: 'YELLOW' as AttentionLevelDto,
+  };
+
+  const levelConflict: MonitorLevelConflictDto = {
+    keyword: '腺癌',
+    keywordLevel: 'RED' as MonitorLevelDto,
+    semanticName: yellowFinding.name,
+    semanticLevel: yellowFinding.attentionLevel,
+    field: 'FINDINGS',
+  };
+
   it('maskExamDetail nulls the HIGH-sensitivity free text and flags dataAccess.masked', () => {
     const hit: MonitorExamHitDto = {
       ruleId: '00000000-0000-0000-0000-000000000010',
@@ -107,7 +131,8 @@ describe('data-scope helpers (issue #13)', () => {
       attentionSource: 'BOTH',
       aiJudged: true,
       aiStatus: 'JUDGED',
-      aiSemantics: [aiFinding],
+      aiSemantics: [aiFinding, yellowFinding],
+      levelConflicts: [levelConflict],
     };
 
     const masked = maskExamDetail(detail);
@@ -129,7 +154,7 @@ describe('data-scope helpers (issue #13)', () => {
 
     // Issue #88: the model's sentence and every excerpt are report-adjacent free
     // text, so both go...
-    expect(masked.aiSemantics).toHaveLength(1);
+    expect(masked.aiSemantics).toHaveLength(2);
     expect(masked.aiSemantics[0].reason).toBeNull();
     expect(masked.aiSemantics[0].evidence).toEqual([]);
     // ...but the finding itself stays. Without it a record flagged only by the AI
@@ -141,6 +166,20 @@ describe('data-scope helpers (issue #13)', () => {
     expect(masked.attentionSource).toBe('BOTH');
     expect(masked.aiJudged).toBe(true);
     expect(masked.aiStatus).toBe('JUDGED');
+
+    // Issue #103: the disagreement notice survives INTACT, unlike everything
+    // above it. It reads as AI-side content, but all five of its fields are
+    // values this masked caller already has: the hit's keyword and level, the
+    // finding's name and level (both kept just above), and the name of a report
+    // column. It carries no excerpt and no offset, so masking it would remove
+    // zero characters of report text - and would leave a reader who cannot open
+    // the report holding two unexplained colours with nothing saying they are
+    // about the same place.
+    expect(masked.levelConflicts).toEqual([levelConflict]);
+    expect(masked.levelConflicts[0].keyword).toBe(masked.hits[0].keyword);
+    expect(masked.levelConflicts[0].keywordLevel).toBe(masked.hits[0].level);
+    expect(masked.levelConflicts[0].semanticName).toBe(masked.aiSemantics[1].name);
+    expect(masked.levelConflicts[0].semanticLevel).toBe(masked.aiSemantics[1].attentionLevel);
 
     expect(masked.dataAccess).toEqual({ masked: true });
   });
@@ -158,6 +197,7 @@ describe('data-scope helpers (issue #13)', () => {
       aiJudged: false,
       aiStatus: 'FAILED',
       aiSemantics: [],
+      levelConflicts: [],
       hits: [],
     };
 
@@ -176,6 +216,7 @@ describe('data-scope helpers (issue #13)', () => {
       aiJudged: false,
       aiStatus: 'NOT_JUDGED',
       aiSemantics: [],
+      levelConflicts: [],
       hits: [
         {
           ruleId: '00000000-0000-0000-0000-000000000010',

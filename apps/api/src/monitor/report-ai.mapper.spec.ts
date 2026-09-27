@@ -7,7 +7,9 @@ import {
   toAiSemantics,
   toAiStatus,
   toAttentionSource,
+  toLevelConflicts,
 } from './report-ai.mapper';
+import { ConflictHitInput } from './level-conflict';
 
 /**
  * Pure-logic tests for the issue #88 (PR-B) explanation mapping.
@@ -29,6 +31,26 @@ function sha256Hex(value: string): string {
 const REPORT = '胃体见巨大不规则隆起，\n表面糜烂，质脆。';
 const DIAGNOSIS = '胃体占位，性质待定。';
 const EXAM_ITEM = '电子胃镜检查';
+
+/** Issue #103 fixtures. */
+const SEMANTIC_GROUP = '22222222-2222-4222-8222-222222222222';
+const RULE_GROUP = '11111111-1111-4111-8111-111111111111';
+const OTHER_RULE_GROUP = '33333333-3333-4333-8333-333333333333';
+/** '隆起' in REPORT, which the default evidence (the whole body) covers. */
+const KEYWORD_START = 8;
+const KEYWORD_END = 10;
+
+function makeHit(overrides: Partial<ConflictHitInput> = {}): ConflictHitInput {
+  return {
+    ruleGroupId: RULE_GROUP,
+    keyword: '隆起',
+    level: 'YELLOW',
+    matchedField: 'FINDINGS',
+    matchStart: KEYWORD_START,
+    matchEnd: KEYWORD_END,
+    ...overrides,
+  };
+}
 
 function makeRecord(overrides: Partial<ReportAiRecordRow> = {}): ReportAiRecordRow {
   return {
@@ -63,6 +85,7 @@ function makeMatch(overrides: Partial<ReportAiMatchRow> = {}): ReportAiMatchRow 
     reason: '报告描述了不规则隆起与质脆，提示恶性可能。',
     ordinal: 0,
     evidence: [makeEvidence()],
+    semantic: { semanticGroupId: SEMANTIC_GROUP },
     ...overrides,
   };
 }
@@ -469,5 +492,188 @@ describe('evidence reconstruction', () => {
     const [finding] = toAiSemantics([attempt], makeRecord());
 
     expect(finding.evidence.map((excerpt) => excerpt.field)).toEqual(['FINDINGS', 'IMPRESSION']);
+  });
+});
+
+describe('toLevelConflicts (issue #103)', () => {
+  it('names both sides, using only values already on the same response', () => {
+    const [conflict] = toLevelConflicts([makeAttempt()], makeRecord(), [makeHit()]);
+
+    expect(conflict).toEqual({
+      // Same keyword and level as the hit row, same name and level as the
+      // aiSemantics entry. Nothing here is new patient data.
+      keyword: '隆起',
+      keywordLevel: 'YELLOW',
+      semanticName: '明确或高度疑似恶性病变',
+      semanticLevel: 'RED',
+      field: 'FINDINGS',
+    });
+  });
+
+  it('says nothing when the two sides agree', () => {
+    expect(toLevelConflicts([makeAttempt()], makeRecord(), [makeHit({ level: 'RED' })])).toEqual([]);
+  });
+
+  it('says nothing when there is no effective hit', () => {
+    // The caller passes effective hits only, so [] here means "nothing the AI
+    // did not already rule out" - there is no second opinion to disagree with.
+    expect(toLevelConflicts([makeAttempt()], makeRecord(), [])).toEqual([]);
+  });
+
+  it('says nothing when the attempt is against different report text', () => {
+    const attempts = [makeAttempt({ reportVersion: 2 })];
+    expect(toLevelConflicts(attempts, makeRecord(), [makeHit()])).toEqual([]);
+  });
+
+  it('says nothing for an OK attempt with zero matches', () => {
+    expect(toLevelConflicts([makeAttempt({ matches: [] })], makeRecord(), [makeHit()])).toEqual([]);
+  });
+
+  it('cannot report a conflict the findings list does not show', () => {
+    // THE INVARIANT, and the reason toAiSemantics and toLevelConflicts share one
+    // gate. A notice that names a finding the drawer is not showing would be
+    // worse than no notice: the doctor sees a crossed-out claim they cannot
+    // check. The cases below are every way the findings list goes empty.
+    const hit = makeHit();
+    const cases: Array<[string, ReportAiAttemptRow[], ReportAiRecordRow]> = [
+      ['no attempt at all', [], makeRecord()],
+      ['attempt against different text', [makeAttempt({ reportVersion: 2 })], makeRecord()],
+      ['attempt that matched nothing', [makeAttempt({ matches: [] })], makeRecord()],
+      ['AI does not contribute to the level', [makeAttempt()], makeRecord({ aiAttentionLevel: null })],
+    ];
+
+    for (const [label, attempts, record] of cases) {
+      const findings = toAiSemantics(attempts, record);
+      const conflicts = toLevelConflicts(attempts, record, [hit]);
+
+      expect({ label, findings }).toEqual({ label, findings: [] });
+      expect({ label, conflicts }).toEqual({ label, conflicts: [] });
+    }
+  });
+
+  it('names only findings that are in the findings list', () => {
+    const attempt = makeAttempt({
+      matches: [
+        makeMatch({ ordinal: 0, semanticName: '红色那条' }),
+        makeMatch({ ordinal: 1, semanticName: '黄色那条', attentionLevel: 'YELLOW', semantic: { semanticGroupId: SEMANTIC_GROUP } }),
+      ],
+    });
+
+    const findings = toAiSemantics([attempt], makeRecord());
+    const conflicts = toLevelConflicts([attempt], makeRecord(), [makeHit()]);
+
+    // The YELLOW finding agrees with the YELLOW hit, so only the RED one is a
+    // conflict - and it is one the drawer is showing.
+    expect(conflicts.map((conflict) => conflict.semanticName)).toEqual(['红色那条']);
+    for (const conflict of conflicts) {
+      expect(
+        findings.some(
+          (finding) =>
+            finding.name === conflict.semanticName &&
+            finding.attentionLevel === conflict.semanticLevel,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('uses the attempt that produced the current AI state, not the newest row', () => {
+    const winner = makeAttempt({
+      createdAt: new Date('2026-09-26T02:00:00.000Z'),
+      matches: [makeMatch({ semanticName: '生效的那次判读', attentionLevel: 'RED' })],
+    });
+    const straggler = makeAttempt({
+      createdAt: new Date('2026-09-26T02:05:00.000Z'),
+      matches: [makeMatch({ semanticName: '没生效的那次判读', attentionLevel: 'RED' })],
+    });
+
+    const conflicts = toLevelConflicts([straggler, winner], makeRecord(), [makeHit()]);
+
+    expect(conflicts.map((conflict) => conflict.semanticName)).toEqual(['生效的那次判读']);
+  });
+
+  it('collapses two rules configured identically into one sentence', () => {
+    // The wire shape has no group ids, so these are indistinguishable on screen
+    // and repeating the sentence would just be noise. The admin list keeps them
+    // apart - they are two separate pieces of configuration to fix.
+    const conflicts = toLevelConflicts(
+      [makeAttempt()],
+      makeRecord(),
+      [makeHit(), makeHit({ ruleGroupId: OTHER_RULE_GROUP })],
+    );
+
+    expect(conflicts).toHaveLength(1);
+  });
+
+  it('keeps two different findings apart', () => {
+    const attempt = makeAttempt({
+      matches: [
+        makeMatch({ ordinal: 0, semanticName: '第一条', semantic: { semanticGroupId: SEMANTIC_GROUP } }),
+        makeMatch({
+          ordinal: 1,
+          semanticName: '第二条',
+          semantic: { semanticGroupId: OTHER_RULE_GROUP },
+        }),
+      ],
+    });
+
+    const conflicts = toLevelConflicts([attempt], makeRecord(), [makeHit()]);
+
+    expect(conflicts.map((conflict) => conflict.semanticName)).toEqual(['第一条', '第二条']);
+  });
+
+  it('falls back to the excerpt when the hit has no offsets', () => {
+    const noOffsets = makeHit({ matchStart: null, matchEnd: null });
+
+    expect(toLevelConflicts([makeAttempt()], makeRecord(), [noOffsets])).toHaveLength(1);
+    // '性质待定' is a diagnosis word: it is not in the findings body the AI
+    // verified, so without offsets there is nothing tying the two together.
+    expect(
+      toLevelConflicts([makeAttempt()], makeRecord(), [
+        makeHit({ keyword: '性质待定', matchStart: null, matchEnd: null }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('positions a hit by its offsets, not by its keyword text', () => {
+    // The offsets are what the matcher measured; the keyword is a label. When
+    // both hits carry the same (wrong-for-their-text) offsets, they are the same
+    // place as far as anything can tell - this pins that the interval test is the
+    // one being applied rather than an accidental text match.
+    expect(
+      toLevelConflicts([makeAttempt()], makeRecord(), [makeHit({ keyword: '性质待定' })]),
+    ).toHaveLength(1);
+  });
+
+  it('drops the fallback pair when the excerpt can no longer be recomputed', () => {
+    // Stale offsets mean containment cannot be checked, and an unchecked
+    // "same place" claim is not one. Under-reporting is the safe direction.
+    const attempt = makeAttempt({
+      matches: [
+        makeMatch({
+          evidence: [makeEvidence({ evidenceHash: sha256Hex('另一份报告的完全不同的一段话') })],
+        }),
+      ],
+    });
+
+    const conflicts = toLevelConflicts([attempt], makeRecord(), [
+      makeHit({ matchStart: null, matchEnd: null }),
+    ]);
+
+    expect(conflicts).toEqual([]);
+  });
+
+  it('still reports an overlapping pair when the excerpt cannot be recomputed', () => {
+    // The overlap test is arithmetic on offsets and does not need the text, so a
+    // stale excerpt must not cost the doctor the notice - it only costs the
+    // fallback path.
+    const attempt = makeAttempt({
+      matches: [
+        makeMatch({
+          evidence: [makeEvidence({ evidenceHash: sha256Hex('完全不同的另一段话') })],
+        }),
+      ],
+    });
+
+    expect(toLevelConflicts([attempt], makeRecord(), [makeHit()])).toHaveLength(1);
   });
 });

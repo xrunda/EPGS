@@ -75,6 +75,18 @@ function makeDetail(
         evidence: [{ field: 'FINDINGS', text: '胃窦见一枚 0.6cm 息肉' }],
       },
     ],
+    // Issue #103: the disagreement notice, non-empty on purpose - like the AI
+    // fields above, it arrives on the object the service receives and has to be
+    // left out of the H5 payload, and an empty fixture would prove nothing.
+    levelConflicts: [
+      {
+        keyword: '息肉待复核',
+        keywordLevel: 'YELLOW',
+        semanticName: '明确或高度疑似恶性病变',
+        semanticLevel: 'RED',
+        field: 'FINDINGS',
+      },
+    ],
     ...overrides,
   };
 }

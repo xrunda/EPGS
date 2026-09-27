@@ -18,7 +18,7 @@
 | 机器上有 Docker 吗 | 有（且必须一直有）                               | **没有，也不需要**                 |
 | `PG_MODE`          | `docker`                                         | `native`                           |
 
-`start.sh` 的 `[1/8]` 步会自动识别，一般不需要指定；判定顺序与「为什么容器优先」见
+`start.sh` 的 `[1/7]` 步会自动识别，一般不需要指定；判定顺序与「为什么容器优先」见
 [deployment.md](./deployment.md) §1.1。**两种形态的差异只在第 3 节**，其余步骤完全一样。
 
 判断自己在哪台机器上：看仓库路径，以及 `docker ps` 里有没有 `epgs-postgres`。
@@ -70,7 +70,7 @@ chmod o+x /root
 docker compose up -d postgres
 ```
 
-`start.sh` 的 `[1/8]` 步会在容器缺失或不健康时自动 `docker compose up -d postgres`。
+`start.sh` 的 `[1/7]` 步会在容器缺失或不健康时自动 `docker compose up -d postgres`。
 
 ### 3.2 宿主机原生形态
 
@@ -190,8 +190,9 @@ systemctl disable --now nginx # 关键，见 §11 第 3 条
 bash start.sh
 ```
 
-脚本会依次做：停旧进程 → `git pull` → 校验 `.env` → 准备 PostgreSQL → 校正 `.env` → 装依赖 →
-构建 libs → 迁移 → 构建 web → 后台起 api/worker → 生成并 reload nginx → 等就绪。
+脚本会依次做（脚本自己按 0 起编号，即 `[0/7]`…`[7/7]`）：停旧进程 → `git pull` → 校验 `.env` →
+准备 PostgreSQL → 校正 `.env` → 装依赖 → **构建全部产物**（libs + web + api/worker 的 `dist`）→
+迁移 → 后台起 api/worker（`node dist/main.js`）→ 生成并 reload nginx → 等就绪。
 
 **看到「错误: ...」就停下改 `.env`，不要绕过**——那些检查对应的都是「绕过之后要等 60 秒才以
 『api 未就绪』收场」的坑。
@@ -247,11 +248,12 @@ pnpm --filter @epgs/worker run sync:once
 6. **`*:once` 脚本不只是一个函数调用。** 它们是完整的 Nest 应用，会把自己模块里的定时任务一起
    启起来：跑一次 `classify:once` 会顺带触发一次真实同步，并让推送调度器在这几分钟里保持存活。
    在已经配好企微 Webhook 的环境里手工跑这些脚本，**会真的发出通知**——跑之前先确认这一点。
-7. **`nest start --watch` 的孤儿进程。** `start.sh` 用 `start:dev`（`nest start --watch`）拉起
-   api/worker，它派生出的 `dist/main` 子进程会在父进程被杀后存活、继续占着端口，于是下一次启动的
-   新进程以 `EADDRINUSE` 退出。`start.sh` 已按端口（`ss` → `lsof`）清理；手工排障时用
-   `pkill -f 'nest start'` 兜底。**这是当前部署方式的根因，改用 `start:prod` 可根治，属改部署
-   方式，未在本 Issue 范围内。**
+7. **`nest start --watch` 的孤儿进程（已根治）。** 首次安装时 `start.sh` 用 `start:dev`
+   （`nest start --watch`）拉起 api/worker，它派生出的 `dist/main` 子进程会在父进程被杀后存活、
+   继续占着端口，于是下一次启动的新进程以 `EADDRINUSE` 退出。当时按端口（`ss` → `lsof`）清理是
+   **缓解**手段；issue #129 起改用 `start:prod`（`node dist/main.js`），这条根因已经消失，脚本里
+   那段按端口的清扫只剩防御作用。若在**有历史的机器上**仍看到端口被占，手工兜底是
+   `pkill -f 'nest start'` —— 那是改造之前遗留的孤儿。
 
 ## 12. 与本文相关的文档
 

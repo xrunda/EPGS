@@ -16,7 +16,7 @@
 
 ### 1.1 运行环境：PostgreSQL 有两种形态（issue #121）
 
-堡垒机换过机，两台的 PostgreSQL 装法不同，`start.sh` 的 `[1/8]` 步**自动识别**，`PG_MODE=docker|native|auto`（默认 auto）可强制：
+堡垒机换过机，两台的 PostgreSQL 装法不同，`start.sh` 的 `[1/7]` 步**自动识别**，`PG_MODE=docker|native|auto`（默认 auto）可强制：
 
 |            | 旧堡垒机                                               | 新堡垒机                                                          |
 | ---------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
@@ -75,22 +75,29 @@
 ### 2.6 孤儿进程占端口
 
 - 现象：`nest start --watch` 的 `dist/main` 子进程脱离父进程存活，杀不干净，重启后端口被占。
-- 修复：`5dcec33` start.sh 按端口（`ss` → `lsof`）杀进程，不只依赖 PID 文件。
+- 缓解：`5dcec33` start.sh 按端口（`ss` → `lsof`）杀进程，不只依赖 PID 文件。
+- 根治：`7902232`（issue #129）api/worker 改用 `start:prod`（`node dist/main.js`）拉起，不再产生
+  watch 子进程。**实测**：`pnpm --filter api run start:prod` 把 node 作为自己的**直接子进程**拉起，
+  `kill` 掉 PID 文件里记的那个 pnpm PID 之后，健康检查立刻不通、端口立刻释放、没有残留进程——
+  也就是说 PID 文件那一轮就足够停干净，不再需要靠端口清扫兜底。
+- start.sh 里那段按端口的清扫**保留为防御**：它仍清得掉改造之前遗留的 watch 孤儿和有人在机器上
+  手工起的进程，代价只有一次 `ss`。
 
 ## 3. start.sh 运维要点
 
 - 用法：`bash start.sh`（git pull + 重启）/ `bash start.sh nopull`（改完 .env 快速重启）/ `bash start.sh stop`
-- 流程：git pull → env 校验 → 准备 postgres（自动识别容器/宿主机形态，见 §1.1）→ 构建 libs → prisma migrate → 构建 web → 后台启动 api/worker → 生成并 reload nginx → 就绪等待
+- 流程（脚本按 0 起编号 `[0/7]`…`[7/7]`）：git pull → env 校验 → 准备 postgres（自动识别容器/宿主机形态，见 §1.1）→ 校正 `.env` → 装依赖 → 构建全部产物 → prisma migrate → 后台启动 api/worker → 生成并 reload nginx → 就绪等待
 - `PG_MODE=docker|native|auto`（默认 auto）强制 PostgreSQL 形态；宿主机形态下脚本全程不调用 docker，机器上没装 docker 也能跑（issue #121）
 - env fail-fast 预检：`NOTIFICATION_SECRET_KEY` 强制必填（`openssl rand -hex 24` 生成），缺了立刻报错，避免 60 秒等待后以「未就绪」收场
 - env 预检（#72/#76）：`ALERT_LINK_BASE_URL` 可选——两端都不配 = 卡片关闭（打印提示）；只配一端或两端不同值 → **报错退出**（否则 worker 签出的链接医生打不开且不报错）；指向 `localhost`/`127.0.0.1` → 报错退出；`ALERT_LINK_TTL_HOURS` 两端不一致仅警告
 - env 状态打印（#127）：启动时把 **AI 语义层的两项开关与模型连接配置**打印出来（`SEMANTIC_JUDGE_ENABLED`、`SEMANTIC_REPORT_ENABLED`，以及 `SEMANTIC_MODEL_BASE_URL` / `_NAME` / `_API_KEY` 三项是否齐全，**只打印是否齐全，绝不打印值**）。**只提示不拦截**：语义层是可选能力，缺配置时分类/判读模块自我禁用，同步与推送照常。加这一段是因为「开关是 `true`、模型地址却是空的」在现场是一次纯静默故障——worker 照常启动，只有分类永远不动，直到手工跑 `classify:once` 才报错。
 - `.env` 不进 git：`apps/api/.env` 与 `apps/worker/.env` **缺失即报错退出**；`apps/web/.env` **不再要求**（#127——生产构建不读它，单端口反代后前端全走相对路径，仓库内无任何代码读 `VITE_API_BASE_URL`）
 - `git pull` 带 `--ff-only`（#127）：堡垒机是只读部署目标，不允许在那里产生合并提交；有本地提交或分叉时快速失败，而不是悄悄合并
-- 构建顺序：`pnpm run build:libs`（shared-types/matching-engine）→ `prisma migrate deploy` → `pnpm --filter web run build`
+- 构建（#129）：一条 `pnpm run build` 构建**全部产物** —— `build:libs`（shared-types / matching-engine / ai-semantic / notification-push）加上 web、api、worker。**每次启动都重新构建，不做「`dist` 已存在就跳过」的优化**：拿陈旧产物启动（代码是上一版、迁移已经跑过）比起得慢几十秒危险得多
 - `LISTEN_PORT` 默认沿用 5173；换端口用 `LISTEN_PORT=xxxx bash start.sh nopull`
 - Nginx：`nginx -t -c` 通过再 reload
-- **服务用 `start:dev`（`nest start --watch`）拉起——这是 §2.6 孤儿端口的根因，尚未改。** `--watch` 只为改代码即时生效，生产不需要；它派生出的 `dist/main` 子进程会在父进程被杀后存活并占住端口，于是 `stop_all` 必须按端口清理而不能只信 pid 文件。api 与 worker 都已具备 `start:prod`（`node dist/main.js`），改过去能根治，但要多一步 `nest build`、启动变慢，属**改部署方式**，需单独评估（#127 未包含）。
+- **服务用 `start:prod`（`node dist/main.js`）拉起（#129）**，不再用 `start:dev`（`nest start --watch`）：生产不需要改代码即时生效，而 watch 派生出的 `dist/main` 子进程会在父进程被杀后存活并占住端口（§2.6）。改成 dist 启动后 **api/worker 必须先构建**，这就是上面那条「全部产物」步骤的由来。
+- `.env` 解析路径不受 #129 影响：两个 app 的 `ConfigModule.forRoot` 都**没有**写 `envFilePath`，dotenv 按**进程 cwd** 加载 `.env`；而 `pnpm --filter <pkg> run <script>` 的 cwd 无论哪个脚本都是包目录本身。若哪天改成从仓库根直接 `node apps/api/dist/main.js`，这条就不再成立——需显式指定。
 
 ## 4. 企业微信集成要点
 

@@ -8,6 +8,7 @@ import type {
 } from '@epgs/ai-semantic';
 import { PrismaService } from '../prisma/prisma.service';
 import { recomputeRecordLevels } from '../monitor/record-level';
+import { isRetryableError } from './retry-policy';
 
 /**
  * The database half of the report classifier (issue #88). Everything here is
@@ -48,6 +49,13 @@ export interface ClassifyApplyOutcome {
   resolved: boolean;
   /** Records whose `monitor_record.current_level` moved as a result. 0 or 1. */
   levelsChanged: number;
+  /**
+   * True when a failed attempt was classified as worth repeating (issue #102)
+   * and the record was therefore put back in the queue rather than settled.
+   * Distinguishes "this failure will be retried" from "this failure is final"
+   * for the caller's logging - both count as one `errored` attempt.
+   */
+  retryScheduled: boolean;
 }
 
 @Injectable()
@@ -168,6 +176,14 @@ export class ClassifyReportStore {
    *                 classification of the same text, and must never change a
    *                 keyword-derived level in either direction.
    *
+   * AND AN ERROR SPLITS IN TWO (issue #102). A failure whose cause is transport
+   * is put BACK IN THE QUEUE - `aiResolvedAt` stays NULL, the claim lease is
+   * released, `aiAttempts` (already incremented at claim) is left to bound the
+   * retries. A failure whose cause is the answer itself is terminal. Before
+   * this, EVERY error resolved the record: `maxAttempts` was configured and
+   * unreachable, and one gateway blip became a permanent, invisible hole in the
+   * doctor's view. The split lives in retry-policy.ts; this method only obeys it.
+   *
    * In the ordinary flow the column is NULL by the time the first attempt lands,
    * because the sync job clears it whenever the report's content changes - so
    * the ERROR rule is invisible unless someone re-runs a classification
@@ -235,10 +251,23 @@ export class ClassifyReportStore {
         });
       }
 
+      // A failed attempt that is worth repeating leaves the record pending
+      // (issue #102). Decided before the write so the write can express it.
+      const retryScheduled = result.outcome === 'ERROR' && isRetryableError(result.error);
+
       const updated = await tx.monitorRecord.updateMany({
         where: { id: candidate.monitorRecordId, aiResolvedAt: null },
-        data:
-          result.outcome === 'OK'
+        data: retryScheduled
+          ? {
+              // RELEASED, NOT RESOLVED. The lease exists to let a crashed
+              // worker's claim expire; this attempt finished cleanly, so the
+              // lease has nothing left to protect and holding it would silently
+              // delay the retry until it timed out. `aiAttempts` is NOT reset -
+              // it is the retry budget, and resetting it here would make the
+              // cap unreachable for exactly the failures it is meant to bound.
+              aiClaimedAt: null,
+            }
+          : result.outcome === 'OK'
             ? {
                 aiAttentionLevel: result.attentionLevel,
                 // Only advanced when this attempt actually verified something.
@@ -254,14 +283,20 @@ export class ClassifyReportStore {
         // Someone else resolved this record first. The audit row above stays -
         // one row per attempt is the provenance trail - but nothing is
         // denormalized and no level is touched.
-        return { resolved: false, levelsChanged: 0 };
+        return { resolved: false, levelsChanged: 0, retryScheduled: false };
+      }
+
+      if (retryScheduled) {
+        // Still unresolved, so nothing about the record's level is recomputed:
+        // no AI input changed. The audit row above says why this attempt failed.
+        return { resolved: false, levelsChanged: 0, retryScheduled: true };
       }
 
       // The record's level is recomputed inside the same transaction that
       // changed its AI inputs, so it never becomes visible with a level that
       // disagrees with its own rows. This is the shared entry point (issue #88).
       const levelsChanged = await recomputeRecordLevels(tx, [candidate.monitorRecordId]);
-      return { resolved: true, levelsChanged };
+      return { resolved: true, levelsChanged, retryScheduled: false };
     });
   }
 
@@ -272,7 +307,16 @@ export class ClassifyReportStore {
    * say why each of them failed. The record stays keyword-only, which is the
    * fail-safe direction: no AI finding is ever invented from a failure.
    *
-   * `classify:once --requeue` is the deliberate way back.
+   * Since #102 this is reached by two kinds of record: the transient failures
+   * that spent the whole retry budget, and the deterministic failures that were
+   * terminal on their first attempt. Both are the same thing to an operator -
+   * "no verdict, and no more attempts coming" - and both are described by their
+   * own audit rows, which carry the failure code.
+   *
+   * `classify:once --requeue --failed-only` is the deliberate way back: it
+   * re-queues exactly the records that failed and have no verdict, so recovering
+   * from a gateway outage does not also pay to re-classify everything that
+   * already succeeded.
    */
   async resolveExhausted(now: Date, maxAttempts: number): Promise<number> {
     const result = await this.prisma.monitorRecord.updateMany({
@@ -290,8 +334,57 @@ export class ClassifyReportStore {
   }
 
   /**
+   * The ids `--failed-only` re-queues: records that FAILED and have no verdict
+   * for the report version they are currently showing.
+   *
+   * The caller hands the result to `requeue`, which additionally requires the
+   * record to be RESOLVED. That is deliberate and not redundant: a record still
+   * in the queue is already going to be retried, and re-queuing it here would
+   * reset the attempt counter that bounds those retries.
+   *
+   * WHY THIS IS NOT JUST "has an ERROR row". A record can fail once and succeed
+   * on a later attempt, and a record can be re-classified after its report text
+   * was amended - the older OK verdict is then about text nobody is looking at,
+   * and the newer ERROR is the one that matters. Both cases are settled by
+   * asking the same question the read path asks (see `toAiJudged` /
+   * `aiStatus`): is there an OK attempt for THIS version? If there is, the
+   * record is fine and re-classifying it would spend a model call on a report
+   * that already has an answer.
+   *
+   * WHY NOT A RAW QUERY. The version comparison is between a relation's column
+   * and a sibling column on the record, which Prisma's filters cannot express -
+   * so it is done here, over two indexed reads, rather than by dropping to SQL
+   * that no unit test can reach. The candidate set is already narrowed to
+   * records that have an ERROR row, which is the set an operator is asking
+   * about, not the whole table.
+   */
+  async findFailedRecordIds(where: Prisma.MonitorRecordWhereInput): Promise<string[]> {
+    const candidates = await this.prisma.monitorRecord.findMany({
+      where: { ...where, reportAiAttempts: { some: { outcome: 'ERROR' } } },
+      select: { id: true, reportVersion: true },
+    });
+    if (candidates.length === 0) return [];
+
+    const currentVersion = new Map(candidates.map((row) => [row.id, row.reportVersion]));
+    const okAttempts = await this.prisma.monitorReportAi.findMany({
+      where: {
+        monitorRecordId: { in: candidates.map((row) => row.id) },
+        outcome: 'OK',
+      },
+      select: { monitorRecordId: true, reportVersion: true },
+    });
+    const judged = new Set(
+      okAttempts
+        .filter((attempt) => attempt.reportVersion === currentVersion.get(attempt.monitorRecordId))
+        .map((attempt) => attempt.monitorRecordId),
+    );
+
+    return candidates.filter((row) => !judged.has(row.id)).map((row) => row.id);
+  }
+
+  /**
    * Return resolved records to the queue for a deliberate re-classification
-   * (`classify:once --requeue`).
+   * (`classify:once --requeue`, optionally narrowed by `--failed-only` above).
    *
    * The denormalized `ai_attention_level` is left in place on purpose: clearing
    * it here would drop the record's level for as long as the re-run takes, and

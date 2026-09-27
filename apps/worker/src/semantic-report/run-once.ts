@@ -22,15 +22,32 @@ import { ClassifyReportStore } from './classify.store';
  * wiring.
  *
  * USAGE
- *   classify:once                                   drain what is pending
- *   classify:once -- --max-batches=500              bound the drain
- *   classify:once -- --requeue --record=<uuid>      re-classify one record
- *   classify:once -- --requeue --since=<ISO date>   re-classify a time range
+ *   classify:once                                     drain what is pending
+ *   classify:once -- --max-batches=500                bound the drain
+ *   classify:once -- --requeue --record=<uuid>        re-classify one record
+ *   classify:once -- --requeue --since=<ISO date>     re-classify a time range
+ *   classify:once -- --requeue --failed-only          re-classify only what failed
  *
- * `--requeue` REQUIRES a scope (--record or --since). It puts resolved records
- * back in the queue, and each one costs a model call on a whole report; an
- * unscoped re-run would spend the entire record table's worth of calls because
- * someone typed one flag. The scope is not a convenience, it is the guard.
+ * `--requeue` REQUIRES a scope (--record, --since or --failed-only). It puts
+ * resolved records back in the queue, and each one costs a model call on a whole
+ * report; an unscoped re-run would spend the entire record table's worth of
+ * calls because someone typed one flag. The scope is not a convenience, it is
+ * the guard.
+ *
+ * `--failed-only` IS ITSELF A SCOPE (issue #102). It selects records that have a
+ * failed attempt and no verdict for the report version they are showing - a set
+ * bounded by the failures, not by the table. That is why it satisfies the guard
+ * above on its own, and why it is the right tool after a gateway outage:
+ * `--since` would also re-classify every report that already succeeded, paying
+ * for answers we already have. `--since` still narrows it further when both are
+ * given, so "the failures from last night" is expressible.
+ *
+ * It is NOT a way to retry a deterministic failure into a different answer. A
+ * rejection like INCOHERENT_LEVEL will be rejected again - measured, see
+ * retry-policy.ts. It is here so that a record which terminaled BECAUSE the
+ * gateway was down can be picked up once the gateway is back, and so that a
+ * record which terminaled while the semantics were mid-edit can be picked up
+ * after they are fixed.
  *
  * A re-classified record is judged against the CURRENT enabled attention
  * semantics - unlike #87's re-judge, which uses the frozen intent on the rule
@@ -48,6 +65,7 @@ import { ClassifyReportStore } from './classify.store';
 interface Options {
   maxBatches: number;
   requeue: boolean;
+  failedOnly: boolean;
   record?: string;
   since?: Date;
 }
@@ -58,11 +76,14 @@ function parseOptions(argv: string[]): Options {
     // stops on its own when a batch comes back short.
     maxBatches: 100_000,
     requeue: false,
+    failedOnly: false,
   };
 
   for (const arg of argv) {
     if (arg === '--requeue') {
       options.requeue = true;
+    } else if (arg === '--failed-only') {
+      options.failedOnly = true;
     } else if (arg.startsWith('--max-batches=')) {
       const parsed = Number.parseInt(arg.slice('--max-batches='.length), 10);
       if (!Number.isInteger(parsed) || parsed < 1) {
@@ -83,10 +104,23 @@ function parseOptions(argv: string[]): Options {
     }
   }
 
-  if (options.requeue && options.record === undefined && options.since === undefined) {
+  if (
+    options.requeue &&
+    options.record === undefined &&
+    options.since === undefined &&
+    !options.failedOnly
+  ) {
     throw new Error(
-      '--requeue requires a scope: --record=<uuid> or --since=<ISO date> ' +
+      '--requeue requires a scope: --record=<uuid>, --since=<ISO date> or --failed-only ' +
         '(each re-classified report costs a model call)',
+    );
+  }
+  if (options.failedOnly && !options.requeue) {
+    // Not silently ignored: an operator who typed this expects records to move,
+    // and this flag does nothing except narrow a re-queue.
+    throw new Error(
+      '--failed-only only narrows a re-queue - add --requeue ' +
+        '(e.g. classify:once --requeue --failed-only)',
     );
   }
   return options;
@@ -124,11 +158,28 @@ async function main(): Promise<void> {
 
     if (options.requeue) {
       const store = app.get(ClassifyReportStore);
-      const requeued = await store.requeue(requeueScope(options));
+      let scope = requeueScope(options);
+      let failedFound: number | null = null;
+      if (options.failedOnly) {
+        const ids = await store.findFailedRecordIds(scope);
+        failedFound = ids.length;
+        scope = { ...scope, id: { in: ids } };
+      }
+      const requeued = await store.requeue(scope);
       logger.log(
         `requeued ${requeued} resolved record(s) for re-classification ` +
-          `(record=${options.record ?? '-'} since=${options.since?.toISOString() ?? '-'})`,
+          `(record=${options.record ?? '-'} since=${options.since?.toISOString() ?? '-'}` +
+          `${failedFound === null ? '' : ` failed-only=${failedFound} matched`})`,
       );
+      if (failedFound === 0) {
+        // The most likely reading of "it did nothing" is that the flag is
+        // broken. Say what it actually means, and what to check instead.
+        logger.log(
+          'no record failed without a verdict in that scope - nothing to re-queue. ' +
+            'Records that succeeded, and records still waiting to be retried, are ' +
+            'both deliberately excluded: neither one is missing an answer.',
+        );
+      }
     }
 
     const summary = await service.runOnce({ maxBatches: options.maxBatches });

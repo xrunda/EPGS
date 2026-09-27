@@ -39,7 +39,13 @@ function recordRow(overrides: Record<string, unknown> = {}) {
 
 function makePrisma(
   options: {
-    rows?: ReturnType<typeof recordRow>[];
+    /**
+     * What monitorRecord.findMany reports. claimBatch selects the whole record,
+     * findFailedRecordIds only `{ id, reportVersion }` - so the mock takes
+     * either shape instead of forcing one caller to invent columns the other
+     * one needs.
+     */
+    rows?: Array<ReturnType<typeof recordRow> | { id: string; reportVersion: number }>;
     semantics?: {
       id: string;
       version: number;
@@ -49,6 +55,8 @@ function makePrisma(
     }[];
     /** What every monitorRecord.updateMany reports as affected. */
     updateManyCount?: number;
+    /** What every OK attempt lookup reports, for findFailedRecordIds. */
+    okAttempts?: { monitorRecordId: string; reportVersion: number }[];
     /** What the shared level recompute's GROUP BY reports. */
     grouped?: { monitorRecordId: string; level: string }[];
     currentLevel?: string;
@@ -73,6 +81,7 @@ function makePrisma(
   return {
     tx,
     attentionSemantic: { findMany: jest.fn(async (_args: unknown) => options.semantics ?? []) },
+    monitorReportAi: { findMany: jest.fn(async (_args: unknown) => options.okAttempts ?? []) },
     monitorRecord: {
       findMany: jest.fn(async (_args: unknown) => options.rows ?? []),
       updateMany: jest.fn(async (_args: unknown) => ({ count: options.updateManyCount ?? 1 })),
@@ -211,7 +220,7 @@ describe('ClassifyReportStore.applyResult', () => {
     const outcome = await makeStore(prisma).applyResult(candidate, okResult(), NOW);
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(outcome).toEqual({ resolved: true, levelsChanged: 1 });
+    expect(outcome).toEqual({ resolved: true, levelsChanged: 1, retryScheduled: false });
 
     const audit = prisma.tx.monitorReportAi.create.mock.calls[0][0] as {
       data: Record<string, unknown>;
@@ -337,10 +346,94 @@ describe('ClassifyReportStore.applyResult', () => {
     };
     // A transient gateway failure must not erase a verified classification of
     // the same text, and must never move a keyword-derived level in either
-    // direction - so it resolves the attempt and touches nothing else.
-    expect(write.data).toEqual({ aiResolvedAt: NOW });
+    // direction - so it touches no level column at all.
     expect(write.data).not.toHaveProperty('aiAttentionLevel');
     expect(prisma.tx.monitorReportAiMatch.create).not.toHaveBeenCalled();
+  });
+
+  it('re-queues a TRANSPORT failure instead of resolving it (issue #102)', async () => {
+    const prisma = makePrisma();
+
+    const outcome = await makeStore(prisma).applyResult(
+      candidate,
+      okResult({
+        outcome: 'ERROR',
+        error: 'TIMEOUT',
+        attentionLevel: null,
+        modelAttentionLevel: null,
+        matches: [],
+      }),
+      NOW,
+    );
+
+    const write = prisma.tx.monitorRecord.updateMany.mock.calls[0][0] as {
+      data: Record<string, unknown>;
+    };
+    // The whole point of #102: the record stays in the queue, so a gateway blip
+    // is not the end of the story. `aiResolvedAt` is the queue predicate, so
+    // writing it here is what used to end the story after one attempt.
+    expect(write.data).not.toHaveProperty('aiResolvedAt');
+    // The lease is released, not held: this attempt finished, and waiting out a
+    // 10-minute lease would silently delay the retry that was just decided on.
+    expect(write.data).toEqual({ aiClaimedAt: null });
+    // `aiAttempts` is NOT reset - it is the retry budget, and resetting it here
+    // would make SEMANTIC_REPORT_MAX_ATTEMPTS unreachable for exactly the
+    // failures it exists to bound.
+    expect(write.data).not.toHaveProperty('aiAttempts');
+    expect(outcome).toEqual({ resolved: false, levelsChanged: 0, retryScheduled: true });
+    // The failure is still on the record: one audit row per attempt, always.
+    expect(prisma.tx.monitorReportAi.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('terminals a DETERMINISTIC failure on the first attempt (issue #102)', async () => {
+    const prisma = makePrisma();
+
+    const outcome = await makeStore(prisma).applyResult(
+      candidate,
+      okResult({
+        outcome: 'ERROR',
+        error: 'INCOHERENT_LEVEL',
+        attentionLevel: null,
+        modelAttentionLevel: null,
+        matches: [],
+      }),
+      NOW,
+    );
+
+    const write = prisma.tx.monitorRecord.updateMany.mock.calls[0][0] as {
+      data: Record<string, unknown>;
+    };
+    // Re-asking the same question cannot produce a different answer here, so the
+    // attempt is spent rather than repeated: the record resolves at once and the
+    // failure becomes visible to a doctor immediately instead of three model
+    // calls later. See retry-policy.ts for why this code in particular.
+    expect(write.data).toEqual({ aiResolvedAt: NOW });
+    // `resolved: true` - this call IS what settled the record, which is why the
+    // level recompute runs. It is a no-op: the write above changed no AI input,
+    // so the level the record already had is still the one it should have.
+    expect(outcome).toEqual({ resolved: true, levelsChanged: 0, retryScheduled: false });
+  });
+
+  it('does not re-queue a transport failure that lost the resolve race', async () => {
+    const prisma = makePrisma();
+    prisma.tx.monitorRecord.updateMany.mockResolvedValue({ count: 0 });
+
+    const outcome = await makeStore(prisma).applyResult(
+      candidate,
+      okResult({
+        outcome: 'ERROR',
+        error: 'NETWORK',
+        attentionLevel: null,
+        modelAttentionLevel: null,
+        matches: [],
+      }),
+      NOW,
+    );
+
+    // Someone else settled the record between the claim and this write. The
+    // retry decision is moot: there is nothing left to retry, and reporting it
+    // as scheduled would tell an operator work is coming that never will.
+    expect(outcome).toEqual({ resolved: false, levelsChanged: 0, retryScheduled: false });
   });
 
   it('persists hashes and offsets, never the report text or the evidence excerpt', async () => {
@@ -384,7 +477,7 @@ describe('ClassifyReportStore.applyResult', () => {
 
     const outcome = await makeStore(prisma).applyResult(candidate, okResult(), NOW);
 
-    expect(outcome).toEqual({ resolved: false, levelsChanged: 0 });
+    expect(outcome).toEqual({ resolved: false, levelsChanged: 0, retryScheduled: false });
     // The audit row is written anyway: one row per attempt IS the provenance
     // trail, and a losing attempt is still an attempt worth recording.
     expect(prisma.tx.monitorReportAi.create).toHaveBeenCalledTimes(1);
@@ -431,6 +524,89 @@ describe('ClassifyReportStore queue maintenance', () => {
 
     expect(prisma.monitorRecord.count).toHaveBeenCalledWith({
       where: { aiResolvedAt: null, aiAttempts: { lt: 3 } },
+    });
+  });
+
+  /**
+   * `--failed-only` (issue #102). The point of this method is to pick the
+   * records that are MISSING an answer, and the two ways to get that wrong are
+   * both about history rather than failure: a record that failed and then
+   * succeeded is fine, and a record whose older verdict is about text nobody is
+   * showing any more is not judged at all.
+   */
+  describe('findFailedRecordIds', () => {
+    it('returns the record that failed and never got a verdict', async () => {
+      const prisma = makePrisma({ rows: [{ id: 'rec1', reportVersion: 3 }] });
+
+      expect(await makeStore(prisma).findFailedRecordIds({})).toEqual(['rec1']);
+
+      expect(prisma.monitorRecord.findMany).toHaveBeenCalledWith({
+        where: { reportAiAttempts: { some: { outcome: 'ERROR' } } },
+        select: { id: true, reportVersion: true },
+      });
+    });
+
+    it('skips a record that failed and later succeeded', async () => {
+      // The retry (issue #102) produces exactly this history: an ERROR row
+      // followed by an OK row. Re-classifying it would spend a model call on a
+      // report that already has an answer.
+      const prisma = makePrisma({
+        rows: [{ id: 'rec1', reportVersion: 1 }],
+        okAttempts: [{ monitorRecordId: 'rec1', reportVersion: 1 }],
+      });
+
+      expect(await makeStore(prisma).findFailedRecordIds({})).toEqual([]);
+    });
+
+    it('counts a record whose only verdict is about a superseded report version', async () => {
+      // The report was amended after the OK attempt, so the verdict is about
+      // text nobody is looking at and the record is showing an unanswered
+      // version. Same question the read path asks (toAiJudged) - asked once.
+      const prisma = makePrisma({
+        rows: [{ id: 'rec1', reportVersion: 2 }],
+        okAttempts: [{ monitorRecordId: 'rec1', reportVersion: 1 }],
+      });
+
+      expect(await makeStore(prisma).findFailedRecordIds({})).toEqual(['rec1']);
+    });
+
+    it('decides each record on its own history', async () => {
+      const prisma = makePrisma({
+        rows: [
+          { id: 'failed', reportVersion: 1 },
+          { id: 'recovered', reportVersion: 1 },
+          { id: 'amended', reportVersion: 5 },
+        ],
+        okAttempts: [
+          { monitorRecordId: 'recovered', reportVersion: 1 },
+          { monitorRecordId: 'amended', reportVersion: 4 },
+        ],
+      });
+
+      expect(await makeStore(prisma).findFailedRecordIds({})).toEqual(['failed', 'amended']);
+    });
+
+    it('carries the caller scope into the candidate query', async () => {
+      // --failed-only is itself a scope, but --since still has to narrow it.
+      const prisma = makePrisma({ rows: [] });
+
+      expect(await makeStore(prisma).findFailedRecordIds({ examTime: { gte: NOW } })).toEqual([]);
+
+      expect(prisma.monitorRecord.findMany).toHaveBeenCalledWith({
+        where: {
+          examTime: { gte: NOW },
+          reportAiAttempts: { some: { outcome: 'ERROR' } },
+        },
+        select: { id: true, reportVersion: true },
+      });
+    });
+
+    it('does not query attempts when nothing failed', async () => {
+      const prisma = makePrisma({ rows: [] });
+
+      expect(await makeStore(prisma).findFailedRecordIds({})).toEqual([]);
+
+      expect(prisma.monitorReportAi.findMany).not.toHaveBeenCalled();
     });
   });
 

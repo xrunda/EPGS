@@ -89,7 +89,7 @@ matchMode)` 元组，在所有**已启用**规则中只能存在一条，不区�
    编辑都会递增 `version`**——包括不改变匹配语义的编辑（如仅停用、改备注），
    否则两个操作人并发地做非语义编辑（如都基于旧读数停用规则）时无法被
    乐观锁探测到。这是比 schema 注释字面更严格的解读，详见 PR 描述。
-2. **版本化审计**：编辑 `keyword`/`level`/`matchField`/`matchMode`
+2. **版本化审计**：编辑 `keyword`/`level`/`matchField`/`matchMode`/`semanticIntent`
    任一字段（"改变匹配语义"）时，服务层**新建一行**（新 `id`，
    `version = 旧版本 + 1`，同一 `ruleGroupId`），并将旧行置为
    `isEnabled = false`，而不是原地覆盖——这样历史 `monitor_match` 行
@@ -98,6 +98,25 @@ matchMode)` 元组，在所有**已启用**规则中只能存在一条，不区�
    编辑一条已被语义化编辑取代的旧版本行（即该行不再是其 `ruleGroupId`
    内 `version` 最大的行）会被拒绝为 `RULE_VERSION_CONFLICT`，防止在
    死历史上意外分叉出第二条编辑链。
+
+## `semanticIntent` — 这个关键词想关注什么情况（issue #87）
+
+可选字段，医生用一句自然语言说明"这条关键词是想抓什么情况"，例如
+`本次检查明确或疑似存在的病变；单独出现的否认句或既往史不算。`
+
+- **不参与关键词匹配。** 它只被 AI 语义判读读取（见
+  [semantic-judge-design.md](./semantic-judge-design.md)），不会让任何一条命中
+  消失，也不会改变命中的等级。
+- **为空 = 不做判读。** 传 `null`、空串或纯空白都会被归一化为"未配置"：该规则的
+  命中不会被送去判读、不产生判读审计行，命中即计入关注——与 #87 之前的行为一致。
+- **改动它就等于改动匹配语义，会新建版本行**（同上方版本化审计），包括**清空**。
+  原因：历史判读审计行所指向的"当时的关注情况"必须保持不变，原地改写会让审计失去
+  依据。
+- 长度上限 500 字符（`SEMANTIC_INTENT_MAX_LENGTH`），`PUT` 时省略该字段表示
+  **保持原值**，传 `null` 表示清空。
+
+> 该字段是给医生看的"关注情况"，不是 Prompt、不是规则表达式、不是 JSON Schema。
+> API 与界面都不要把它描述成 AI 配置项。
 
 ## 接口
 
@@ -122,6 +141,7 @@ GET /api/rules?keyword=%E8%82%BF%E7%98%A4&level=RED&isEnabled=true&page=1&pageSi
       "matchField": "REPORT_TEXT",
       "matchMode": "CONTAINS",
       "category": null,
+      "semanticIntent": null,
       "isEnabled": true,
       "version": 1,
       "ruleGroupId": "b5c46a86-b57a-4c88-8515-44da23a5d5c4",
@@ -151,13 +171,15 @@ GET /api/rules?keyword=%E8%82%BF%E7%98%A4&level=RED&isEnabled=true&page=1&pageSi
   "matchField": "REPORT_TEXT",
   "matchMode": "CONTAINS",
   "category": null,
+  "semanticIntent": "本次检查明确或疑似存在的病变；单独出现的否认句或既往史不算。",
   "notes": null,
   "isEnabled": true,
   "actorId": "zhang.san"
 }
 ```
 
-`matchMode` 缺省为 `CONTAINS`，`isEnabled` 缺省为 `true`。成功返回
+`matchMode` 缺省为 `CONTAINS`，`isEnabled` 缺省为 `true`，`semanticIntent` 缺省为
+`null`（不判读）。成功返回
 `201` 及创建后的规则（`version=1`，`ruleGroupId` 等于自身 `id`）。
 与现有启用规则冲突返回 `409 RULE_CONFLICT`。
 
@@ -182,6 +204,10 @@ GET /api/rules?keyword=%E8%82%BF%E7%98%A4&level=RED&isEnabled=true&page=1&pageSi
 
 必需列：`keyword`、`level`、`matchField`（列名大小写/顺序不敏感）。
 可选列：`matchMode`（缺省 `CONTAINS`）、`category`、`notes`。
+
+> CSV 仍是 #87 之前的列集合，**不含 `semanticIntent`**：导入的规则一律
+> `semanticIntent = null`（不做判读，命中即计入关注）。这不是遗漏——批量导入是
+> 既有契约，多出的一列会破坏医院已有模板；需要判读的规则在界面上单条补写即可。
 
 ```csv
 keyword,level,matchField,matchMode

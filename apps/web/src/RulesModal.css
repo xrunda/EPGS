@@ -105,6 +105,26 @@ button:disabled {
   color: var(--ink-800);
 }
 
+/* 关键词监控的一句话说明（页面主描述 + 辅助说明 + 与 AI 语义监控的分工）。 */
+.rules-modal__lead {
+  margin: 12px 28px 0;
+  color: var(--ink-800);
+  font-size: 16px;
+  font-weight: 600;
+}
+.rules-modal__sublead {
+  margin: 6px 28px 0;
+  color: var(--ink-300);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.rules-modal__crosssell {
+  margin: 8px 28px 0;
+  color: var(--teal-700);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .rules-modal__notice {
   display: flex;
   align-items: center;
@@ -313,6 +333,21 @@ textarea:focus {
   max-width: 210px;
   color: #687b7e !important;
 }
+/* 关注情况（issue #87）：整句展示会撑宽表格，截断并用 title 提供全文。 */
+.rules-table__intent {
+  max-width: 200px;
+  color: #687b7e !important;
+}
+.rules-table__intent span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.rules-table__intent--none {
+  color: #9aa9ab !important;
+  font-style: normal;
+}
 .rules-pagination {
   display: flex;
   align-items: center;
@@ -376,6 +411,25 @@ textarea:focus {
   background: #eef2f2;
   color: var(--ink-300);
 }
+/*
+  操作列按钮（issue #110）：标签内部不许断行。
+
+  `.table-actions` 是会收缩的 flex 行，而这些按钮 `padding: 0`、标签只有两三个
+  汉字。中文没有空格，浏览器可以在任意两个字之间断行，所以按钮的 min-content
+  宽度只有一个字 —— 表格把操作列压到多窄，按钮就折成多窄。实测用户管理弹窗在
+  1024px 及以下，「授权」「停用」「删除」被压成 18–23px 竖排，16 个按钮全部折行。
+
+  钉住 `white-space: nowrap` 之后，按钮的 min-content 变成完整标签宽度，操作列的
+  最小宽度随之上来，表格放不下时由 `.users-table-wrap` 的 `overflow-x: auto` 向
+  横向滚动兜底（`.rules-table` 已有 `min-width: 820px`）。
+
+  只加这一条，不动字号、内边距、颜色 —— 1280px 及以上本来就放得下，按钮宽度
+  与改动前逐像素一致。
+
+  AI 语义监控弹窗（`SemanticMonitorModal.css`）里有一份同样作用的、限定在该弹窗
+  内的写法，是 issue #88 目视验证时先加的；它现在成为冗余，但本 Issue 不动它，
+  因为那个文件正被在飞的 PR #109 改动，同时改会制造冲突。
+*/
 .table-actions button,
 .text-button {
   padding: 0;
@@ -389,6 +443,9 @@ textarea:focus {
 .text-button:hover {
   color: var(--teal-800);
   text-decoration: underline;
+}
+.table-actions button {
+  white-space: nowrap;
 }
 
 .rules-state {
@@ -437,6 +494,19 @@ textarea:focus {
   gap: 8px;
   margin-top: 22px;
   justify-content: flex-end;
+}
+/* 语义判读关注情况（issue #87）把规则编辑栏抬高了约 190px，1440×900 与 1920×1080
+   下「保存规则/取消」都落到了可视区外（1080 高度下是本 Issue 引入的回退：
+   加这个字段前刚好放得下）。改为吸附在编辑栏底部：面板不需要滚动时与原来的
+   静态位置完全一致，需要滚动时保存按钮始终可见，医生填完就能直接保存。 */
+.panel-actions--sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin: 22px -22px -22px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
 }
 .panel-copy {
   color: var(--ink-300);
@@ -514,6 +584,9 @@ textarea:focus {
     padding-left: 16px;
   }
   .rules-modal__notice,
+  .rules-modal__lead,
+  .rules-modal__sublead,
+  .rules-modal__crosssell,
   .feedback {
     margin-right: 16px;
     margin-left: 16px;

@@ -1,23 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  MonitorExamDto,
+  MonitorExamWorkbenchDto,
   MonitorLevelDto,
   MonitorSummaryDto,
   SyncHealthState,
   SyncStatusDto,
 } from '@epgs/shared-types';
+import { ActionMenu, type ActionMenuItem } from './ActionMenu';
 import { getExamSummary, listExams, MonitorApiError, getSyncStatus } from './monitorApi';
 import { listRules } from './rulesApi';
 import { DetailDrawer } from './DetailDrawer';
+import { ATTENTION_LEVEL_LABELS } from './attentionSource';
+import { findingSourceIcons } from './findingSource';
+import { rowAttentionReason } from './attentionReason';
 import './Workbench.css';
 
 interface WorkbenchProps {
   /** Opens the read-only rule-configuration modal (owned by App). */
   onOpenRules: () => void;
+  /** Opens the AI attention-semantic configuration modal (owned by App, issue #88). */
+  onOpenAiSemantics?: () => void;
   /** Opens the notification-configuration modal (owned by App). Optional for compat. */
   onOpenNotifications?: () => void;
   /** Opens the user-management modal (owned by App). undefined when the current user lacks USER_ADMIN - button hidden (server still enforces via RolesGuard). */
   onOpenUsers?: () => void;
+  /** Opens the level-conflict list (owned by App, issue #103). undefined when the current user lacks RULE_ADMIN. */
+  onOpenLevelConflicts?: () => void;
 }
 
 interface WorkbenchFilters {
@@ -52,13 +60,6 @@ const PAGE_SIZE = 20;
 
 /** Auto-refresh cadence for the exam list/summary (issue #48). */
 const AUTO_REFRESH_SECONDS = 60;
-
-const LEVEL_LABELS: Record<MonitorLevelDto, string> = {
-  RED: '红色',
-  YELLOW: '黄色',
-  GREEN: '绿色',
-  UNCLASSIFIED: '未分级',
-};
 
 const HEALTH_LABELS: Record<SyncHealthState, string> = {
   HEALTHY: '同步正常',
@@ -120,7 +121,7 @@ const PATIENT_TYPE_CODE_FALLBACK_LABELS: Record<string, string> = {
   O: '门诊',
 };
 
-function formatPatientType(exam: MonitorExamDto): string {
+function formatPatientType(exam: MonitorExamWorkbenchDto): string {
   const { name, code } = exam.patientType;
   if (name && code) return `${name}（${code}）`;
   if (name) return name;
@@ -180,10 +181,12 @@ function friendlyError(error: unknown): string {
 
 export function Workbench({
   onOpenRules,
+  onOpenAiSemantics,
   onOpenNotifications,
   onOpenUsers,
+  onOpenLevelConflicts,
 }: WorkbenchProps): JSX.Element {
-  const [items, setItems] = useState<MonitorExamDto[]>([]);
+  const [items, setItems] = useState<MonitorExamWorkbenchDto[]>([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<MonitorSummaryDto | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatusDto | null>(null);
@@ -332,6 +335,23 @@ export function Workbench({
     applyFilters(next);
   }
 
+  /*
+    低频入口（issue #116）：消息推送 / 等级分歧 / 用户管理 收进「⋯」，工具栏只留
+    关键词监控与 AI 语义监控两个显性按钮。三者各自的条件渲染原封不动地搬进来 ——
+    prop 没传（App.tsx 按角色决定传不传）就不进这个数组，菜单里也就不会有那一项，
+    不会出现点了没反应的入口。
+  */
+  const toolbarMenuItems: ActionMenuItem[] = [];
+  if (onOpenNotifications) {
+    toolbarMenuItems.push({ label: '消息推送', onSelect: onOpenNotifications });
+  }
+  if (onOpenLevelConflicts) {
+    toolbarMenuItems.push({ label: '等级分歧', onSelect: onOpenLevelConflicts });
+  }
+  if (onOpenUsers) {
+    toolbarMenuItems.push({ label: '用户管理', onSelect: onOpenUsers });
+  }
+
   const syncHealth = syncStatus?.health ?? null;
   const syncLine = syncFailed
     ? '同步状态获取失败'
@@ -342,29 +362,53 @@ export function Workbench({
   return (
     <section className="workbench" aria-label="内镜监测工作台">
       <header className="workbench__heading">
-        <div>
-          <p className="workbench__kicker">ENDOSCOPY MONITORING</p>
-          <h1>内镜中心</h1>
-          <p className="workbench__subtitle">内镜重点患者监测系统</p>
+        <div className="workbench__brand">
+          {/*
+            产品标识（issue #114）。装饰性图片用 alt=""：右边 h1 已经把「内镜中心」
+            说了一遍，读屏再念一次同一个名字是噪音。医院 logo 在顶栏，这里小一号，
+            两个不打架。
+          */}
+          <img className="workbench__logo" src="/logo.png" alt="" />
+          <div>
+            <h1>内镜中心</h1>
+            <p className="workbench__subtitle">内镜重点患者监测系统</p>
+          </div>
         </div>
         <div className="workbench__toolbar">
           <span className="workbench__sync">{syncLine}</span>
-          <span className="workbench__countdown">{secondsUntilRefresh} 秒后刷新</span>
-          <button className="button" type="button" onClick={() => setReloadKey((c) => c + 1)}>
-            立即刷新
-          </button>
+          {/*
+            配置入口的按钮文案（issue #114，改动 #94 划的线）：入口文字与它打开的
+            弹层标题逐字一致 —— 写着「监测规则」点开却是「关键词监控」，用户不知道
+            点下去是什么。所有者 2026-09-27 定的新规矩。
+            代价是工作台的设置工具栏里重新出现机制词；#94 那条「临床视图不出现机制
+            词」的保证改为由 Workbench.test.tsx 的术语扫描把这排工具栏排除后来守，
+            医生真正在读的内容（等级、理由、依据）一个机制词都不许有。
+            只改字：目标弹窗、权限、行为一律不变。
+          */}
           <button className="button button--primary" type="button" onClick={onOpenRules}>
-            监测规则
+            关键词监控
           </button>
-          {onOpenNotifications && (
-            <button className="button" type="button" onClick={onOpenNotifications}>
-              消息推送
+          {onOpenAiSemantics && (
+            <button className="button" type="button" onClick={onOpenAiSemantics}>
+              AI 语义监控
             </button>
           )}
-          {onOpenUsers && (
-            <button className="button" type="button" onClick={onOpenUsers}>
-              用户管理
-            </button>
+          {/*
+            消息推送 / 等级分歧 / 用户管理 收进「⋯」（issue #116）。这三个是配置与
+            管理侧的低频入口，和上面两个价值点并排只会把主功能稀释掉。文案、目标
+            弹窗、角色判定一律不变，只是换了入口位置。
+            三项都没得显示时整个「⋯」不渲染 —— 一个展开后空无一物的按钮比没有按钮
+            更糟。
+            术语扫描不受影响：菜单项都不含机制词，而且菜单挂在 .workbench__toolbar
+            里面，扫描本来就把这一整块摘掉再扫（见 Workbench.test.tsx）。
+          */}
+          {toolbarMenuItems.length > 0 && (
+            <ActionMenu
+              label="更多配置"
+              items={toolbarMenuItems}
+              /* 浅底外观复用现成的 .button，跟旁边两个按钮同一个形状 */
+              triggerClassName="button workbench__menu-trigger"
+            />
           )}
         </div>
       </header>
@@ -518,98 +562,177 @@ export function Workbench({
         ))}
       </div>
 
-      <div className="workbench__table-wrap">
-        {loading ? (
-          <div className="workbench-state">正在加载检查记录…</div>
-        ) : error && items.length === 0 ? (
-          <div className="workbench-state">
-            <p>检查记录加载失败</p>
-            <button className="button" type="button" onClick={() => void load()}>
-              重新加载
-            </button>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="workbench-state">
-            <p>没有符合条件的检查记录</p>
-            <span>调整筛选条件后重试。</span>
-          </div>
-        ) : (
-          <table className="workbench__table">
-            <thead>
-              <tr>
-                <th>关注等级</th>
-                <th>姓名</th>
-                <th>科室</th>
-                <th>床号</th>
-                <th>类型</th>
-                <th>检查项目</th>
-                <th>检查日期</th>
-                <th>检查时间</th>
-                <th>命中关键词</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((exam) => (
-                <tr
-                  key={exam.recordId}
-                  className={`workbench__row workbench__row--${exam.monitorLevel.toLowerCase()}`}
-                >
-                  <td>
-                    <span className={`level-tag level-tag--${exam.monitorLevel.toLowerCase()}`}>
-                      {LEVEL_LABELS[exam.monitorLevel]}
-                    </span>
-                  </td>
-                  <td>{exam.patientName ?? '—'}</td>
-                  <td>{exam.department ?? '—'}</td>
-                  <td>{exam.bedNo ?? '—'}</td>
-                  <td>{formatPatientType(exam)}</td>
-                  <td>{exam.examItem ?? '—'}</td>
-                  <td>{exam.examDate ?? '—'}</td>
-                  <td>{exam.examTime ?? '—'}</td>
-                  <td className="workbench__keywords">
-                    {exam.matchedKeywords.length > 0 ? exam.matchedKeywords.join('、') : '—'}
-                  </td>
-                  <td>
-                    <button
-                      className="table-actions"
-                      type="button"
-                      onClick={(event) => {
-                        detailTriggerRef.current = event.currentTarget;
-                        setDetailId(exam.recordId);
-                      }}
-                    >
-                      查看详情
-                    </button>
-                  </td>
+      <div className="workbench__list">
+        {/*
+          列表自己的工具条（issue #114）：刷新的就是这个列表，控件就摆在它右上角，
+          不用再猜「立即刷新」刷的是谁。倒计时一起搬过来 —— 它讲的就是这个列表的
+          自动刷新，留在顶栏那排设置按钮里是个孤儿。
+          「同步正常 · 最后同步时间」留在页头：那是院内网关的同步健康，不是列表的开关。
+        */}
+        <div className="workbench__list-tools">
+          <span className="workbench__countdown">{secondsUntilRefresh} 秒后刷新</span>
+          <button
+            className="workbench__refresh"
+            type="button"
+            aria-label="刷新列表"
+            title="刷新列表"
+            onClick={() => setReloadKey((c) => c + 1)}
+          >
+            {/* 圆形箭头是通用图形，不必配文字。内联 SVG —— 仓库里没有图标库。 */}
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
+              <path
+                d="M13.2 8a5.2 5.2 0 1 1-1.52-3.68"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+              <path
+                d="M13.3 1.9v2.7h-2.7"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+        <div className="workbench__table-wrap">
+          {loading ? (
+            <div className="workbench-state">正在加载检查记录…</div>
+          ) : error && items.length === 0 ? (
+            <div className="workbench-state">
+              <p>检查记录加载失败</p>
+              <button className="button" type="button" onClick={() => void load()}>
+                重新加载
+              </button>
+            </div>
+          ) : items.length === 0 ? (
+            <div className="workbench-state">
+              <p>没有符合条件的检查记录</p>
+              <span>调整筛选条件后重试。</span>
+            </div>
+          ) : (
+            <table className="workbench__table">
+              <thead>
+                <tr>
+                  <th>关注等级</th>
+                  <th>发现来源</th>
+                  <th>姓名</th>
+                  <th>科室</th>
+                  <th>床号</th>
+                  <th>类型</th>
+                  <th>检查项目</th>
+                  <th>检查日期</th>
+                  <th>检查时间</th>
+                  <th>关注理由</th>
+                  <th>操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {!loading && total > 0 && (
-          <nav className="workbench__pagination" aria-label="检查记录分页">
-            <button
-              className="button"
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-            >
-              上一页
-            </button>
-            <span>
-              第 {page} / {pageCount} 页
-            </span>
-            <button
-              className="button"
-              type="button"
-              disabled={page >= pageCount}
-              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
-            >
-              下一页
-            </button>
-          </nav>
-        )}
+              </thead>
+              <tbody>
+                {items.map((exam) => (
+                  <tr
+                    key={exam.recordId}
+                    className={`workbench__row workbench__row--${exam.monitorLevel.toLowerCase()}`}
+                  >
+                    <td>
+                      {/*
+                      等级文字带「关注」二字（attentionSource.ts 是唯一来源）：红色是
+                      管理上的关注等级，不是病情严重程度，行内也不能只留一个颜色词。
+                    */}
+                      <span className={`level-tag level-tag--${exam.monitorLevel.toLowerCase()}`}>
+                        {ATTENTION_LEVEL_LABELS[exam.monitorLevel]}
+                      </span>
+                    </td>
+                    {/*
+                      发现来源（issue #112）：这一行是哪一路发现的。单独一列而不是塞进
+                      「关注等级」格子里 —— 图标跟着色标宽度跑的话，「红色关注」和「未分级」
+                      的图标起止位置差十几个像素，竖着扫会抖；单独一列两枚图标上下对齐。
+                      图标不带文字（见 findingSource.ts），同一件事的完整说法在右边
+                      「关注理由」列里，图标是它的可扫版本。
+                    */}
+                    <td className="workbench__source">
+                      {/*
+                        NONE 是唯一没有图标的来源（findingSource.ts 的 switch 已经穷举了
+                        四个取值），所以这里显式判它、渲染占位符：留空会被读成没渲染出来。
+                        findingSource.test.ts 钉住「非 NONE 至少一枚图标」，两边不会漂。
+                      */}
+                      {exam.attentionSource === 'NONE' ? (
+                        <span className="workbench__source-none">—</span>
+                      ) : (
+                        <span className="workbench__source-icons">
+                          {findingSourceIcons(exam.attentionSource).map((icon) => (
+                            <span
+                              className="workbench__source-tip"
+                              key={icon.src}
+                              data-tip={icon.tip}
+                            >
+                              <img
+                                className="workbench__source-icon"
+                                src={icon.src}
+                                alt={icon.alt}
+                              />
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </td>
+                    <td>{exam.patientName ?? '—'}</td>
+                    <td>{exam.department ?? '—'}</td>
+                    <td>{exam.bedNo ?? '—'}</td>
+                    <td>{formatPatientType(exam)}</td>
+                    <td>{exam.examItem ?? '—'}</td>
+                    <td>{exam.examDate ?? '—'}</td>
+                    <td>{exam.examTime ?? '—'}</td>
+                    {/*
+                      关注理由（issue #94）：这一列回答「为什么这位患者需要我关注」。
+                      理由句由 attentionReason.ts 拼出，没有理由的行显示占位符，不编造
+                      理由。来源徽标（issue #88 的文字徽标）仍然不在这里 —— 左边「发现来源」
+                      那列是图标，两者说的是同一件事的两种表达（issue #112）。
+                    */}
+                    <td className="workbench__reason">{rowAttentionReason(exam) ?? '—'}</td>
+                    <td>
+                      <button
+                        className="table-actions"
+                        type="button"
+                        onClick={(event) => {
+                          detailTriggerRef.current = event.currentTarget;
+                          setDetailId(exam.recordId);
+                        }}
+                      >
+                        查看详情
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {!loading && total > 0 && (
+            <nav className="workbench__pagination" aria-label="检查记录分页">
+              <button
+                className="button"
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                上一页
+              </button>
+              <span>
+                第 {page} / {pageCount} 页
+              </span>
+              <button
+                className="button"
+                type="button"
+                disabled={page >= pageCount}
+                onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+              >
+                下一页
+              </button>
+            </nav>
+          )}
+        </div>
       </div>
 
       <DetailDrawer recordId={detailId} onClose={() => setDetailId(null)} />

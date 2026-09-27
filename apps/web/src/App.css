@@ -74,7 +74,14 @@ body {
   font-size: 14px;
 }
 
-.app-header__actions button {
+/*
+  顶栏按钮的深底外观。第二组选择器（issue #116）指定到「⋯」触发按钮这个类上、
+  而不是继续写 `button`：二级菜单挂在同一个容器里，面板中的菜单项也是 `button`，
+  用裸标签选择器会把深底配色套到白底面板上。写类名而不是 `.action-menu button`，
+  是为了让菜单项完全不受顶栏配色影响（面板两处共用，配色归 ActionMenu.css）。
+*/
+.app-header__actions > button,
+.app-header__actions .action-menu__trigger {
   border: 0;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
@@ -86,11 +93,19 @@ body {
     color var(--dur-fast) var(--ease-standard);
 }
 
-.app-header__actions button:hover,
-.app-header__actions button:focus-visible {
+.app-header__actions > button:hover,
+.app-header__actions > button:focus-visible,
+.app-header__actions .action-menu__trigger:hover,
+.app-header__actions .action-menu__trigger:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.35);
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
+}
+
+/* 「⋯」触发按钮：字形比汉字窄，给个最小宽度让它和旁边的按钮一样好点。 */
+.app-header__menu-trigger {
+  min-width: 34px;
+  font-size: 17px;
 }
 
 .app-user {
@@ -111,8 +126,12 @@ body {
     font-size: 13px;
   }
 
-  .app-header__nav,
-  .app-header__actions button:first-of-type {
+  /*
+    窄屏只藏导航。以前这里还藏「第一个按钮」（修改密码）—— issue #116 之后顶栏
+    第一个按钮就是「⋯」，照旧藏会把修改密码和退出登录一起藏掉，等于窄屏没法登出。
+    现在两个操作都在菜单里，菜单留着，仍然只占一个按钮的宽度。
+  */
+  .app-header__nav {
     display: none;
   }
 

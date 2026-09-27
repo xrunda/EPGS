@@ -55,6 +55,8 @@ const detail: MonitorExamDetailDto = {
       matchedField: 'REPORT_TEXT',
       contextSnippet: '…不除外疑似穿孔可能。',
       matchedAt: '2026-09-05T01:05:00.000Z',
+      semanticFiltered: false,
+      semantic: null,
     },
   ],
 };

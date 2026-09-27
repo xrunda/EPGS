@@ -64,7 +64,10 @@ export class AssistantEventsService {
     try {
       const groups = await this.prisma.monitorMatch.groupBy({
         by: ['keyword', 'level'],
-        where: { matchedAt: { gte: since }, rule: { isEnabled: true } },
+        // Issue #87: effective hits only. A hit the AI semantic judge removed
+        // did not put a patient on the watch list, so announcing it in the feed
+        // would be a false alarm - and the feed is what the duty room reads.
+        where: { matchedAt: { gte: since }, rule: { isEnabled: true }, semanticFiltered: false },
         _count: { _all: true },
       });
       // Only surface RED/YELLOW hits - GREEN/UNCLASSIFIED are not what the
@@ -91,7 +94,14 @@ export class AssistantEventsService {
 
   private async firstExamItemForKeyword(keyword: string, since: Date): Promise<string | null> {
     const match = await this.prisma.monitorMatch.findFirst({
-      where: { keyword, matchedAt: { gte: since }, rule: { isEnabled: true } },
+      // Same effective-hit condition as the grouping above, so the exam item
+      // named in the feed line belongs to a hit that actually counted.
+      where: {
+        keyword,
+        matchedAt: { gte: since },
+        rule: { isEnabled: true },
+        semanticFiltered: false,
+      },
       orderBy: { matchedAt: 'desc' },
       select: { record: { select: { examItem: true } } },
     });

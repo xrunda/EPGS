@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { MonitorService } from './monitor.service';
 
 /**
@@ -12,6 +13,11 @@ describe('MonitorService', () => {
   let prisma: any;
   let service: MonitorService;
 
+  /** Issue #103 fixtures: a body whose char 8..10 is '隆起'. */
+  const REPORT_BODY = '胃体见巨大不规则隆起，表面糜烂，质脆。';
+  const RULE_GROUP = '11111111-1111-4111-8111-111111111111';
+  const SEMANTIC_GROUP = '22222222-2222-4222-8222-222222222222';
+
   function makeRow(overrides: Record<string, unknown> = {}): any {
     return {
       id: '00000000-0000-0000-0000-000000000001',
@@ -23,6 +29,15 @@ describe('MonitorService', () => {
       examItem: '电子胃镜检查',
       examTime: new Date('2026-08-20T01:30:00Z'),
       currentLevel: 'RED',
+      // Issue #88: the AI side of the record. NULL/empty is the state of every
+      // record that was never judged - the pre-#88 behaviour.
+      aiAttentionLevel: null,
+      reportVersion: 1,
+      aiResolvedAt: null,
+      reportAiAttempts: [],
+      // Issue #102: failed attempts, counted by DETAIL_INCLUDE rather than
+      // listed (that list is filtered to OK).
+      _count: { reportAiAttempts: 0 },
       matches: [
         { keyword: '腺癌', matchedAt: new Date('2026-08-20T01:30:01Z') },
         { keyword: '息肉样', matchedAt: new Date('2026-08-20T01:30:02Z') },
@@ -104,7 +119,10 @@ describe('MonitorService', () => {
             currentLevel: 'RED',
             examItem: { contains: '电子胃镜', mode: 'insensitive' },
             patientName: { contains: '张三', mode: 'insensitive' },
-            matches: { some: { keyword: '腺癌' } },
+            // Issue #87: the keyword filter selects EFFECTIVE hits only, so a
+            // hit the AI semantic judge removed cannot put its record back in
+            // the result - the same rule the list's keyword chips follow.
+            matches: { some: { keyword: '腺癌', semanticFiltered: false } },
           },
         }),
       );
@@ -178,6 +196,70 @@ describe('MonitorService', () => {
       // The wire type guarantees the report body is absent from list rows.
       expect(item).not.toHaveProperty('reportContent');
       expect(item).not.toHaveProperty('diagnosis');
+      // Issue #88: the list row says where its level came from and nothing more.
+      // No finding - let alone an excerpt - may ride along in a list response.
+      expect(item).not.toHaveProperty('aiSemantics');
+      expect(item).not.toHaveProperty('aiJudged');
+    });
+
+    it('reports RULE when only keywords found something (issue #88)', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([makeRow()]);
+      prisma.monitorRecord.count.mockResolvedValue(1);
+
+      const result = await service.list({} as any);
+
+      expect(result.items[0].attentionSource).toBe('RULE');
+    });
+
+    it('reports BOTH when the AI found something too, whatever the two levels are (issue #88)', async () => {
+      // Keyword hits are present AND aiAttentionLevel is set. The badge answers
+      // "which paths found something", so a lower AI level is still BOTH.
+      prisma.monitorRecord.findMany.mockResolvedValue([
+        makeRow({ aiAttentionLevel: 'YELLOW' }),
+      ]);
+      prisma.monitorRecord.count.mockResolvedValue(1);
+
+      const result = await service.list({} as any);
+
+      expect(result.items[0].attentionSource).toBe('BOTH');
+      expect(result.items[0].monitorLevel).toBe('RED');
+    });
+
+    it('reports AI_REPORT when no keyword hit is effective (issue #88)', async () => {
+      // The list's matches are already filtered to effective hits, so an empty
+      // array here means the keyword path found nothing that counts.
+      prisma.monitorRecord.findMany.mockResolvedValue([
+        makeRow({ matches: [], aiAttentionLevel: 'YELLOW' }),
+      ]);
+      prisma.monitorRecord.count.mockResolvedValue(1);
+
+      const result = await service.list({} as any);
+
+      expect(result.items[0].attentionSource).toBe('AI_REPORT');
+    });
+
+    it('reports NONE for a record neither path flagged (issue #88)', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([
+        makeRow({ matches: [], currentLevel: 'UNCLASSIFIED' }),
+      ]);
+      prisma.monitorRecord.count.mockResolvedValue(1);
+
+      const result = await service.list({} as any);
+
+      expect(result.items[0].attentionSource).toBe('NONE');
+    });
+
+    it('keeps attentionSource on a masked list row (issue #88)', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([makeRow({ aiAttentionLevel: 'GREEN' })]);
+      prisma.monitorRecord.count.mockResolvedValue(1);
+
+      const result = await service.list({} as any, { maskPatient: true });
+
+      // Provenance is not patient data - it describes a level the caller can
+      // already see, so masking the patient identity must not drop it.
+      expect(result.items[0].attentionSource).toBe('BOTH');
+      expect(result.items[0].patientName).toBe('测****');
+      expect(result.items[0]).not.toHaveProperty('aiSemantics');
     });
 
     it('maps null examTime/patientTypeName to null display values (never guessed)', async () => {
@@ -193,6 +275,26 @@ describe('MonitorService', () => {
       expect(item.examTime).toBeNull();
       expect(item.patientType).toEqual({ code: 'X', name: null });
       expect(item.matchedKeywords).toEqual(['腺癌', '息肉样']);
+    });
+  });
+
+  describe('listByIds (the alert-link H5 list path)', () => {
+    it('returns base rows with no attentionSource (issue #88)', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([makeRow({ aiAttentionLevel: 'RED' })]);
+
+      const rows = await service.listByIds(['00000000-0000-0000-0000-000000000001']);
+
+      // This is the runtime half of the type-level guarantee: the alert-link DTO
+      // keeps MonitorExamDto[], so the field the workbench added must not exist
+      // on this path at all - not even as undefined.
+      expect(rows[0]).not.toHaveProperty('attentionSource');
+      expect(rows[0]).not.toHaveProperty('aiSemantics');
+      expect(rows[0].matchedKeywords).toEqual(['腺癌', '息肉样']);
+    });
+
+    it('never queries the database for an empty id set', async () => {
+      await expect(service.listByIds([])).resolves.toEqual([]);
+      expect(prisma.monitorRecord.findMany).not.toHaveBeenCalled();
     });
   });
 
@@ -250,6 +352,15 @@ describe('MonitorService', () => {
             matchedField: 'REPORT_TEXT',
             contextSnippet: '…见腺癌…',
             matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: false,
+            semanticJudgements: [
+              {
+                semanticStatus: 'PRESENT',
+                confidence: 'HIGH',
+                reason: '报告中明确描述该病变。',
+                createdAt: new Date('2026-08-20T01:30:05Z'),
+              },
+            ],
           },
         ],
       });
@@ -258,12 +369,77 @@ describe('MonitorService', () => {
 
       // Issue #8: the detail query must pull the versioned rule so each hit
       // is auditable back to the exact rule version that produced it.
+      // Issue #87: and the newest SUCCESSFUL judgement, so the drawer can
+      // explain the verdict - a failed attempt has no verdict to show, hence
+      // the outcome filter and take: 1.
+      // Issue #88: and the report-level AI attempts. The select is asserted
+      // EXACTLY rather than loosely, because it is the privacy boundary - the
+      // audit columns (model, hashes, latency, error) must stay out of it, and a
+      // loose match would not notice one being added.
       expect(prisma.monitorRecord.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
           include: {
             matches: {
               orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
-              include: { rule: { select: { version: true } } },
+              include: {
+                // Issue #103 adds ruleGroupId, and it is safe to add precisely
+                // because it is a group ANCHOR - a fixed identifier with no text
+                // and no version history in it. It never reaches the wire.
+                rule: { select: { version: true, ruleGroupId: true } },
+                semanticJudgements: {
+                  where: { outcome: 'OK' },
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                  select: {
+                    semanticStatus: true,
+                    confidence: true,
+                    reason: true,
+                    createdAt: true,
+                  },
+                },
+              },
+            },
+            // Issue #102: the failure signal is a COUNT, not a widened list -
+            // ERROR rows inside `reportAiAttempts` would both break its pairing
+            // with a verdict and crowd the take: 5 window.
+            _count: {
+              select: {
+                reportAiAttempts: { where: { outcome: 'ERROR' } },
+              },
+            },
+            reportAiAttempts: {
+              where: { outcome: 'OK' },
+              orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+              take: 5,
+              select: {
+                reportVersion: true,
+                createdAt: true,
+                matches: {
+                  orderBy: { ordinal: 'asc' },
+                  select: {
+                    semanticId: true,
+                    semanticVersion: true,
+                    semanticName: true,
+                    attentionLevel: true,
+                    confidence: true,
+                    reason: true,
+                    ordinal: true,
+                    // Issue #103: the finding's group anchor, for the same
+                    // reason as the hit's ruleGroupId above.
+                    semantic: { select: { semanticGroupId: true } },
+                    evidence: {
+                      orderBy: { ordinal: 'asc' },
+                      select: {
+                        ordinal: true,
+                        field: true,
+                        evidenceHash: true,
+                        evidenceStart: true,
+                        evidenceEnd: true,
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         }),
@@ -279,8 +455,313 @@ describe('MonitorService', () => {
         matchedField: 'REPORT_TEXT',
         contextSnippet: '…见腺癌…',
         matchedAt: '2026-08-20T01:30:01.000Z',
+        semanticFiltered: false,
+        semantic: {
+          status: 'PRESENT',
+          confidence: 'HIGH',
+          reason: '报告中明确描述该病变。',
+          judgedAt: '2026-08-20T01:30:05.000Z',
+        },
       });
       expect(dto.matchedKeywords).toEqual(['腺癌']);
+      // Issue #103: this record has no AI attempt at all, and the hit's field
+      // is REPORT_TEXT (which names no single column), so there is nothing to
+      // report - and, importantly, no attempt to report it from.
+      expect(dto.levelConflicts).toEqual([]);
+    });
+
+    it('reports the level disagreement on the detail DTO (issue #103)', async () => {
+      // The end-to-end shape of the notice: a keyword hit at one level and an AI
+      // finding at another, over the same text, resolved from the same rows the
+      // drawer already reads.
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow(),
+        reportContent: REPORT_BODY,
+        diagnosis: null,
+        reportVersion: 1,
+        aiResolvedAt: new Date('2026-08-20T01:30:05Z'),
+        aiAttentionLevel: 'RED',
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1, ruleGroupId: RULE_GROUP },
+            keyword: '隆起',
+            level: 'YELLOW',
+            matchedField: 'FINDINGS',
+            contextSnippet: '…隆起…',
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            matchStart: 8,
+            matchEnd: 10,
+            semanticFiltered: false,
+            semanticJudgements: [],
+          },
+        ],
+        reportAiAttempts: [
+          {
+            reportVersion: 1,
+            createdAt: new Date('2026-08-20T01:30:05Z'),
+            matches: [
+              {
+                semanticId: '00000000-0000-0000-0000-0000000000bb',
+                semanticVersion: 3,
+                semanticName: '性质待定、需活检或短期复查的病变',
+                attentionLevel: 'RED',
+                confidence: 'HIGH',
+                reason: '报告描述了不规则隆起。',
+                ordinal: 0,
+                semantic: { semanticGroupId: SEMANTIC_GROUP },
+                evidence: [
+                  {
+                    ordinal: 0,
+                    field: 'FINDINGS',
+                    evidenceHash: createHash('sha256').update(REPORT_BODY, 'utf8').digest('hex'),
+                    evidenceStart: 0,
+                    evidenceEnd: REPORT_BODY.length,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        _count: { reportAiAttempts: 0 },
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      expect(dto.levelConflicts).toEqual([
+        {
+          keyword: '隆起',
+          keywordLevel: 'YELLOW',
+          semanticName: '性质待定、需活检或短期复查的病变',
+          semanticLevel: 'RED',
+          field: 'FINDINGS',
+        },
+      ]);
+      // The invariant that makes the notice safe to render: it names a finding
+      // the drawer is also showing.
+      expect(dto.aiSemantics.map((finding) => finding.name)).toEqual([
+        '性质待定、需活检或短期复查的病变',
+      ]);
+    });
+
+    it('reports an unjudged hit as semantic: null rather than inventing a verdict', async () => {
+      // The common case when the judge is off or the rule has no
+      // semanticIntent: the hit stands on the keyword engine's authority, and
+      // the drawer must not imply a model looked at it.
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow(),
+        reportContent: null,
+        diagnosis: null,
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1 },
+            keyword: '腺癌',
+            level: 'RED',
+            matchedField: 'REPORT_TEXT',
+            contextSnippet: null,
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: false,
+            semanticJudgements: [],
+          },
+        ],
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      expect(dto.hits[0].semantic).toBeNull();
+      expect(dto.hits[0].semanticFiltered).toBe(false);
+    });
+
+    it('reports a failed attempt as no verdict, keeping the hit', async () => {
+      // A judgement row that exists but carries no status/confidence is a
+      // recorded FAILURE, not a verdict. Rendering it would put words in the
+      // model's mouth; the decision it produced is "keep", which is what the
+      // hit's semanticFiltered already says.
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow(),
+        reportContent: null,
+        diagnosis: null,
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1 },
+            keyword: '腺癌',
+            level: 'RED',
+            matchedField: 'REPORT_TEXT',
+            contextSnippet: null,
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: false,
+            semanticJudgements: [
+              {
+                semanticStatus: null,
+                confidence: null,
+                reason: null,
+                createdAt: new Date('2026-08-20T01:30:05Z'),
+              },
+            ],
+          },
+        ],
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      expect(dto.hits[0].semantic).toBeNull();
+    });
+
+    it('surfaces a filtered hit with its verdict (the hit is never hidden)', async () => {
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow(),
+        reportContent: null,
+        diagnosis: null,
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1 },
+            keyword: '腺癌',
+            level: 'RED',
+            matchedField: 'REPORT_TEXT',
+            contextSnippet: '…未见腺癌…',
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: true,
+            semanticJudgements: [
+              {
+                semanticStatus: 'NEGATED',
+                confidence: 'HIGH',
+                reason: '该句为否定描述。',
+                createdAt: new Date('2026-08-20T01:30:05Z'),
+              },
+            ],
+          },
+        ],
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      expect(dto.hits).toHaveLength(1);
+      expect(dto.hits[0].semanticFiltered).toBe(true);
+      expect(dto.hits[0].semantic?.status).toBe('NEGATED');
+      // The raw keyword evidence is untouched by the AI path.
+      expect(dto.hits[0].contextSnippet).toBe('…未见腺癌…');
+      expect(dto.hits[0].level).toBe('RED');
+    });
+
+    it('surfaces the AI findings and the source badge for a judged record (issue #88)', async () => {
+      const reportContent = '胃体见巨大不规则隆起，表面糜烂，质脆。';
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow({ aiAttentionLevel: 'RED', aiResolvedAt: new Date('2026-08-20T01:31:00Z') }),
+        reportContent,
+        diagnosis: null,
+        reportAiAttempts: [
+          {
+            reportVersion: 1,
+            createdAt: new Date('2026-08-20T01:31:00Z'),
+            matches: [
+              {
+                semanticId: '00000000-0000-0000-0000-0000000000bb',
+                semanticVersion: 2,
+                semanticName: '明确或高度疑似恶性病变',
+                attentionLevel: 'RED',
+                confidence: 'HIGH',
+                reason: '报告描述了不规则隆起与质脆。',
+                ordinal: 0,
+                evidence: [
+                  {
+                    ordinal: 0,
+                    field: 'FINDINGS',
+                    evidenceHash: createHash('sha256')
+                      .update('胃体见巨大不规则隆起，表面糜烂，质脆。', 'utf8')
+                      .digest('hex'),
+                    evidenceStart: 0,
+                    evidenceEnd: reportContent.length,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        matches: [],
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      // No effective keyword hit, but the AI flagged it: this is the record the
+      // whole feature exists for, and the badge has to say so.
+      expect(dto.attentionSource).toBe('AI_REPORT');
+      expect(dto.aiJudged).toBe(true);
+      expect(dto.aiSemantics).toHaveLength(1);
+      expect(dto.aiSemantics[0]).toMatchObject({
+        semanticVersion: 2,
+        name: '明确或高度疑似恶性病变',
+        attentionLevel: 'RED',
+        confidence: 'HIGH',
+        reason: '报告描述了不规则隆起与质脆。',
+      });
+      // The excerpt is recomputed from the offsets - never the stored hash.
+      expect(dto.aiSemantics[0].evidence).toEqual([
+        { field: 'FINDINGS', text: '胃体见巨大不规则隆起，表面糜烂，质脆。' },
+      ]);
+    });
+
+    it('says the AI judged when it found nothing, and shows no findings (issue #88)', async () => {
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow({ aiAttentionLevel: null, aiResolvedAt: new Date('2026-08-20T01:31:00Z') }),
+        reportContent: '未见明显异常。',
+        diagnosis: null,
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1 },
+            keyword: '腺癌',
+            level: 'RED',
+            matchedField: 'REPORT_TEXT',
+            contextSnippet: null,
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: false,
+            semanticJudgements: [],
+          },
+        ],
+        reportAiAttempts: [
+          { reportVersion: 1, createdAt: new Date('2026-08-20T01:31:00Z'), matches: [] },
+        ],
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      // "The AI looked and found nothing" - distinguishable from "it never ran".
+      expect(dto.aiJudged).toBe(true);
+      expect(dto.aiSemantics).toEqual([]);
+      // The keyword path still decided this record, so the badge says RULE.
+      expect(dto.attentionSource).toBe('RULE');
+    });
+
+    it('reports NONE when every hit was filtered out and the AI found nothing (issue #88)', async () => {
+      prisma.monitorRecord.findUnique.mockResolvedValue({
+        ...makeRow({ currentLevel: 'UNCLASSIFIED' }),
+        reportContent: null,
+        diagnosis: null,
+        matches: [
+          {
+            ruleId: '00000000-0000-0000-0000-0000000000aa',
+            rule: { version: 1 },
+            keyword: '腺癌',
+            level: 'RED',
+            matchedField: 'REPORT_TEXT',
+            contextSnippet: null,
+            matchedAt: new Date('2026-08-20T01:30:01Z'),
+            semanticFiltered: true,
+            semanticJudgements: [],
+          },
+        ],
+      });
+
+      const dto = await service.getDetail('00000000-0000-0000-0000-000000000001');
+
+      // DETAIL_INCLUDE does not filter the hits, so the filtered hit is present -
+      // it must not be counted as a keyword finding.
+      expect(dto.hits).toHaveLength(1);
+      expect(dto.attentionSource).toBe('NONE');
+      expect(dto.aiJudged).toBe(false);
     });
 
     it('throws MONITOR_RECORD_NOT_FOUND for an unknown id', async () => {

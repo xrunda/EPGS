@@ -19,6 +19,30 @@ export type MatchFieldDto =
 /** How the keyword is compared against report text. Mirrors Prisma's MatchMode enum. */
 export type MatchModeDto = 'EXACT' | 'CONTAINS' | 'REGEX';
 
+/**
+ * Issue #87: what the AI semantic judge concluded about the LOCAL CONTEXT a
+ * keyword hit sits in. Mirrors Prisma's SemanticStatus enum.
+ *
+ * This is a statement about the report text only - it is NOT a clinical
+ * judgement and NOT a monitor level. The monitor level always comes from the
+ * deterministic keyword rule; the model never sets it.
+ */
+export type SemanticStatusDto = 'PRESENT' | 'NEGATED' | 'SUSPECTED' | 'HISTORY' | 'UNCERTAIN';
+
+/**
+ * Issue #87: the model's self-reported confidence. Mirrors Prisma's
+ * SemanticConfidence enum. Only HIGH ever authorizes filtering a hit.
+ */
+export type SemanticConfidenceDto = 'HIGH' | 'MEDIUM' | 'LOW';
+
+/**
+ * Issue #87: maximum length of MonitorRule.semanticIntent, shared so the
+ * config UI's counter and the API's validation cannot drift apart. Generous
+ * for a sentence or two of plain language, bounded because this text is sent
+ * to a model on every judged hit and stored on every rule version.
+ */
+export const SEMANTIC_INTENT_MAX_LENGTH = 500;
+
 /** One monitor_rule row as returned by the API. */
 export interface MonitorRuleDto {
   id: string;
@@ -27,6 +51,18 @@ export interface MonitorRuleDto {
   matchField: MatchFieldDto;
   matchMode: MatchModeDto;
   category: string | null;
+  /**
+   * Issue #87: the doctor's own answer to "这个关键词想关注什么情况", in plain
+   * language. Read by the AI semantic judge as the intent a hit is validated
+   * against; it NEVER changes keyword matching itself.
+   *
+   * null/empty = not configured: such rules are skipped by the judge entirely,
+   * so they behave exactly as they did before #87. Editing it is a SEMANTIC
+   * edit (see rules.service.ts SEMANTIC_FIELDS) - it creates a new rule version,
+   * so a historical hit keeps pointing at the intent text that was in force
+   * when the AI judged it.
+   */
+  semanticIntent: string | null;
   isEnabled: boolean;
   version: number;
   ruleGroupId: string;
@@ -63,6 +99,8 @@ export interface CreateMonitorRuleBody {
   matchMode?: MatchModeDto;
   category?: string | null;
   notes?: string | null;
+  /** Issue #87: see MonitorRuleDto.semanticIntent. Blank/omitted = not configured. */
+  semanticIntent?: string | null;
   isEnabled?: boolean;
   /**
    * Opaque actor identity. Since issue #13, the server uses the authenticated
@@ -81,6 +119,12 @@ export interface UpdateMonitorRuleBody {
   matchMode?: MatchModeDto;
   category?: string | null;
   notes?: string | null;
+  /**
+   * Issue #87: see MonitorRuleDto.semanticIntent. Omit to leave it unchanged;
+   * send null or a blank string to clear it. Changing it is a semantic edit,
+   * so the rule is re-versioned (same ruleGroupId, version + 1).
+   */
+  semanticIntent?: string | null;
   isEnabled?: boolean;
   /** Required optimistic-lock token: must equal the row's current `version`. */
   version: number;

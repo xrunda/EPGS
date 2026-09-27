@@ -105,6 +105,9 @@ Worker 按现有 1–5 分钟周期调用 `GET /reports`，使用 Bearer Token�
 | `examTime`                            | `HH:mm:ss[.fraction]` | 是   |
 | `reportContent` / `diagnosis`         | 只读展示与关键词匹配  | 是   |
 
+上述字段的源库取数语句（医院提供，含 `->` 关系取值语法与 `RISR_SysCode` 过滤条件）
+见 [pacs-ris-source-sql.md](./pacs-ris-source-sql.md)。
+
 `reportId` 在 EPGS 内部由 `sourceRecordId` 派生；在尚无可靠修改时间时，
 `sourceUpdatedAt` 由检查日期时间派生，Worker 重复读取日期窗口并幂等 upsert。
 

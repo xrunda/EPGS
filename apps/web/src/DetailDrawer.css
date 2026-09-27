@@ -61,6 +61,26 @@
   background: #fff;
   box-shadow: var(--shadow-xs);
 }
+.drawer__level-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 0;
+}
+/*
+  关注理由（issue #94）：flex-basis 100% 让它自己占一行，但仍然紧跟在等级标签下面
+  —— 医生先读到「红色关注」，紧接着就是「为什么是红色」，不用往下翻（所有者要求
+  使用者界面线性、简单）。
+*/
+.drawer__reason {
+  flex: 1 1 100%;
+  margin: 0;
+  color: #1d3033;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+}
 .drawer__fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -106,6 +126,13 @@
   font-size: 12px;
   font-weight: 700;
 }
+/* 未计入关注的条数提示，跟在命中总数后面（issue #87）。 */
+.drawer__count-note {
+  margin-left: 8px;
+  color: #8a7a52;
+  font-size: 12px;
+  font-weight: 600;
+}
 .drawer__text {
   margin: 0;
   padding: 14px;
@@ -146,9 +173,89 @@
 .drawer__hit:hover {
   box-shadow: var(--shadow-xs);
 }
+/*
+  未计入关注（issue #87）：弱化但仍然可读。灰色左边框 + 降低对比度表达「这条
+  不算数」，而不是隐藏或禁用——关键词命中过是事实，医生要能看见并自己判断。
+*/
+.drawer__hit--filtered {
+  border-left-color: #c3cbcc;
+  background: #fafbfb;
+}
+.drawer__hit--filtered .drawer__hit-head strong {
+  color: var(--ink-400);
+}
+.drawer__hit--filtered .level-tag {
+  opacity: 0.55;
+}
+.drawer__hit-flag {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid #cfd6d6;
+  border-radius: var(--radius-pill);
+  background: #f1f3f3;
+  color: #6d7b7d;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/*
+  发现来源图标（issue #112）：每张依据卡第一行最左边，说清这张卡是哪一路来的。
+
+  24px —— 比列表（22px）大一号。列表那个尺寸是表格行高算出来的上限（见 Workbench.css），
+  抽屉没有这个约束。两个尺寸都从同一个 64px 资源缩下来，不会糊。
+
+  放在最左而不是接在右上角「报告内容 / 诊断」或「把握高」后面：卡片等宽，图标因此
+  自然对齐成一列，两类依据竖着扫就分得开。
+*/
+.drawer__source-tip {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+}
+.drawer__source-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+/*
+  悬停提示：与列表同一套画法、同一个 13px（见 Workbench.css 的说明 —— 原生 title
+  的字号改不动，所以自己画）。这里同样放在图标右侧、垂直居中：`.drawer__body` 是
+  `overflow: auto` 的滚动容器，放在正上方的气泡在卡片靠顶时会被切掉。
+
+  字号**写死 13px，不继承**：第一版是 `inherit`，想着「跟着各自容器的字号走」，
+  结果抽屉这边继承到的是 16px（`.drawer` 一路到 `body` 都没设 `font-size`），同一个
+  气泡在列表里 13px、在抽屉里 16px，两边看着不像一套东西（所有者 2026-09-27 指出）。
+  两处现在都是字面量，改一个就得改另一个。这条耦合由 findingSource.test.ts 盯着。
+*/
+.drawer__source-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-900);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+  z-index: 30;
+}
+.drawer__source-tip:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
 .drawer__hit-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .drawer__hit-head strong {
@@ -168,10 +275,30 @@
   font-size: 13px;
   line-height: 1.7;
 }
-.drawer__hit-meta {
+/* 「结合上下文」一行（issue #87）：说清「这句话被读成了什么意思」。 */
+.drawer__hit-semantic {
   margin: 8px 0 0;
-  color: var(--ink-200);
-  font-size: 12px;
+  color: #4a6266;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.drawer__hit-semantic-label {
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eaf4f5;
+  color: #315b62;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.drawer__hit-semantic-confidence {
+  color: var(--ink-300);
+}
+.drawer__hit-semantic-reason {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-300);
 }
 .drawer-state {
   display: grid;
@@ -189,4 +316,96 @@
   .drawer {
     animation: none;
   }
+}
+
+/*
+  整份报告读出来的那条依据（issue #88）。issue #94 之后它与关键词命中同处一个
+  「关注依据」列表，沿用同一套排版语言（等级标签 + 名称 + 证据引用），只是左边框
+  用中性灰、命中用青色，好让医生一眼分得清两类依据 —— 分得清不等于要分两段读。
+*/
+.drawer__ai-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid #b9c6c7;
+  border-radius: 8px;
+  background: #fbfcfc;
+}
+.drawer__ai-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.drawer__ai-head strong {
+  color: var(--ink-700);
+  font-size: 14px;
+}
+.drawer__ai-confidence {
+  margin-left: auto;
+  color: var(--ink-300);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.drawer__ai-reason {
+  margin: 8px 0 0;
+  color: var(--ink-500);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.drawer__ai-evidence {
+  margin: 8px 0 0;
+}
+.drawer__ai-evidence-field {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 600;
+}
+.drawer__ai-note {
+  margin: 12px 0 0;
+  color: var(--ink-300);
+  font-size: 12px;
+  line-height: 1.6;
+}
+/*
+  整份报告核对失败的提示（issue #102）。
+
+  刻意用中性色，不借用红/黄/绿任何一个关注等级色：这句话说的是「这个等级可能不
+  完整」，它本身不是一个等级，用等级色说它会让医生以为系统又给出了一个颜色判断。
+  靠左边的一道粗边和一句完整的话把它从周围文字里分出来 —— 颜色不是信息通道，
+  换一套配色也读得懂。
+*/
+.drawer__ai-warning {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-left: 3px solid var(--border-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-sunken);
+  color: var(--ink-800);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.7;
+}
+/*
+  同一处两种关注等级的提醒（issue #103）。
+
+  配色与上面那条失败提示完全相同，理由也一样：这句话讲的就是「两个颜色对不上」，
+  它自己再挑红/黄/绿中的任何一个，都等于在这种不一致里站了边。中性色 + 左侧粗边
+  把它从依据列表里分出来，去掉颜色这页仍然读得懂。
+
+  和上面那条不同的一点：这条可以连续出现多条（同一份报告里可以有多处分歧）。间距
+  一律留在下方 —— 它渲染在依据列表**之上**，所以下方既是「下一条提醒」也是「列表
+  的开头」，一处间距同时管住两种相邻关系。
+*/
+.drawer__level-conflict {
+  margin: 0 0 10px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--border-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-sunken);
+  color: var(--ink-800);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.7;
 }

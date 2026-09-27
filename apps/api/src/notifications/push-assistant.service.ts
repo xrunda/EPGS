@@ -168,8 +168,7 @@ export class PushAssistantService {
       orderBy: { occurredAt: 'desc' },
     });
     const eventDetail = pushDoneEvent?.payload as
-      | { elapsedMs?: number; stages?: AssistantPushStageDto[]; ruleName?: string }
-      | undefined;
+      { elapsedMs?: number; stages?: AssistantPushStageDto[]; ruleName?: string } | undefined;
     const matchesThisRun = eventDetail?.ruleName === log.rule?.name;
 
     const succeededChannels = log.deliveries.filter((d) => d.status === 'SUCCESS').length;
@@ -186,7 +185,8 @@ export class PushAssistantService {
       redKeywords,
       yellowKeywords,
       groupCount: succeededChannels,
-      elapsedMs: matchesThisRun && eventDetail?.elapsedMs != null ? eventDetail.elapsedMs : elapsedMs,
+      elapsedMs:
+        matchesThisRun && eventDetail?.elapsedMs != null ? eventDetail.elapsedMs : elapsedMs,
       finishedAt: log.finishedAt?.toISOString() ?? null,
       stages: matchesThisRun && eventDetail?.stages ? eventDetail.stages : [],
     };
@@ -234,7 +234,10 @@ export class PushAssistantService {
   private async aggregateKeywordHits(range: { gte: Date; lt: Date }): Promise<KeywordHit[]> {
     const rows = await this.prisma.monitorMatch.groupBy({
       by: ['keyword', 'level'],
-      where: { record: { examTime: range }, rule: { isEnabled: true } },
+      // Issue #87: effective hits only - the preview must show the same
+      // keyword counts the push will render, and both exclude hits the AI
+      // semantic judge filtered.
+      where: { record: { examTime: range }, rule: { isEnabled: true }, semanticFiltered: false },
       _count: { _all: true },
     });
     return rows.map((row) => ({ keyword: row.keyword, level: row.level, count: row._count._all }));
@@ -261,7 +264,11 @@ function summarizeEvent(detail: AssistantEventDetail): string {
     case 'PUSH_DONE': {
       const seconds = (detail.elapsedMs / 1000).toFixed(1);
       const statusText =
-        detail.status === 'SUCCESS' ? '推送成功' : detail.status === 'PARTIAL' ? '部分成功' : '推送失败';
+        detail.status === 'SUCCESS'
+          ? '推送成功'
+          : detail.status === 'PARTIAL'
+            ? '部分成功'
+            : '推送失败';
       return `${detail.ruleName} ${statusText} · ${detail.groupCount} 群 · ${seconds}s`;
     }
     default:

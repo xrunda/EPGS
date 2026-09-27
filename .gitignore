@@ -47,6 +47,8 @@ apps/**/generated/
 # nothing here should ever reach a deployment target (issue #42/#43: the
 # bastion host must run against the real SOAP gateway, never local mock
 # data, so this directory must not exist there at all).
+# The docs/ vs Doc/ split is documented in docs/README.md - add new
+# shippable docs under docs/ and register them in that index.
 Doc/
 
 # Raw SOAP gateway captures (real patient data via curl/SoapUI against the

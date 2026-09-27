@@ -119,15 +119,15 @@
 以下参数在列表与汇总两个接口上**完全一致**（`MonitorFiltersDto` 被两个 DTO 复用），
 多个筛选条件之间是 **AND** 关系。
 
-| 参数              | 类型                                  | 语义                                                                             |
-| ----------------- | ------------------------------------- | -------------------------------------------------------------------------------- |
-| `examDateFrom`    | `YYYY-MM-DD`                          | Shanghai 自然日包含下界（见上）                                                  |
-| `examDateTo`      | `YYYY-MM-DD`                          | Shanghai 自然日排他上界（见上）                                                  |
-| `department`      | 字符串                                | 科室，**大小写不敏感精确匹配**（`equals` + `insensitive`）                       |
-| `patientTypeCode` | 字符串                                | 患者类型源编码**精确匹配**（如 `I`/`O`）                                         |
-| `level`           | `RED`/`YELLOW`/`GREEN`/`UNCLASSIFIED` | 关注等级精确匹配                                                                 |
-| `examItem`        | 字符串                                | 检查项目**子串匹配**（大小写不敏感）                                             |
-| `patientName`     | 字符串                                | 姓名**子串匹配**（大小写不敏感）                                                 |
+| 参数              | 类型                                  | 语义                                                                                   |
+| ----------------- | ------------------------------------- | -------------------------------------------------------------------------------------- |
+| `examDateFrom`    | `YYYY-MM-DD`                          | Shanghai 自然日包含下界（见上）                                                        |
+| `examDateTo`      | `YYYY-MM-DD`                          | Shanghai 自然日排他上界（见上）                                                        |
+| `department`      | 字符串                                | 科室，**大小写不敏感精确匹配**（`equals` + `insensitive`）                             |
+| `patientTypeCode` | 字符串                                | 患者类型源编码**精确匹配**（如 `I`/`O`）                                               |
+| `level`           | `RED`/`YELLOW`/`GREEN`/`UNCLASSIFIED` | 关注等级精确匹配                                                                       |
+| `examItem`        | 字符串                                | 检查项目**子串匹配**（大小写不敏感）                                                   |
+| `patientName`     | 字符串                                | 姓名**子串匹配**（大小写不敏感）                                                       |
 | `keyword`         | 字符串                                | 命中关键词 `monitor_match.keyword` **精确匹配**（来自 `GET /api/rules`），**不含正文** |
 
 ### 排序
@@ -182,7 +182,8 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "examItem": "电子胃镜检查",
       "examDate": "2026-08-20",
       "examTime": "18:00:00",
-      "matchedKeywords": ["浸润癌"]
+      "matchedKeywords": ["浸润癌"],
+      "attentionSource": "AI_REPORT"
     },
     {
       "recordId": "11111111-1111-4111-8111-000000000001",
@@ -194,7 +195,8 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "examItem": "电子胃镜检查",
       "examDate": "2026-08-20",
       "examTime": "16:15:00",
-      "matchedKeywords": ["腺癌", "息肉样"]
+      "matchedKeywords": ["腺癌", "息肉样"],
+      "attentionSource": "BOTH"
     }
   ],
   "total": 2,
@@ -204,9 +206,14 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
 ```
 
 **列表行字段固定为**：`recordId`、`monitorLevel`、`patientName`、`department`、
-`bedNo`、`patientType`、`examItem`、`examDate`、`examTime`、`matchedKeywords`。
+`bedNo`、`patientType`、`examItem`、`examDate`、`examTime`、`matchedKeywords`、
+`attentionSource`（issue #88）。
 **绝不含** `reportContent`/`diagnosis`，也绝不含任何 `reportStatus`/
-`handlingStatus` 类字段——这是 wire 类型 `MonitorExamDto` 的硬约束。
+`handlingStatus` 类字段——这是 wire 类型 `MonitorExamWorkbenchDto` 的硬约束。
+**也绝不含** `aiSemantics`/`aiJudged`/`aiStatus`：AI 文本与审计字段只出现在详情接口，
+列表行上的 `aiAttentionLevel` 标量只用于推导 `attentionSource`，本身不外发。
+（"这一行的 AI 判读失败了"是详情页要讲清的事，列表不承担这个信息；列表要的是
+"这位患者为什么在名单上"。）
 
 空值示例（无科室/床号、未知患者类型编码 `X`、无命中、`examTime` 为 null 的行）：
 
@@ -221,7 +228,8 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
   "examItem": null,
   "examDate": "2026-08-17",
   "examTime": "23:59:00",
-  "matchedKeywords": []
+  "matchedKeywords": [],
+  "attentionSource": "NONE"
 }
 ```
 
@@ -253,7 +261,9 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "level": "RED",
       "matchedField": "REPORT_TEXT",
       "contextSnippet": "…黏膜内腺癌…",
-      "matchedAt": "2026-08-20T08:15:30.000Z"
+      "matchedAt": "2026-08-20T08:15:30.000Z",
+      "semanticFiltered": false,
+      "semantic": null
     },
     {
       "ruleId": "11111111-1111-4111-8111-0000000000bb",
@@ -262,7 +272,40 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "level": "YELLOW",
       "matchedField": "FINDINGS",
       "contextSnippet": "…息肉样隆起…",
-      "matchedAt": "2026-08-20T08:15:45.000Z"
+      "matchedAt": "2026-08-20T08:15:45.000Z",
+      "semanticFiltered": false,
+      "semantic": {
+        "status": "PRESENT",
+        "confidence": "HIGH",
+        "reason": "报告中明确描述该病变。",
+        "judgedAt": "2026-08-20T08:20:11.000Z"
+      }
+    }
+  ],
+  "attentionSource": "BOTH",
+  "aiJudged": true,
+  "aiStatus": "JUDGED",
+  "aiSemantics": [
+    {
+      "semanticId": "22222222-2222-4222-8222-000000000001",
+      "semanticVersion": 1,
+      "name": "明确或高度疑似恶性病变",
+      "attentionLevel": "RED",
+      "confidence": "HIGH",
+      "reason": "报告描述了隆起性病变并提示黏膜内腺癌。",
+      "evidence": [
+        { "field": "FINDINGS", "text": "一处隆起性病变" },
+        { "field": "IMPRESSION", "text": "胃腺癌" }
+      ]
+    }
+  ],
+  "levelConflicts": [
+    {
+      "keyword": "息肉样",
+      "keywordLevel": "YELLOW",
+      "semanticName": "明确或高度疑似恶性病变",
+      "semanticLevel": "RED",
+      "field": "FINDINGS"
     }
   ]
 }
@@ -271,6 +314,29 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
 - `hits` 即 issue #8 的 `matches`（本 API 命名为 `hits`）。按
   `matchedAt asc, id asc` 排序；`matchedKeywords` 为去重后的关键词列表，按最早命中
   顺序排列。
+
+### 命中上的 AI 语义判读字段（issue #87）
+
+详情接口**返回全部命中**，包括被判定"未计入关注"的那些——关键词引擎命中过是事实，
+隐藏它等于隐藏一次真实事件。判读只是附加在这条命中上的注解：
+
+| 字段                  | 取值                                                  | 说明                                                                                    |
+| --------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `semanticFiltered`    | boolean                                               | 判读结论是否为"不计入关注"。**只有确定性的处置矩阵能置 true**，任何 AI 失败都保持 false |
+| `semantic`            | object \| null                                        | 最近一次**成功**判读的结论；从未判读、判读失败、或规则未配置关注情况时为 `null`         |
+| `semantic.status`     | `PRESENT`/`NEGATED`/`SUSPECTED`/`HISTORY`/`UNCERTAIN` | 报告里那句话是肯定/否定/疑似/既往史/无法判断。**不是关注等级**，与红黄绿无映射          |
+| `semantic.confidence` | `HIGH`/`MEDIUM`/`LOW`                                 | 把握程度；只有 `HIGH` 才可能触发过滤                                                    |
+| `semantic.reason`     | string \| null                                        | 给医生看的解释句。调用方没有 `patientDetail` 权限时置 `null`（结论与把握仍返回）        |
+| `semantic.judgedAt`   | ISO 时间                                              | 该结论的写入时间                                                                        |
+
+- `level` **永远不变**：它是匹配时刻规则给的等级，判读不会调整它，也不会产生新等级。
+  是否计入关注由 `semanticFiltered` 表达，两者互不覆盖。
+- 列表接口（`GET /api/monitor/exams`）**不返回** `semantic`，但它的口径是"有效命中"：
+  `matchedKeywords`、关键词筛选与汇总计数都只统计 `semanticFiltered = false` 的命中，
+  与 `monitor_record.currentLevel`（判读后按有效命中重算）保持一致。
+- 审计字段（模型、版本、耗时、证据哈希、错误码）在 `monitor_match_semantic` 表，
+  不对医生端返回；见 [data-dictionary.md](../data-dictionary.md) 与
+  [semantic-judge-design.md](../semantic-judge-design.md)。
 - **`ruleId` + `ruleVersion`**（issue #8）：命中由哪条 `monitor_rule` 的哪个版本
   产生。规则是版本化、只软禁用的（FK RESTRICT，永不物理删除），因此该引用永远
   可解析——命中证据可审计回产生它的确切规则版本。
@@ -289,6 +355,129 @@ DIAGNOSIS)`，实现沿用 issue #5/#26 收敛后的 `MatchField` 枚举，二�
 - id 不存在返回 `404 MONITOR_RECORD_NOT_FOUND`；id 不是合法 UUID 返回 `400`。
 - 权限、脱敏与审计日志（issue #8 验收「权限/脱敏/审计符合 #13」）在 issue #13
   实现——当前无鉴权，本接口只读。
+
+### 报告级 AI 语义发现字段（issue #88）
+
+详情接口在命中证据之外，还返回**整份报告**被读出的关注语义。它与 issue #87 的
+`hits[].semantic` 是两件事：那一个判的是"某条关键词命中的上下文该不该算"，这一个
+判的是"这份报告整体表达了医院配置的哪些关注语义"——**关键词一条都没命中，这里也
+可能有发现**，这正是该功能存在的理由。
+
+| 字段                    | 取值                              | 说明                                                                       |
+| ----------------------- | --------------------------------- | -------------------------------------------------------------------------- |
+| `attentionSource`       | `RULE`/`AI_REPORT`/`BOTH`/`NONE`  | 这条记录为什么在关注列表里（真值表见下）                                   |
+| `aiJudged`              | boolean                           | AI 是否判读过**当前版本**的报告。只回答"看没看过"，不含时间、模型、耗时。恒等于 `aiStatus === 'JUDGED'`，为兼容保留 |
+| `aiStatus`              | `JUDGED`/`FAILED`/`NOT_JUDGED`    | AI 有没有结论、以及结论还会不会来（三态见下）                              |
+| `aiSemantics`           | array                             | 报告级发现，按关注等级优先级（RED → YELLOW → GREEN）再按模型输出顺序排列    |
+| `aiSemantics[].semanticId` / `.semanticVersion` | uuid / number        | 依据的是医院哪一版关注语义（`attention_semantic` 永不物理删除，引用可解析） |
+| `aiSemantics[].name`    | string                            | 该版关注语义的名称（命中时刻的快照）                                       |
+| `aiSemantics[].attentionLevel` | `RED`/`YELLOW`/`GREEN`     | 该关注语义**配置**的颜色。最终关注等级是这些颜色与关键词等级取最大值        |
+| `aiSemantics[].confidence` | `HIGH`/`MEDIUM`/`LOW`          | 把握程度，**仅描述性**：issue #88 不过滤低把握的发现                        |
+| `aiSemantics[].reason`  | string \| null                   | 给医生看的解释句。无 `patientDetail` 权限时置 `null`                        |
+| `aiSemantics[].evidence` | array                            | 证据引用；无 `patientDetail` 权限时整体置 `[]`                              |
+| `evidence[].field`      | `EXAM_ITEM`/`FINDINGS`/`IMPRESSION` | 片段出自哪一列：检查项目 / 报告内容 / 诊断                                |
+| `evidence[].text`       | string                            | **服务端按偏移从报告原文重算出的片段**，与库中正文逐字节相同                |
+| `levelConflicts`        | array                             | 同一处两边等级不同的位置（issue #103，见下）。无分歧时为 `[]`               |
+| `levelConflicts[].keyword` / `.keywordLevel` | string / `RED`/`YELLOW`/`GREEN`/`UNCLASSIFIED` | 关键词那一侧（与 `hits[].keyword`/`.level` 同源）        |
+| `levelConflicts[].semanticName` / `.semanticLevel` | string / `RED`/`YELLOW`/`GREEN` | 报告级判读那一侧（与 `aiSemantics[].name`/`.attentionLevel` 同源） |
+| `levelConflicts[].field` | `FINDINGS`/`IMPRESSION`          | 两边落在**同一列**才配对：报告内容 / 诊断                                  |
+
+**`attentionSource` 真值表**（只由记录上已有的两个输入决定，不看谁高谁低）：
+
+| 值          | 有效关键词命中 | `aiAttentionLevel` | 含义                       |
+| ----------- | -------------- | ------------------ | -------------------------- |
+| `RULE`      | 有             | 空                 | 只有关键词路径发现了内容   |
+| `AI_REPORT` | 无             | 非空               | 只有报告级判读发现了内容   |
+| `BOTH`      | 有             | 非空               | 两条路径都发现了内容       |
+| `NONE`      | 无             | 空                 | 两条路径都没发现           |
+
+issue #94 之前，调用方用这个字段渲染一个中性灰的「来源徽标」（关键词 / AI 语义 /
+关键词 + AI 语义）。**该徽标已从临床视图移除**（取舍理由见
+[rules-config-ui.md](./rules-config-ui.md) 的「医生看到什么」）；字段本身仍在契约上，
+供运营与审计路径使用，也是工作台/抽屉那句关注理由决定要不要说「报告提示…」的依据。
+**本字段是派生值、不是判定值**：它不参与等级计算，改它不影响任何记录的关注等级。
+
+关键词 RED + AI YELLOW 仍然是 `BOTH`：AI 另外读出的内容本身就是医生该看的临床
+上下文，命名只回答"从哪里来"，不回答"谁更重"。`NONE` 是枚举成员而非 `null`，
+因为"两条路径都没发现"（记录为 `UNCLASSIFIED`，本来就在列表里可见）是一个真实
+状态，可空字段只会制造含混的 NULL。**`attentionSource` 与 `monitorLevel` 读的是
+同一组输入**，所以 `NONE` 与 `UNCLASSIFIED` 必然同时出现，本字段不可能与等级矛盾。
+
+**`aiStatus` 三态（issue #102）。** 它回答的是"这条记录的关注等级背后有没有 AI 结论"，
+以及"结论还会不会来"：
+
+| 值           | 条件                                                        | 调用方要求                                                     |
+| ------------ | ----------------------------------------------------------- | -------------------------------------------------------------- |
+| `JUDGED`     | 当前报告版本有一条 `outcome = 'OK'` 的尝试                   | 正常展示结论（含"看了但没发现"，即 `aiSemantics: []`）          |
+| `FAILED`     | 有 `ERROR` 尝试、当前版本没有 `OK` 尝试，**且记录已出队**     | **必须显式告知结论不完整**，见下                                |
+| `NOT_JUDGED` | 其余（没问过、正文已换、还在队列里）                          | 无需额外说明                                                   |
+
+- **`FAILED` 必须让医生看见。** 此时关注等级只由关键词路径产生，AI 那一半**永久缺席**
+  （记录已出队，不会再有尝试）。渲染成与普通关键词记录无异的界面，等于让医生把"没判"
+  读成"判了但没有"——这是 issue #102 存在的理由。
+- **`FAILED` 与 `aiJudged: false` 不是一回事。** 后者包含"还没轮到它判"这种正常状态；
+  只有"失败过且不会再试"才是 `FAILED`。判断依据里**必须**带上队列状态（`aiResolvedAt`），
+  只看"有没有 ERROR 行"会把还在重试的记录误报成失败。
+- **医生端只被告知"没判成"，不被告知"为什么"。** `aiStatus` 只读 `outcome` 与队列状态，
+  不读 `error` 错误码、模型、耗时；失败原因留在 `monitor_report_ai`，由有权限的运维
+  路径查（见 [ai-semantic-monitor-design.md](../ai-semantic-monitor-design.md) §7.2）。
+- **失败分级与重试次数**见 [ai-semantic-monitor-design.md](../ai-semantic-monitor-design.md)
+  §7.1：传输层失败会留在队列里重试到上限，因此同一份报告可能有多行 `ERROR` 审计，
+  期间 `aiStatus` 是 `NOT_JUDGED`，跑满之后才变 `FAILED`。
+
+### 等级分歧（issue #103）
+
+`levelConflicts` 说的是：关键词路径与报告级判读路径**落在同一列、区间相交，但给出
+了不同的关注等级**。在它之前，医生端把这样一对显示成合并列表里一条红、一条黄并排，
+摘要句用「；」把两侧并列——读起来像两条互相印证的独立理由，而真相是两条规则指着
+**同一处**、要的关注等级不一样，需要有人裁定。
+
+- **它报的是分歧，不是胜负。** 不说哪边对，也不改任何等级。
+- **等级相同不报**；两侧不在同一列不报（关键词侧只存实际命中的那一列，两边只有
+  `FINDINGS`/`IMPRESSION` 有文本来源，AI 的 `EXAM_ITEM` 恒不参与）。
+- **为空是常态**，空数组时医生端**什么都不渲染**——一条天天挂着的提醒等于没有提醒。
+- 判定只有一份实现（`apps/api/src/monitor/level-conflict.ts`），医生端这个字段与
+  管理员待办列表（[monitor-level-conflict-api.md](../monitor-level-conflict-api.md)）
+  共用它，不可能各说各的。
+- **不是新的正文出口**：`keyword`/`semanticName`/两个等级本来就同在这条响应里，
+  `field` 是列名而不是文本；偏移与证据原文一概不上 wire。因此
+  [脱敏（`patientDetail` 缺失）](../auth.md)时这个字段**原样保留**——它由调用方本来
+  就看得见的关键词与发现名推导而来。每条分歧点名的发现必然也出现在 `aiSemantics`
+  里（同一份尝试、同一个闸门推导），不会出现"提醒指着一个界面没画出来的东西"。
+- 医学上它不是诊断分歧，是**配置**分歧：规则的等级划高了，或那条关注语义的等级
+  划低了。
+
+**证据为什么是重算的。** `monitor_report_ai_evidence` 只存 `evidence_hash` 与
+`evidence_start`/`evidence_end`（UTF-16 码元，左闭右开，指向 `monitor_record` 的
+`exam_item`/`report_content`/`diagnosis` 之一）。报告正文原文不落在 AI 表里。因此
+本接口按偏移从库中正文切出片段返回；切片为空、偏移越界或哈希对不上（正文已被替换）
+时**丢弃该条片段、保留发现**，`evidence: []`——丢掉整个发现会让抽屉与仍把它算进
+`currentLevel` 的等级自相矛盾。这里没有 500 分支。
+
+**AI 侧"陈旧"的两种情况。** `monitor_report_ai*` 是 append-only：
+
+- 报告正文被重新同步时，`sync-runner` 在同一次写入里清空记录的 AI 状态
+  （`ai_attention_level` 置空），但历史尝试行仍在。此时接口**不返回**那些发现
+  （`aiSemantics: []`），等级与 `attentionSource` 也同步退回 `RULE`/`NONE`——两者永远同向。
+- 重跑（`requeue`）**有意保留** `ai_attention_level`，重跑期间显示上一版结论是
+  合法行为。
+
+**审计字段一律不出现在医生端**：模型标识、`taskVersion`、`modelVersion`、
+`inputHash`、`reportHash`、`configHash`、`latencyMs`、`error`、`modelAttentionLevel`
+以及**证据哈希**都只存于 `monitor_report_ai` / `_match` / `_evidence` 三张表，
+读路径的 Prisma `select` 里根本没有这些列。同上，`aiJudged` 用布尔而不是
+`aiJudgedAt` 时间戳，也是这条规矩的推论。
+
+**脱敏（无 `patientDetail` 权限时）**：`reason` 置 `null`、`evidence` 整体置 `[]`
+（不按 `field` 分档——同一个数组可能混着不同来源，分档会产出红一半留一半的列表），
+而 `name`/`attentionLevel`/`confidence`/`semanticId`/`semanticVersion` 保留：后一组
+是在解释一个调用方**本来就看得见**的关注等级，前者是报告邻近的自由文本，与
+`contextSnippet` 同类。
+
+**预警链接 H5 面（issue #72）不返回以上任何字段。** `AlertLinkExamDetailDto` 就是
+基础类型 `MonitorExamDetailDto`，`AlertLinkExamListDto.items` 就是
+`MonitorExamDto[]`，两者在类型层面就叫不出这些字段；`listByIds` 仍走基础映射，
+H5 详情则从白名单构造基类型对象。通知形态是被冻结的面，链接可以被转发到工作台之外。
 
 ### `GET /api/monitor/summary`
 
@@ -318,6 +507,16 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
 - 单元测试（mock Prisma，无需数据库）：`apps/api/src/monitor/monitor.service.spec.ts`
   —— where/orderBy 形状、Shanghai 展示格式、关键词去重、patientType 透传、
   汇总聚合、详情未找到、详情查询包含 `rule.version`（issue #8）。
+- 报告级 AI 发现的单元测试（纯函数，issue #88）：
+  `apps/api/src/monitor/report-ai.mapper.spec.ts` —— `attentionSource` 四种来源真值
+  表、尝试选择（只认 OK、优先 `createdAt == aiResolvedAt` 的那次、版本不符不展示）、
+  证据重算（越界/负值/`start >= end`/空切片/正文变更导致哈希不符 → 丢片段留发现，
+  空白折叠形态仍接受）、三个 `field` 对三列的映射、发现按等级优先级排序，以及
+  `aiStatus` 三态（issue #102：`JUDGED` 含"看了但没发现"与"先失败后成功"两种历史、
+  `FAILED` 仅在记录已出队时成立、重试待办期间是 `NOT_JUDGED`，并有"`aiStatus` 不得与
+  `aiJudged` 互相矛盾"的等价性用例）。失败分级本身的单测在 worker：
+  `apps/worker/src/semantic-report/retry-policy.spec.ts`（含"新增错误码而未分级必须
+  挂测试"的完备性用例）。
 - 端到端测试（真实 Postgres）：`apps/api/test/monitor.e2e-spec.ts` —— 组合筛选、
   跨 UTC 日界的 Shanghai 边界、自然日边界（午夜 00:00、23:59）、null 行、稳定分页、
   非法参数 400、汇总与列表同筛一致性、只读详情，以及 issue #8 的命中证据契约
@@ -325,6 +524,24 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
   空诊断行）。该文件在检测不到可用 Postgres 时全部用例 no-op 通过（不影响
   issue #1 的无数据库 CI）；CI 中真正执行在 `.github/workflows/ci.yml` 的
   `db-migrations` job。
+- 报告级 AI 发现的端到端测试（真实 Postgres，issue #88）：
+  `apps/api/test/monitor-ai.e2e-spec.ts` —— 四种 `attentionSource` 与等级的对应
+  （含 `NONE` ⟺ `UNCLASSIFIED` 不变式）、证据文本与库中报告子串**逐字节相同**、
+  陈旧偏移 → 片段丢弃而发现保留且 HTTP 200、**审计字段泄漏扫描**（序列化后的响应
+  不含任何哈希/模型/耗时/错误字段名，也不含 64 位十六进制串）、列表信封每项有
+  `attentionSource` 而无 `aiSemantics`，以及 `listByIds`（预警 H5 列表路径）返回
+  基类型行。issue #102 另有一组：种一条 `ERROR` 尝试断言 `aiStatus: 'FAILED'` 且
+  等级退回纯关键词路径，并单独断言**失败原因本身**（错误码字符串、`error` 字段）不
+  出现在这份响应里。脱敏与 H5 边界的成对断言分别在 `security.e2e-spec.ts` 与
+  `alert-links.e2e-spec.ts`。issue #103 又加了一组：`levelConflicts` 在分歧存在时
+  逐字给出两边的名字与等级（键集合固定为
+  `field/keyword/keywordLevel/semanticLevel/semanticName`），**等级一致时为 `[]`**，
+  且它**不出现在列表信封上**（列表行没有这个字段）。
+- 等级分歧的判定单测（纯函数，issue #103）：`apps/api/src/monitor/level-conflict.spec.ts`
+  —— 区间相交/不相交/首尾相接不算相交、偏移缺失时退回"证据原文包含关键词"、
+  两套枚举映射不上的组合恒不配对、等级相同不报、一命中对多发现与一发现对多命中
+  各自成条、输出去重与排序。同一条判定的聚合与已读状态另有
+  `apps/api/src/level-conflicts/` 下的三个 spec。
 
 本地验证 real Postgres 的临时实例方式（与 `docs/rules-api.md` 相同）：
 

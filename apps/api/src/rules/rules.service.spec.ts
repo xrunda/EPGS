@@ -136,6 +136,36 @@ describe('RulesService', () => {
       expect(created.keyword).toBe('肿瘤');
     });
 
+    it('stores a trimmed semanticIntent (issue #87)', async () => {
+      const created = await service.create({
+        keyword: '溃疡',
+        level: 'RED',
+        matchField: 'FINDINGS',
+        semanticIntent: '  只关注本次明确或疑似存在的溃疡  ',
+        actorId: 'tester',
+      } as any);
+
+      expect(created.semanticIntent).toBe('只关注本次明确或疑似存在的溃疡');
+    });
+
+    it.each([[undefined], [null], [''], ['   ']])(
+      'normalizes semanticIntent %p to null (one "not configured" representation)',
+      async (value) => {
+        const created = await service.create({
+          keyword: '溃疡',
+          level: 'RED',
+          matchField: 'FINDINGS',
+          semanticIntent: value,
+          actorId: 'tester',
+        } as any);
+
+        // Blank and absent must both land as NULL: the judge's skip check and
+        // the "which rules has nobody configured yet" query are single
+        // `IS NULL` tests, not a null-or-empty disjunction.
+        expect(created.semanticIntent).toBeNull();
+      },
+    );
+
     it('rejects a duplicate enabled rule with the same keyword/level/matchField/matchMode', async () => {
       makeRule({
         keyword: '肿瘤',
@@ -264,6 +294,71 @@ describe('RulesService', () => {
 
       const oldRow = store.get(rule.id);
       expect(oldRow.isEnabled).toBe(false);
+    });
+
+    it('versions the rule when semanticIntent changes (issue #87)', async () => {
+      // The audit trail records which intent text a judgement was made
+      // against, so editing it in place would retroactively rewrite history.
+      const rule = makeRule({ version: 1, semanticIntent: '旧意图' });
+
+      const updated = await service.update(rule.id, {
+        version: 1,
+        semanticIntent: '新意图：只关注本次病变',
+        actorId: 'editor',
+      } as any);
+
+      expect(updated.id).not.toBe(rule.id);
+      expect(updated.version).toBe(2);
+      expect(updated.ruleGroupId).toBe(rule.id);
+      expect(updated.semanticIntent).toBe('新意图：只关注本次病变');
+      expect(store.get(rule.id).isEnabled).toBe(false);
+    });
+
+    it('versions the rule when semanticIntent is cleared', async () => {
+      // Clearing is a change like any other, and it must version: the old row
+      // is what a historical judgement's audit trail points at, and rewriting
+      // it to "no intent" would erase what the model was actually given.
+      const rule = makeRule({ version: 1, semanticIntent: '旧意图' });
+
+      const updated = await service.update(rule.id, {
+        version: 1,
+        semanticIntent: '   ',
+        actorId: 'editor',
+      } as any);
+
+      expect(updated.semanticIntent).toBeNull();
+      expect(updated.id).not.toBe(rule.id);
+      expect(updated.version).toBe(2);
+      expect(store.get(rule.id).isEnabled).toBe(false);
+      expect(store.get(rule.id).semanticIntent).toBe('旧意图');
+    });
+
+    it('does not version when a blank intent is set on a rule that has none', async () => {
+      // Normalized before comparison, so re-saving an unconfigured rule is a
+      // no-op rather than one new version per save.
+      const rule = makeRule({ version: 1, semanticIntent: null });
+
+      const updated = await service.update(rule.id, {
+        version: 1,
+        semanticIntent: '',
+        actorId: 'editor',
+      } as any);
+
+      expect(updated.id).toBe(rule.id);
+      expect(updated.version).toBe(2);
+    });
+
+    it('leaves semanticIntent alone when the field is omitted', async () => {
+      const rule = makeRule({ version: 1, semanticIntent: '保留的意图' });
+
+      const updated = await service.update(rule.id, {
+        version: 1,
+        notes: '只改备注',
+        actorId: 'editor',
+      } as any);
+
+      expect(updated.id).toBe(rule.id);
+      expect(updated.semanticIntent).toBe('保留的意图');
     });
 
     it('rejects with RuleVersionConflictException when version does not match', async () => {

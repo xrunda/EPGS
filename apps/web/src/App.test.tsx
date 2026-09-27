@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { MonitorExamDto, SyncStatusDto } from '@epgs/shared-types';
+import type { MonitorExamWorkbenchDto, SyncStatusDto } from '@epgs/shared-types';
 import App from './App';
 
 const authUser = { id: 'user-1', username: 'doctor', displayName: '测试医生', roles: ['VIEWER'] };
 
-const examRow: MonitorExamDto = {
+const examRow: MonitorExamWorkbenchDto = {
   recordId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   monitorLevel: 'RED',
   patientName: '测试患者甲',
@@ -16,6 +16,7 @@ const examRow: MonitorExamDto = {
   examDate: '2026-08-20',
   examTime: '10:30:00',
   matchedKeywords: ['腺癌'],
+  attentionSource: 'RULE',
 };
 
 const syncStatus: SyncStatusDto = {
@@ -38,6 +39,14 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     json: async () => body,
   } as Response;
+}
+
+/*
+  issue #116：消息推送 / 等级分歧 / 用户管理 从工具栏平铺位置收进「⋯」。下面凡是
+  要点这三个入口的用例，都得先展开菜单 —— 这一步本身就是「入口真的在菜单里」的断言。
+*/
+function openToolbarMenu(): void {
+  fireEvent.click(screen.getByRole('button', { name: '更多配置' }));
 }
 
 function defaultResponse(url: string): Promise<Response> {
@@ -73,6 +82,9 @@ function defaultResponse(url: string): Promise<Response> {
   if (url.includes('/api/users')) {
     return Promise.resolve(jsonResponse({ items: [], total: 0, page: 1, pageSize: 20 }));
   }
+  if (url.includes('/api/monitor/level-conflicts')) {
+    return Promise.resolve(jsonResponse({ items: [], days: 90, unreadCount: 0 }));
+  }
   return Promise.resolve(jsonResponse({ error: { message: '未知请求' } }, 404));
 }
 
@@ -98,16 +110,19 @@ describe('App', () => {
 
     expect(await screen.findByText('测试患者甲')).toBeInTheDocument();
     const row = screen.getByRole('row', { name: /测试患者甲/ });
-    expect(within(row).getByText('红色')).toBeInTheDocument();
+    // Issue #92: the row tag spells the level out instead of a bare colour word.
+    expect(within(row).getByText('红色关注')).toBeInTheDocument();
     expect(within(row).getByText('住院（I）')).toBeInTheDocument();
-    expect(within(row).getByText('腺癌')).toBeInTheDocument();
+    // Issue #94: the row says why the patient is on the list, in words.
+    expect(within(row).getByText('命中「腺癌」')).toBeInTheDocument();
   });
 
   it('opens notification configuration with a read-only list for a viewer', async () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    fireEvent.click(screen.getByRole('button', { name: '消息推送' }));
+    openToolbarMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: '消息推送' }));
 
     expect(screen.getByRole('dialog', { name: '消息推送配置' })).toBeInTheDocument();
     expect(await screen.findByText('没有符合条件的渠道')).toBeInTheDocument();
@@ -120,9 +135,11 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    fireEvent.click(screen.getByRole('button', { name: '监测规则' }));
+    // Issue #114: the entry reads exactly like the modal it opens, so the
+    // button name and the dialog name below are the same string on purpose.
+    fireEvent.click(screen.getByRole('button', { name: '关键词监控' }));
 
-    expect(screen.getByRole('dialog', { name: '监测规则配置' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '关键词监控' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
     expect(await screen.findByText('没有符合条件的监测规则')).toBeInTheDocument();
   });
@@ -131,7 +148,10 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    expect(screen.queryByRole('button', { name: '用户管理' })).not.toBeInTheDocument();
+    openToolbarMenu();
+    // 菜单确实开着（消息推送在里面），所以下面那条「用户管理不在」不是空断言
+    expect(screen.getByRole('menuitem', { name: '消息推送' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '用户管理' })).not.toBeInTheDocument();
   });
 
   it('shows and opens user management for a USER_ADMIN account', async () => {
@@ -140,9 +160,7 @@ describe('App', () => {
       vi.fn().mockImplementation((input: RequestInfo | URL) => {
         const url = String(input);
         if (url.includes('/api/auth/me')) {
-          return Promise.resolve(
-            jsonResponse({ user: { ...authUser, roles: ['USER_ADMIN'] } }),
-          );
+          return Promise.resolve(jsonResponse({ user: { ...authUser, roles: ['USER_ADMIN'] } }));
         }
         return defaultResponse(url);
       }),
@@ -150,18 +168,75 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('测试患者甲');
 
-    fireEvent.click(screen.getByRole('button', { name: '用户管理' }));
+    openToolbarMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: '用户管理' }));
 
     expect(screen.getByRole('dialog', { name: '用户管理' })).toBeInTheDocument();
     expect(await screen.findByText('没有符合条件的账号')).toBeInTheDocument();
   });
 
-  it('shows password and logout actions for the current user', async () => {
+  it('hides the level-conflict entry for a user without RULE_ADMIN', async () => {
+    // Issue #103: the list is a configuration-triage surface - a doctor has no
+    // use for it, and the server enforces RULE_ADMIN on every one of its routes
+    // regardless of what this button does.
+    render(<App />);
+    await screen.findByText('测试患者甲');
+
+    openToolbarMenu();
+    expect(screen.getByRole('menuitem', { name: '消息推送' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '等级分歧' })).not.toBeInTheDocument();
+  });
+
+  it('shows and opens the level-conflict list for a RULE_ADMIN account', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(jsonResponse({ user: { ...authUser, roles: ['RULE_ADMIN'] } }));
+        }
+        return defaultResponse(url);
+      }),
+    );
+    render(<App />);
+    await screen.findByText('测试患者甲');
+
+    openToolbarMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: '等级分歧' }));
+
+    expect(screen.getByRole('dialog', { name: '关注等级分歧' })).toBeInTheDocument();
+    expect(await screen.findByText('这段时间内没有发现关注等级分歧')).toBeInTheDocument();
+    // The workbench stays behind it, like every other config modal here.
+    expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
+  });
+
+  /*
+    issue #116：修改密码 / 退出登录 从顶栏平铺位置收进用户名后面的「⋯」。
+    这条盯两件事 —— 两个操作**不再**平铺，以及它们仍然在、点下去仍然到原来那个
+    目标（修改密码开的是 AuthGate 里那个「修改密码」弹层）。
+  */
+  it('keeps password and logout in the account menu after the username (issue #116)', async () => {
     render(<App />);
 
     expect(await screen.findByLabelText('当前用户')).toHaveTextContent('测试医生');
-    expect(screen.getByRole('button', { name: '修改密码' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '修改密码' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '退出登录' })).not.toBeInTheDocument();
+
+    const trigger = screen.getByRole('button', { name: '账号操作' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    // 菜单整体就排在用户名后面（触发按钮在 .action-menu 里面，比的是那一层）
+    expect(trigger.closest('.action-menu')!.previousElementSibling).toBe(
+      screen.getByLabelText('当前用户'),
+    );
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('menuitem', { name: '修改密码' }));
+
+    expect(await screen.findByRole('dialog', { name: '修改密码' })).toBeInTheDocument();
+    // 选中之后菜单自己关掉，不残留在弹层底下
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menuitem', { name: '退出登录' })).not.toBeInTheDocument();
   });
 
   it('opens the read-only detail drawer and preserves the workbench behind it', async () => {
@@ -189,6 +264,10 @@ describe('App', () => {
                   matchedAt: '2026-08-21T00:00:00.000Z',
                 },
               ],
+              attentionSource: 'RULE',
+              aiJudged: false,
+              aiSemantics: [],
+              levelConflicts: [],
             }),
           );
         }

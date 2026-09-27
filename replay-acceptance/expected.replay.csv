@@ -1,0 +1,51 @@
+case_id,scenario_type,scenario_label,expected_attention,expected_level,expected_keyword_behavior,expected_ai_behavior,rationale
+TEST-REPLAY-001,A,A 关键词明显命中，语义也应关注,YES,RED,HIT,SHOULD_FIND,菜花样肿物 + 诊断明确写癌，关键词与语义都应当发现，是升级后绝不能丢的典型病例。
+TEST-REPLAY-002,A,A 关键词明显命中，语义也应关注,YES,RED,HIT,SHOULD_FIND,环周浸润、管壁僵硬、管腔狭窄三条红色规则同时命中，诊断亦明确，是最不该被漏掉的一类。
+TEST-REPLAY-003,A,A 关键词明显命中，语义也应关注,YES,RED,HIT,SHOULD_FIND,贲门失弛缓症是种子规则里的红色关键词，命中即应红色，语义路径读到的也是同一结论。
+TEST-REPLAY-004,A,A 关键词明显命中，语义也应关注,YES,RED,HIT,SHOULD_FIND,食管裂孔疝为红色关键词；齿状线上移同时命中黄色规则，取最大等级应为红色。
+TEST-REPLAY-005,A,A 关键词明显命中，语义也应关注,YES,RED,HIT,SHOULD_FIND,溃疡为黄色规则、占位为红色规则，诊断写「性质待病理」并不能降低等级，最大等级为红色。
+TEST-REPLAY-006,A,A 关键词明显命中，语义也应关注,YES,RED,HIT,SHOULD_FIND,菜花样肿物为红色规则；注意「内镜通过困难」并不等于关键词「内镜无法通过」，此处红色来自菜花样肿物。
+TEST-REPLAY-007,A,A 关键词明显命中，语义也应关注,YES,RED,HIT,SHOULD_FIND,管壁僵硬与管腔狭窄均为红色规则，诊断明确写癌；「进镜尚可通过」不构成否定。
+TEST-REPLAY-008,A,A 关键词明显命中，语义也应关注,YES,RED,HIT,SHOULD_FIND,间质瘤为红色关键词；表面光滑并不降低等级，因为该规则盯的就是黏膜下肿物本身。
+TEST-REPLAY-009,A,A 关键词明显命中，语义也应关注,YES,YELLOW,HIT,SHOULD_FIND,肿物与神经内分泌瘤都是黄色规则，本组中属于中等关注；语义路径读到的风险与其一致。
+TEST-REPLAY-010,A,A 关键词明显命中，语义也应关注,YES,YELLOW,HIT,SHOULD_FIND,吻合口狭窄为黄色规则，是需要内镜干预的术后并发症线索，属于应被看到的病例。
+TEST-REPLAY-011,A,A 关键词明显命中，语义也应关注,YES,RED,HIT,SHOULD_FIND,胃食管反流病四级为红色规则、糜烂带为黄色规则，取最大等级应为红色。
+TEST-REPLAY-012,A,A 关键词明显命中，语义也应关注,YES,YELLOW,HIT,SHOULD_FIND,息肉为黄色规则，已钳除但仍应出现在名单上；这一例同时是「黄色也可能需要关注」的样本。
+TEST-REPLAY-013,B,B 关键词不命中，整份报告语义应关注,YES,RED,NO_HIT,SHOULD_FIND,通篇没有一个规则词，但堤状隆起、微血管紊乱、质脆易出血合起来指向恶性，是「关键词漏掉、语义应找到」的代表。
+TEST-REPLAY-014,B,B 关键词不命中，整份报告语义应关注,YES,RED,NO_HIT,SHOULD_FIND,皱襞中断纠集 + 接触后出血 + 伸展性差，是食管早癌的常见内镜描述，规则词一个都没有。
+TEST-REPLAY-015,B,B 关键词不命中，整份报告语义应关注,YES,RED,NO_HIT,SHOULD_FIND,用「环形」而非规则词「环周浸润」，用「异常所见」而非「病变」，边界欠清 + 形态固定仍应触发语义关注。
+TEST-REPLAY-016,B,B 关键词不命中，整份报告语义应关注,YES,RED,NO_HIT,SHOULD_FIND,直肠不规则凹陷伴周边纠集与质脆，是直肠癌的典型描述；关键词路径完全不响。
+TEST-REPLAY-017,B,B 关键词不命中，整份报告语义应关注,YES,RED,NO_HIT,SHOULD_FIND,「贲门下方」「贲门区」都不会命中规则词「贲门失弛缓症」，但质硬、活动度减低指向深层受累。
+TEST-REPLAY-018,B,B 关键词不命中，整份报告语义应关注,YES,RED,NO_HIT,SHOULD_FIND,刻意不写「溃疡」（否则命中黄色规则），改为「中央凹陷覆白苔 + 皱襞集中中断」，语义上仍是不应忽视的病灶。
+TEST-REPLAY-019,B,B 关键词不命中，整份报告语义应关注,YES,YELLOW,NO_HIT,SHOULD_FIND,只有「糜烂」没有「糜烂带」，规则不命中；范围较广的黏膜脆弱渗血应落到黄色而非红色。
+TEST-REPLAY-020,B,B 关键词不命中，整份报告语义应关注,YES,RED,NO_HIT,SHOULD_FIND,「内镜通过时阻力较大」不等于规则词「内镜无法通过」；不规则增厚与结节样凹凸本身即应被语义捕捉。
+TEST-REPLAY-021,B,B 关键词不命中，整份报告语义应关注,YES,YELLOW,NO_HIT,SHOULD_FIND,范围小、描述轻，设计上落在黄色；用来确认语义路径不是「一有可疑就报红」。
+TEST-REPLAY-022,B,B 关键词不命中，整份报告语义应关注,YES,YELLOW,NO_HIT,SHOULD_FIND,糜烂伴白苔、边缘欠清但范围局限，属于「需要进一步明确」的黄色档，用来观察分级是否过冲。
+TEST-REPLAY-023,B,B 关键词不命中，整份报告语义应关注,YES,RED,NO_HIT,SHOULD_FIND,「上皮内改变」刻意避开规则词「高级别上皮内瘤变」，但边界不清 + 质脆 + 皱襞变浅指向高风险。
+TEST-REPLAY-024,B,B 关键词不命中，整份报告语义应关注,YES,RED,NO_HIT,SHOULD_FIND,直肠堤状隆起伴质脆易出血，是典型的恶性征象组合，全部用规则词之外的表达写出。
+TEST-REPLAY-025,C,C 关键词命中，但上下文是否定/排除,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,「未见肿物」仍会命中黄色规则「肿物」，但语义是否定，不应对本次检查产生关注。
+TEST-REPLAY-026,C,C 关键词命中，但上下文是否定/排除,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,同时命中红色「占位」与黄色「溃疡」，但两者都被否定；这是本组里等级最高的假阳性，纠正后应为无关注。
+TEST-REPLAY-027,C,C 关键词命中，但上下文是否定/排除,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,「未见肿物及息肉」一次触发两条黄色规则，是阴性报告被误报的常见形态。
+TEST-REPLAY-028,C,C 关键词命中，但上下文是否定/排除,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,溃疡已愈合是好转而非新风险，「溃疡」二字仍会命中黄色规则，属于典型的机械命中。
+TEST-REPLAY-029,C,C 关键词命中，但上下文是否定/排除,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,「未见恶性肿瘤征象」会命中两条红色规则（恶性肿瘤、肿瘤），是全组里最容易误报红色的一例。
+TEST-REPLAY-030,C,C 关键词命中，但上下文是否定/排除,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,两条黄色规则被同时否定；与 A 组形成对照，同样的词在否定语境下不应产生关注。
+TEST-REPLAY-031,C,C 关键词命中，但上下文是否定/排除,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,阴性描述中带「溃疡」二字；球腔无变形进一步说明是否定，应被语义校验识别。
+TEST-REPLAY-032,C,C 关键词命中，但上下文是否定/排除,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,「未见占位性改变」命中红色「占位」；否定词在前，语义上不成立。
+TEST-REPLAY-033,D,D 关键词命中，但属于既往史,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,「癌」出现在既往史里，本次检查是阴性；若不过滤会把术后复查者长期误标为红色。
+TEST-REPLAY-034,D,D 关键词命中，但属于既往史,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,「肿瘤」来自手术史，本次为阴性复查；注意「吻合口通畅」不会命中「吻合口狭窄」。
+TEST-REPLAY-035,D,D 关键词命中，但属于既往史,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,病史里的「溃疡」命中黄色规则，本次是愈合后复查，不应作为本次关注理由。
+TEST-REPLAY-036,D,D 关键词命中，但属于既往史,NO,NONE,FALSE_POSITIVE_RISK,SHOULD_FILTER,两条红色规则都因既往诊断而命中，本次是治疗后好转；这是 HISTORY 需要被区分开的原因。
+TEST-REPLAY-037,CROSS_PATH,CROSS_PATH 组合路径：既往史命中应被 #87 过滤，本次真异常应由 #88 独立发现,YES,RED,FALSE_POSITIVE_RISK,SHOULD_FILTER_AND_FIND,组合路径病例：此例用于验证 #87 与 #88 同时参与时，历史关键词命中可以被过滤，但本次真正异常仍能由报告级语义监控独立发现。路径为：历史信息中的「溃疡」命中黄色规则 → #87 应识别这是既往史并过滤掉该命中 → 同一份本次报告又存在真正值得关注的异常（不规则凹陷、覆白苔、边缘隆起、质脆、触之易出血、周围黏膜纠集）→ #88 独立读取完整报告 → 应重新发现本次风险 → 最终等级 RED。两条路径缺一不可：只过滤不发现会漏掉这位患者，只发现不过滤则无法证明 #87 在组合场景下没有失效。
+TEST-REPLAY-038,E,E 模糊/疑似/不确定表达,YES,YELLOW,NO_HIT,SHOULD_FIND,「性质待定、需短期复查」是预设的黄色关注语义之一，属于应当被看到但不必报红的形态。
+TEST-REPLAY-039,E,E 模糊/疑似/不确定表达,YES,RED,NO_HIT,SHOULD_FIND,「不除外早期恶变」是疑似而非否定；按 #87 的判定表，SUSPECTED 一律保留，不应被当成否定过滤掉。
+TEST-REPLAY-040,E,E 模糊/疑似/不确定表达,YES,RED,NO_HIT,SHOULD_FIND,「考虑良性可能大」与「不除外恶性」并存：可以争论粗细，但不应因为前半句就把整条判为阴性。
+TEST-REPLAY-041,E,E 模糊/疑似/不确定表达,YES,YELLOW,NO_HIT,SHOULD_FIND,与 038 同类但黏膜改变更明显，仍然落在「性质待定」的黄色档，用来观察语义路径是否稳定。
+TEST-REPLAY-042,E,E 模糊/疑似/不确定表达,YES,RED,NO_HIT,SHOULD_FIND,碘染淡染区 + 边界欠清是内镜下早癌筛查的典型线索，「恶变」二字不触发任何规则词。
+TEST-REPLAY-043,E,E 模糊/疑似/不确定表达,NO,NONE,NO_HIT,UNCERTAIN,措辞含糊但整体良性倾向明确；设计上不判定对错，用来观察系统会不会把「隆起」一律上调等级。
+TEST-REPLAY-044,F,F 普通、低风险、基本正常,NO,NONE,NO_HIT,SHOULD_NOT_FIND,困难阴性：「粗糙」「渗血」都容易引起风险联想，但同一句里给出了良性归因（操作刺激所致），整体仍是门诊最常见的胃炎。用来观察 #88 会不会只抓到危险词、没有读完整句子的因果关系。
+TEST-REPLAY-045,F,F 普通、低风险、基本正常,NO,NONE,NO_HIT,SHOULD_NOT_FIND,通篇「光滑/未见异常」，是阴性报告的典型写法，也是误报的高发形态（描述长、听起来全）。
+TEST-REPLAY-046,F,F 普通、低风险、基本正常,NO,NONE,NO_HIT,SHOULD_NOT_FIND,完全阴性的肠镜，与 C 组 027 的区别在于这里连「未见肿物」这类否定式规则词都没出现。
+TEST-REPLAY-047,F,F 普通、低风险、基本正常,NO,NONE,NO_HIT,SHOULD_NOT_FIND,短报告对照组：文字少、信息少，用来确认语义路径不会因为「信息不足」而乱报。
+TEST-REPLAY-048,F,F 普通、低风险、基本正常,NO,NONE,NO_HIT,SHOULD_NOT_FIND,困难阴性：局部描述听起来可疑（充血、粗糙、边界、渗血），但句内给出了良性归因（肠道准备及操作刺激），整体仍是低风险。用来观察 #88 在肠镜报告上是否同样只看危险词。
+TEST-REPLAY-049,F,F 普通、低风险、基本正常,NO,NONE,NO_HIT,SHOULD_NOT_FIND,困难阴性：「粗糙」「红斑」「色泽不均」「边界」都会被语义路径当作异常信号，但句内即给出良性判断（考虑炎症性改变），且全文没有隆起、没有溃疡、没有出血。用来观察 #88 能否区分「外观描述异常」与「需要关注」。
+TEST-REPLAY-050,F,F 普通、低风险、基本正常,NO,NONE,NO_HIT,SHOULD_NOT_FIND,写到了「齿状线清晰」以确认它不会被规则词「齿状线上移」误伤，是规则边界的一个定点样本。

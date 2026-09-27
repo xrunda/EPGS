@@ -1,0 +1,27 @@
+{
+  "name": "@epgs/ai-semantic",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared AI semantic engine for EPGS (issue #87 foundation): task/prompt contract, strict structured-output validation, evidence verification, the deterministic disposition matrix, fail-open error handling and audit hashing. Framework- and DB-agnostic - the model itself is reached through an injectable SemanticModelClient, so tests never need a real model.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@epgs/matching-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.9.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.6.3"
+  }
+}

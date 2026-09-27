@@ -9,7 +9,11 @@ sync logic is implemented yet — those land in later issues (#2–#14).
 
 Product requirements and other working documents live outside this repository (`Doc/`
 is gitignored — it holds local-only PRDs, screenshots, and hospital-provided samples
-that must never reach a deployment target). Ask a maintainer for the current PRD.
+that must never reach a deployment target). Note that `Doc/PRD.md` is the V1.1
+requirements document from **before** the scope was narrowed: its
+reporting / daily-report / false-positive items were dropped by issue #26, so the
+current scope is defined by [docs/acceptance.md](./docs/acceptance.md) scenario 10.
+Documentation index: [docs/README.md](./docs/README.md).
 
 ## Architecture overview
 
@@ -155,6 +159,12 @@ broken state.
 | `WEB_ORIGIN`              | api              | 允许携带 Cookie 调用 API 的前端来源                                 | `http://localhost:5173`                      |
 | `ALERT_LINK_BASE_URL`     | api, worker      | 企微客户端打开 `/alert` 患者列表页的地址；未设置则不追加卡片（#72） | 无默认值（关闭）                             |
 | `ALERT_LINK_TTL_HOURS`    | api, worker      | 预警链接有效期（小时，1-168）                                       | `24`                                         |
+| `SEMANTIC_JUDGE_ENABLED`  | worker           | AI 语义判读总开关（#87）；关闭时不联系任何模型，行为与上线前一致    | `false`                                      |
+
+> AI 语义判读（#87）其余变量（模型地址 / 名称 / 超时 / 批量 / 重试 / 上下文预算）
+> 见 [apps/worker/.env.example](apps/worker/.env.example) 与
+> [docs/semantic-judge-design.md](docs/semantic-judge-design.md)。模型相关变量**刻意
+> 不是"启用时必填"**：缺配置时判读自我禁用并打日志，患者监测同步与推送照常运行。
 
 See `.env.example` (root) and `apps/*/.env.example` for the full, commented list.
 

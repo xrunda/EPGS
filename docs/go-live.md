@@ -23,6 +23,10 @@
       `apps/api/prisma/seed.ts`，幂等可重复执行）；后续增补由 `RULE_ADMIN` 在配置页
       导入（见 [docs/rules-api.md](./rules-api.md)），上线前与内镜中心核对一遍现网
       规则表与定稿清单一致。
+- [ ] **AI 语义监控（#88）保持关闭**：`SEMANTIC_REPORT_ENABLED` 在完成 §10 的
+      脱敏报告 + 医生标注回放验证之前**必须为 `false`**。迁移与种子脚本**不写入
+      任何医学配置**，"关注语义"只能由人在配置页显式载入或新增——所以一个刚建好的
+      库里一条语义都没有，这是预期状态，不是故障。
 
 ## 1. 凭据轮换
 
@@ -153,45 +157,85 @@ pnpm --filter @epgs/api auth:assign-access --username <现有管理员> \
 
 - 预警卡片（#72/#76）：从 api 与 worker 的 `.env` 删除/清空 `ALERT_LINK_BASE_URL`
   并 `bash start.sh nopull`，推送即回到只发文本；已发出的卡片链接仍可在其
-  24 小时有效期内打开（要立刻全部失效，执行 §7.2 第 1 步删除 `alert_link` 表，或
+  24 小时有效期内打开（要立刻全部失效，执行 §7.2 第 2 步删除 `alert_link` 表，或
   `DELETE FROM alert_link;`）。
 - 定时推送（#61）：在配置页停用对应规则即可，不需要改配置或重启。
+- **AI 语义判读（#87）**：worker 的 `.env` 设 `SEMANTIC_JUDGE_ENABLED=false` 并
+  `bash start.sh nopull`。判读循环立即停止调用模型，**已判读的结论保留**（仍按原
+  结论展示），后续命中一律计入关注——等于回到 #87 之前的行为。这是最快的止血开关，
+  不需要回滚代码，也不需要回滚数据库。要连"AI 调用"这件事本身一起停掉（例如怀疑
+  网关被限流），把 `SEMANTIC_MODEL_BASE_URL` 清空亦可：此时判读会自我禁用并打一条
+  错误日志，同步与推送不受影响。
+- **AI 语义监控（#88）**：worker 的 `.env` 设 `SEMANTIC_REPORT_ENABLED=false` 并
+  `bash start.sh nopull`。分类循环立即停止认领记录，**已产生的 AI 等级保留**
+  （`monitor_record.ai_attention_level` 不会被清），因此工作台上的红黄绿**不会在重启
+  瞬间变化**；此后新记录一律不再分类，等级完全由关键词与 #87 判读决定。这是 #88 的
+  唯一开关，也是它唯一的止血手段——不需要回滚代码，也不需要回滚数据库。
+  与 #87 一样，把 `SEMANTIC_MODEL_BASE_URL` 清空可以让分类能力整体失效（缺模型地址
+  时分类模块打印一条说明并降级为"只做关键词监测"，**worker 照常启动**，同步与推送
+  不受影响）。
+  > 想让 AI 曾经抬高的等级**主动降回去**，只关开关是不够的（既有 `ai_attention_level`
+  > 仍在参与最大值计算）：需要额外把 `monitor_record` 的 `ai_attention_level` 与
+  > `ai_resolved_at` 置空/置回，或直接执行 §7.2 第 1 步回滚该迁移。这是**数据修改
+  > 动作，必须先备份并由项目所有者确认**，不要临场决定。
 
 ### 7.2 数据库迁移回滚（新到旧）
 
-迁移链（新 → 旧，每个目录都自带 `rollback.sql`）。**下表记录的是截止 §9 批次
-（2026-09 推送增强）的链条**；其后的 `20260911000000_add_user_admin_role_and_audit_actions`
-（#83 管理员模块）比下表全部条目都新，回退说明见 §10.6。
+迁移链（新 → 旧，每个目录都自带 `rollback.sql`）。下表已含 #87 / #88 / #103 三层。
+`20260911000000_add_user_admin_role_and_audit_actions`（#83 管理员模块）**不在表内、
+也不参与回退链**：它只在 `AppRole` / `AuditAction` 两个枚举上追加值，不建表、不改字段，
+在链上的位置是顺序 2 与顺序 3 之间，留着它对后面任何一步回退都没有影响，因此
+**任何时候都不要回退它**（原因见 §11.6）。
 
-| 顺序 | 迁移目录                                                      | 回滚脚本作用                                                                                               |
-| ---- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| 1    | `20260905060000_add_alert_link`（#72）                        | 删除 `alert_link`（已发出的企微卡片链接立即失效）。**必须先于第 3 步**：它对 `push_log` 有外键             |
-| 2    | `20260903000000_add_push_assistant`（#70）                    | 删除 `assistant_heartbeat` / `assistant_event` 与枚举 `AssistantEventType`（推送助理心跳与活动流，可重建） |
-| 3    | `20260823055843_add_notification_push_rules`（#61）           | 删除 `push_delivery` / `push_log` / `notification_rule_channel` / `notification_rule` 与相关枚举           |
-| 4    | `20260823032959_add_notification_channel_template`（#53）     | 删除 `notification_channel` / `notification_template`（含加密的 Webhook 地址）与枚举                       |
-| 5    | `20260821110858_add_monitor_record_patient_type_index`（#14） | 删除 `monitor_record_patient_type_code_idx` 索引                                                           |
-| 6    | `20260821103732_add_auth_access_and_audit_log`（#13）         | 删除 `app_user_access` / `audit_log` 与相关枚举                                                            |
-| 7    | `20260821093500_add_local_auth`（#31）                        | 删除 `app_user`（全部本地账号）                                                                            |
-| 8    | `20260821073851_remove_closed_loop_readonly`（#26）           | **破坏性**：恢复闭环模型，数据不还原，见脚本头部 WARNING                                                   |
-| 9    | `20260821040339_init_monitoring_schema`（#3）                 | 删除全部 `monitor_*` 表与枚举                                                                              |
+| 顺序 | 迁移目录                                                      | 回滚脚本作用                                                                                                                                                                                                                            |
+| ---- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | `20260927000000_add_monitor_level_conflict_read`（#103）      | 删除 `monitor_level_conflict_read` 表与它的两个索引。**必须最先执行**（它是最新的一层，不过这张表无外键、无级联，放哪一步都不会报错）。**会丢失全部"已核对"标记**，待办列表本身不受影响（每次从记录实算），重新标记即可。**一处撤不干净**：`AuditAction` 里仍留着 `MONITOR_LEVEL_CONFLICT_READ`/`MONITOR_LEVEL_CONFLICT_UNREAD`。脚本可**自动执行** |
+| 1    | `20260926000000_add_ai_report_classify`（#88）                | 删除 `monitor_report_ai` 及其两张子表、`attention_semantic`、`monitor_record` 的 5 个 `ai_*` 列、分类队列部分索引 `uq_monitor_record_ai_queue` 与 `AttentionLevel`/`ReportAiField` 两个枚举。**必须最先执行**：`monitor_report_ai` 对 `monitor_record` 有外键，且 `AttentionLevel` 类型要先于第 11 步删表释放。**会丢失全部报告级 AI 分类审计**（当时生效的语义版本、模型、命中与证据），且不可重建；关键词路径与 #87 审计不受影响。**建议先回滚 worker 再回滚 schema** |
+| 2    | `20260925000000_add_semantic_judge`（#87）                    | 删除 `monitor_match_semantic`、`monitor_match` 的 8 个 `semantic_*`/`match_*` 列、`monitor_rule.semantic_intent` 与 4 个枚举。**必须先于第 11 步**：该表对 `monitor_match` 有外键，而第 11 步的 `DROP TABLE monitor_match` 不带 CASCADE |
+| 3    | `20260905060000_add_alert_link`（#72）                        | 删除 `alert_link`（已发出的企微卡片链接立即失效）。**必须先于第 5 步**：它对 `push_log` 有外键                                                                                                                                          |
+| 4    | `20260903000000_add_push_assistant`（#70）                    | 删除 `assistant_heartbeat` / `assistant_event` 与枚举 `AssistantEventType`（推送助理心跳与活动流，可重建）                                                                                                                              |
+| 5    | `20260823055843_add_notification_push_rules`（#61）           | 删除 `push_delivery` / `push_log` / `notification_rule_channel` / `notification_rule` 与相关枚举                                                                                                                                        |
+| 6    | `20260823032959_add_notification_channel_template`（#53）     | 删除 `notification_channel` / `notification_template`（含加密的 Webhook 地址）与枚举                                                                                                                                                    |
+| 7    | `20260821110858_add_monitor_record_patient_type_index`（#14） | 删除 `monitor_record_patient_type_code_idx` 索引                                                                                                                                                                                        |
+| 8    | `20260821103732_add_auth_access_and_audit_log`（#13）         | 删除 `app_user_access` / `audit_log` 与相关枚举                                                                                                                                                                                         |
+| 9    | `20260821093500_add_local_auth`（#31）                        | 删除 `app_user`（全部本地账号）                                                                                                                                                                                                         |
+| 10   | `20260821073851_remove_closed_loop_readonly`（#26）           | **破坏性**：恢复闭环模型，数据不还原，见脚本头部 WARNING                                                                                                                                                                                |
+| 11   | `20260821040339_init_monitoring_schema`（#3）                 | 删除全部 `monitor_*` 表与枚举                                                                                                                                                                                                           |
 
 ```bash
-# 单步回滚示例（第 1 步：撤掉 #72 的 alert_link 表）
+# 单步回滚示例（第 3 步：撤掉 #72 的 alert_link 表）
 psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260905060000_add_alert_link/rollback.sql
 DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_alert_link';
 ```
 
 - **只回退单一特性**：按上表只执行到该迁移为止（新到旧依次）。例：仅撤销预警
-  卡片 → 只执行第 1 步；撤销整个推送模块 → 执行 1→4。
+  卡片 → 只执行第 3 步；撤销整个推送模块 → 执行 3→6。
 - **枚举值不可逆**：#53/#61 向 `AuditAction` 追加的 `CONFIG_CHANGE` 触发点、
   `NOTIFICATION_TEST_SEND`、`NOTIFICATION_RULE_RUN` 无法用 `ALTER TYPE` 删除；
+  #88 追加的 `ATTENTION_SEMANTIC_CREATE`/`ATTENTION_SEMANTIC_UPDATE` 与
+  `SemanticTask` 的 `CLASSIFY_REPORT` 同理（见下条）；
   对应 `rollback.sql` 头部给出了"先确认 `audit_log` 无该值再重建枚举"的手工 SQL，
   默认不自动执行。
-- **完全重置到空库**：执行 1→9 全部回滚，再 `DELETE FROM "_prisma_migrations";`
+- **#103 回滚只丢"看过了"，不丢判定**：这张表只存已读状态，待办列表每次用同一套判定
+  从既有记录实算，所以回滚后列表照旧、只是全部显示未读。`monitor_match`、
+  `monitor_report_ai*`、等级、医生端那句提醒都不受影响（提醒不走这张表）。
+- **完全重置到空库**：执行 0→11 全部回滚，再 `DELETE FROM "_prisma_migrations";`
   清空历史（否则 re-deploy 会跳过"看似已应用"的迁移），最后按需
   `prisma migrate deploy` 重建。CI 的 db-migrations job 即按此流程验证：
-  #72→#70→#61→#53→#14→#13→#31→#3 回滚（#26 因 #3 已全量清表而省略其破坏性
+  #103→#88→#87→#72→#70→#61→#53→#14→#13→#31→#3 回滚（#26 因 #3 已全量清表而省略其破坏性
   回滚）→ 清空历史 → 重新正向迁移。
+- **#88 分类回滚同样"少一层注解"，不是"丢命中"**：回滚只删除 AI 分类的审计行与
+  队列/结果列，`monitor_match` 与 `monitor_rule` 一字不动，`monitor_record`
+  的 `current_level` 保留当时算出的值（随后任何一次关键词重算都会把它收敛回
+  纯关键词的等级，因为 AI 那一列已不存在）。列一旦删除，worker 的分类循环查不到
+  队列、自动停止调用模型。**代码先回滚、数据库后回滚**可避免"半删状态的 schema
+  仍被写入"的窗口。注意两处撤不干净：`SemanticTask.CLASSIFY_REPORT` 与两个
+  `AuditAction` 取值会留在类型里（PostgreSQL 无法删类型取值），它们已无人写入，
+  且 `audit_log` 里已有的记录本就应当保留。
+- **#87 判读回滚是"少一层注解"，不是"丢命中"**：回滚只删除 AI 判读的审计行与状态列，
+  `monitor_match` 的关键词证据（keyword/level/matched_at/context_snippet）一字不动。
+  列一旦删除，worker 的判读循环查不到队列、自动停止调用模型，行为立即回到 #87 之前。
+  **代码先回滚、数据库后回滚**可避免"半删状态的 schema 仍被写入"的窗口。
 - **#26 特别警告**：该回滚会重建 `monitor_action` 与 `handling_status` 等已被
   删除的字段（数据不还原），仅当明确需要回到旧闭环模型时执行；否则靠 #3 清表
   即可。
@@ -215,6 +259,11 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
       的 `open_count` 随点击增加。
 - [ ] **推送助理**（#70）：工作台右下角胶囊显示「值班中」与距下次推送倒计时；
       worker 停 2 分钟后变「已失联」，恢复后自动回到在线。
+- [ ] **等级分歧**（#103）：`RULE_ADMIN` 账号在工作台工具栏的「⋯」里能点到
+      「等级分歧」（issue #116 把它和消息推送、用户管理一起收进了二级菜单）、
+      `VIEWER` 账号**没有**；列表里若出现条目，点开同一条记录确认医生抽屉里也有那句
+      双方点名的提醒，且**两侧的名字与等级逐字对得上**；标记已读后刷新仍为已读。
+      列表里不应出现任何患者信息（姓名/床号/报告正文）。
 
 ## 9. 发布记录：2026-09 推送增强（#74 / #72 / #70 / #76）
 
@@ -274,14 +323,105 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
 
 - 只关卡片：删 `ALERT_LINK_BASE_URL` → `bash start.sh nopull`（§7.1）。
 - 回退代码：revert 对应 PR 后重启；两张新表可留存不影响旧代码。
-- 回退数据库：§7.2 第 1、2 步（先 `alert_link`，再 `assistant_*`）。
+- 回退数据库：§7.2 第 3、4 步（先 `alert_link`，再 `assistant_*`；若 #88 或 #87 也已
+  上线，需连第 1、2 步一起按 1→4 顺序执行）。
 
-## 10. 发布记录：2026-09 管理员模块（#82 / #83 / #84 / #85）
+## 10. 上线门禁：AI 语义监控（#88）
+
+本节是 issue #88 的**启用门禁**。与 §9 不同，#88 的代码可以随时随主分支上线，
+因为它的开关默认关闭、迁移纯增量、且不写入任何医学配置；**门槛在"打开开关"这一步**，
+不在"部署代码"。
+
+> **CI 全绿 ≠ 医学效果被接受。** 自动化测试能证明代码按契约执行（等级只升不降、
+> 失败不产生结论、证据可追溯），**证明不了这组"关注语义"本身写得对不对**。
+> 下面第 4 项是唯一的医学效果验收。
+
+### 10.1 部署代码（不打开开关）
+
+- [ ] `prisma migrate deploy` 应用 `20260926000000_add_ai_report_classify`（已应用则
+      显示 "No pending migrations"）；迁移**不写入任何医学配置**，`attention_semantic`
+      应为空表。
+- [ ] API/worker 正常启动，`.env` 中 `SEMANTIC_REPORT_ENABLED` 保持 `false`
+      （或未配置＝默认关闭）。
+- [ ] **回滚基线确认**：日志中**没有**任何分类循环活动的痕迹；工作台、红黄绿、
+      通知推送、#87 判读的表现与部署前逐项一致。工作台列表的行内等级标签与详情抽屉
+      的主等级标签是「红色关注 / 黄色关注 / 绿色关注」（issue #92 的文案统一，只有
+      文字变长，没有新增控件）；工作台还多出一列**「关注理由」**（issue #94，替代原来
+      的「命中关键词」列，把「命中「腺癌」等 2 处」当成列头下的单元格），详情抽屉的
+      「命中证据」与「AI 语义发现」已合并成**一个「关注依据」列表**（issue #94），
+      来源徽标已从工作台与抽屉移除——因为没有记录带 AI 等级，列表里**只会有关键词
+      命中这一类条目**，整份报告那一类此时应完全不出现。
+
+### 10.2 打开开关前的医学验证（必做，缺一不可）
+
+- [ ] **网关验通**：配好 `SEMANTIC_MODEL_*` 后 `pnpm --filter worker run semantic:probe`
+      成功。
+- [ ] **关注语义已按本院口径改写**：预置语义只是**通用模板**，不是任何学会或医院的
+      标准，也没有经过临床验证。由内镜中心在「AI 语义监控」里逐条改写成本院说法，
+      经项目所有者确认后定稿；**不存在由迁移或种子脚本自动写入的医学配置**。
+- [ ] **脱敏报告 + 医生标注回放**：用**脱敏后的真实报告**、配合医生**手工标注**的
+      期望结果跑一轮，逐条比对"该命中的有没有命中 / 不该命中的有没有误伤 / 等级是否
+      符合预期"，结论由内镜中心书面确认。
+- [ ] **等级收敛抽查**：抽若干记录确认 `current_level = max(未被过滤的关键词命中等级,
+      AI 等级)`；再断开模型地址跑一轮，确认等级**完全不变**、只多出 `outcome = ERROR`
+      的审计行。
+- [ ] **确认 `reclassify:once` 的版本再对生产跑**：该脚本会遍历**全表**并把等级按当前
+      启用规则集重写。含 #96 的版本会同时尊重 #87 的过滤与 `ai_attention_level`；
+      #96 之前的版本会把 AI 单独判出的等级写回 `UNCLASSIFIED`（且不会自愈，
+      见 [ai-semantic-monitor-design.md](./ai-semantic-monitor-design.md) §6.1）。
+      不确定堡垒机上是哪个版本时，**先在隔离库上用一条 AI-only 的记录试跑**，确认等级
+      没掉下来再动生产。
+- [ ] **通知未变**：AI 命中不产生任何逐条推送，通知条数与内容与之前一致。
+- [ ] **失败可重试、也可看见（issue #102）**：两件事各验一次。
+      重试：拔掉 `SEMANTIC_MODEL_*` 的地址跑一轮，确认记录**没有**当场出队——同一份
+      报告连续出现多行 `outcome = ERROR` 的审计行（传输层失败按
+      `SEMANTIC_REPORT_MAX_ATTEMPTS` 重试到上限，见
+      [ai-semantic-monitor-design.md](./ai-semantic-monitor-design.md) §7.1）；同时确认
+      这一轮里医生端是 `NOT_JUDGED`（结论还在路上，不能提前说失败）。恢复地址后确认
+      重试的那一条能拿到结论。
+      可见：制造一次**确定性**失败（例如临时把某条语义的配置改到模型答不上来），确认
+      那份报告的详情页出现"本次整份报告核对未能完成，当前关注等级仅依据关键词命中，
+      可能不完整"，且该记录的 `aiStatus` 为 `FAILED`、等级确实只是关键词等级。
+      **`FAILED` 的正确处置是查 `monitor_report_ai.error` 并修提示词/配置/网关，
+      不是反复重试**；只有传输层故障（网关长时间不可用）恢复之后，才用
+      `pnpm --filter worker run classify:once --requeue --failed-only` 把失败且没有
+      结论的记录重新入队。
+- [ ] **保留策略与隐私复核**：确认 `monitor_report_ai*` 三张表不落报告原文/Prompt/
+      模型原始响应（只有哈希与偏移），且 `reason` 对无 `patientDetail` 权限者置空
+      （见 [data-dictionary.md](./data-dictionary.md)）。
+- [ ] **医生端展示已复核（PR-B / issue #94）**：打开开关前，用一条已判读的记录在工作台确认
+      列表行的「关注理由」说明了这位患者为什么在名单上，详情抽屉顶部出现一句关注理由，
+      且「关注依据」列表里整份报告读出的那条显示了名称、颜色、把握度、解释句与证据
+      片段，证据与报告正文逐字一致。**同时确认预警链接 H5 页面没有出现任何 AI 内容**
+      ——通知形态是被冻结的面，链接可以被转发到工作台之外。
+      两个数值也要对得上：抽屉顶部那句理由点名的条目，必须是「关注依据」列表里
+      **当前等级**的第一条；列表为空时不能凭空出现理由。
+
+### 10.3 打开开关
+
+```dotenv
+# apps/worker/.env
+SEMANTIC_REPORT_ENABLED=true
+```
+
+`bash start.sh nopull`（只改 worker 的 `.env`，不需重新构建）。建议按
+[ai-semantic-monitor-design.md](./ai-semantic-monitor-design.md) §10 的顺序先小批量
+试跑（`pnpm --filter worker run classify:once`），观察失败码分布，确认无异常后再
+交给循环自动执行。
+
+### 10.4 回退
+
+- 立即止血：`SEMANTIC_REPORT_ENABLED=false` → `bash start.sh nopull`（§7.1）。
+  注意**已产生的 AI 等级会保留**，不会自己降回去，因此工作台的关注理由与
+  「关注依据」列表也照旧显示——关掉开关只停止**新的**判读。
+- 连数据一起回退：§7.2 第 1 步。**属破坏性操作，先备份并由项目所有者确认。**
+
+## 11. 发布记录：2026-09 管理员模块（#82 / #83 / #84 / #85）
 
 代码上线本身很轻：**一张迁移（只改枚举）、零新环境变量、零新依赖、零新静态资源**。
-真正的操作重点是 §10.4 的**冷启动**——不做的话模块上线了但没人能打开。
+真正的操作重点是 §11.4 的**冷启动**——不做的话模块上线了但没人能打开。
 
-### 10.1 变更清单
+### 11.1 变更清单
 
 | 来源 | 内容 | 数据库 | 配置 |
 | ---- | ---- | ------ | ---- |
@@ -294,15 +434,15 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
 上次完全一致**——如果 `start.sh` 的 env 预检报出新错误，说明是环境被改动过，
 停下来查，不是本次部署引入的。
 
-### 10.2 部署前（在堡垒机上，执行 `start.sh` 之前）
+### 11.2 部署前（在堡垒机上，执行 `start.sh` 之前）
 
 - [ ] **备份数据库**（§4）。本批次迁移只加枚举值、不删不改数据，但备份是常规动作。
-- [ ] 本节及 §10.5 的 `psql` 需要 `DATABASE_URL`。堡垒机的登录 shell 里通常没有
+- [ ] 本节及 §11.5 的 `psql` 需要 `DATABASE_URL`。堡垒机的登录 shell 里通常没有
       导出它（服务是由 `start.sh` 读 `apps/api/.env` 启动的），先取出来：
       ```bash
       cd <仓库根> && DATABASE_URL=$(grep -m1 '^DATABASE_URL=' apps/api/.env | cut -d= -f2- | tr -d '"')
       ```
-- [ ] **盘点现有账号与授权**（决定 §10.4 冷启动挂到谁头上，也是"数据完整"的基线）：
+- [ ] **盘点现有账号与授权**（决定 §11.4 冷启动挂到谁头上，也是"数据完整"的基线）：
   ```bash
   psql "$DATABASE_URL" -c 'SELECT u.username, u.display_name, u.is_active,
       a.roles, a.department_scope, a.patient_detail
@@ -313,10 +453,10 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
 - [ ] 从上面结果里**选定一个管理员账号**作为首个 `USER_ADMIN`（建议现有
       `SYSTEM_ADMIN` 账号），记下它当前的 `roles` 与 `department_scope` 原值。
 - [ ] 确认**没有任何账号的 `department_scope` 非空**、或已记下这些账号的科室原值。
-      非空的账号在 §10.4 和 §10.5 都要特别处理（见那里的警告）。
+      非空的账号在 §11.4 和 §11.5 都要特别处理（见那里的警告）。
 - [ ] `apps/api/.env` / `apps/worker/.env` 无需改动（本批次无新环境变量）。
 
-### 10.3 部署（`bash start.sh`，脚本自动完成的步骤只需看输出）
+### 11.3 部署（`bash start.sh`，脚本自动完成的步骤只需看输出）
 
 1. `git pull` 到包含 #85 的 main（本次批次末尾提交为 `507e6fd`）。
 2. env 预检输出应与 §9 部署时**逐字一致**（`ALERT_LINK_BASE_URL` 那行的开启/关闭
@@ -347,14 +487,14 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20260905060000_add_aler
    ```
 6. nginx reload 后：`curl -sI http://<入口>/` 为 200（SPA fallback 正常）。
 
-### 10.4 冷启动：授予首个 `USER_ADMIN`（**本批次的关键步骤**）
+### 11.4 冷启动：授予首个 `USER_ADMIN`（**本批次的关键步骤**）
 
 页面上的「用户管理」入口**只对持有 `USER_ADMIN` 的账号渲染**，`SYSTEM_ADMIN`
 刻意拿不到它（职责分离，见 `docs/auth.md` 角色表）。所以刚部署完时，**所有人
 都看不到这个模块**，必须先用 CLI 打通第一个口子。完整注意事项见 §6.1。
 
 ```bash
-# 用 §10.2 选定的账号替换 <管理员账号>
+# 用 §11.2 选定的账号替换 <管理员账号>
 pnpm --filter @epgs/api auth:show-access --username <管理员账号>   # 先看现有角色原值
 pnpm --filter @epgs/api auth:assign-access --username <管理员账号> \
   --roles <原角色1>,<原角色2>,USER_ADMIN                          # 带上原有全部角色 + USER_ADMIN
@@ -373,9 +513,9 @@ pnpm --filter @epgs/api auth:assign-access --username <管理员账号> \
 - [ ] 授权即时生效（每次请求实时查库）；已打开的页面**刷新**即可看到入口，
       不需要重新登录。
 - [ ] 立即用该账号登录验证：右上角出现「用户管理」，点开能看到列表且行数与
-      §10.2 的盘点结果一致。
+      §11.2 的盘点结果一致。
 
-### 10.5 部署后验证（24h 内）
+### 11.5 部署后验证（24h 内）
 
 先做 §8 的常规项（`/health`、同步状态、脱敏抽查、审计写入），本批次额外确认：
 
@@ -393,11 +533,11 @@ pnpm --filter @epgs/api auth:assign-access --username <管理员账号> \
       应能看到 `USER_CREATE` / `USER_ROLE_CHANGE`，且 `meta` **不含任何密码或哈希**。
 - [ ] **最后管理员保护**：把唯一 `USER_ADMIN` 账号的角色取消 `USER_ADMIN` 后保存，
       应返回 `409 LAST_USER_ADMIN_PROTECTED` 并被界面拦住（禁用/删除同一账号同样被拦）。
-      **先决条件**：做这条之前，§10.4 的冷启动账号之外**再授予第二个账号
+      **先决条件**：做这条之前，§11.4 的冷启动账号之外**再授予第二个账号
       `USER_ADMIN`**。守卫本身是 fail-closed 的（请求被拒、数据不变），但万一它
       失效，唯一管理员会被自己锁在门外、只能回堡垒机用 CLI 救——两个管理员时
       最坏情况也只是自己丢权限，另一个账号还能进 Web 改回来。验证完把角色改回去。
-- [ ] **回归：老账号授权未被改动**——重新执行 §10.2 的盘点 SQL，与存档逐行对比：
+- [ ] **回归：老账号授权未被改动**——重新执行 §11.2 的盘点 SQL，与存档逐行对比：
       `roles`、`department_scope`、`patient_detail` 三项必须与部署前完全一致。
       这是"线上数据完整"的直接证据。
 - [ ] **回归：科室限制未被放宽**——若盘点里有 `department_scope` 非空的账号，
@@ -406,7 +546,7 @@ pnpm --filter @epgs/api auth:assign-access --username <管理员账号> \
       意外放宽到 `{}`，立即用 CLI 按原值 `--departments` 改回。
 - [ ] **回归：脱敏未被打乱**——抽查一个 `patient_detail = false` 的账号，
       监测详情仍脱敏（响应带 `dataAccess.masked`）。
-- [ ] **删除联动**：删除 §10.5 建的测试账号，确认 `app_user` 与 `app_user_access`
+- [ ] **删除联动**：删除 §11.5 建的测试账号，确认 `app_user` 与 `app_user_access`
       两行同时消失，不留孤儿授权行：
       ```bash
       psql "$DATABASE_URL" -c "SELECT count(*) FROM app_user_access a
@@ -414,7 +554,7 @@ pnpm --filter @epgs/api auth:assign-access --username <管理员账号> \
       ```
       应为 `0`。
 
-### 10.6 回退
+### 11.6 回退
 
 - **首选：只回退应用**。`revert` #85/#84 对应提交后 `bash start.sh nopull`。
   **数据库不用动**：#83 迁移只是在两个枚举类型上追加了值，旧代码从不引用它们，

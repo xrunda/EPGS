@@ -1,6 +1,6 @@
 import type {
   ListMonitorExamsQuery,
-  MonitorExamDetailDto,
+  MonitorExamWorkbenchDetailDto,
   MonitorFiltersQuery,
   MonitorSummaryDto,
   MonitorSummaryQuery,
@@ -77,7 +77,13 @@ export async function getExamSummary(query: MonitorSummaryQuery): Promise<Monito
   );
 }
 
-export async function getExamDetail(id: string): Promise<MonitorExamDetailDto> {
+/**
+ * The workbench detail. Note the return type is the WORKBENCH extension, not the
+ * base MonitorExamDetailDto: this endpoint is what carries attentionSource /
+ * aiJudged / aiSemantics, and the alert H5 page does NOT come through here (it
+ * has its own job and its own base-typed client, issue #88).
+ */
+export async function getExamDetail(id: string): Promise<MonitorExamWorkbenchDetailDto> {
   return parseResponse(
     await fetch(`${API_BASE_URL}/api/monitor/exams/${encodeURIComponent(id)}`, {
       credentials: 'include',

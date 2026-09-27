@@ -62,6 +62,8 @@ export class WorkerSummaryProvider implements NotificationSummaryProvider {
     // keywords contributes one hit to each. Only rules currently enabled are
     // counted, so a match referencing a since-superseded/disabled rule version
     // is excluded (the report reflects the active classification, not history).
+    // Issue #87: hits the AI semantic judge filtered are excluded too, so this
+    // count matches the api's MonitorSummaryProvider and the 监控看板.
     result.keywordHits = await this.aggregateKeywordHits(range);
     return result;
   }
@@ -74,6 +76,8 @@ export class WorkerSummaryProvider implements NotificationSummaryProvider {
       where: {
         ...(range ? { record: { examTime: range } } : {}),
         rule: { isEnabled: true },
+        // Issue #87: effective hits only (see the caller's comment).
+        semanticFiltered: false,
       },
       _count: { _all: true },
     });

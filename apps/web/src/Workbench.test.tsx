@@ -1,9 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { MonitorExamDto, MonitorSummaryDto, SyncStatusDto } from '@epgs/shared-types';
+import type {
+  MonitorAttentionSourceDto,
+  MonitorExamWorkbenchDto,
+  MonitorLevelDto,
+  MonitorSummaryDto,
+  SyncStatusDto,
+} from '@epgs/shared-types';
 import { Workbench } from './Workbench';
 
-const examRows: MonitorExamDto[] = [
+/**
+ * The list row carries attentionSource (issue #88) - required, so a fixture
+ * cannot omit it and leave the reason silently wrong.
+ */
+const examRows: MonitorExamWorkbenchDto[] = [
   {
     recordId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     monitorLevel: 'RED',
@@ -15,6 +25,7 @@ const examRows: MonitorExamDto[] = [
     examDate: '2026-08-20',
     examTime: '10:30:00',
     matchedKeywords: ['腺癌', '浸润癌'],
+    attentionSource: 'BOTH',
   },
   {
     recordId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -27,8 +38,50 @@ const examRows: MonitorExamDto[] = [
     examDate: null,
     examTime: null,
     matchedKeywords: [],
+    attentionSource: 'NONE',
   },
 ];
+
+/** One list row with everything the 关注理由 column reads spelled out. */
+function examRow(
+  patientName: string,
+  monitorLevel: MonitorLevelDto,
+  matchedKeywords: string[],
+  attentionSource: MonitorAttentionSourceDto,
+): MonitorExamWorkbenchDto {
+  return {
+    recordId: `${patientName}-record`,
+    monitorLevel,
+    patientName,
+    department: '内镜中心',
+    bedNo: '1床',
+    patientType: { code: 'I', name: '住院' },
+    examItem: '胃镜',
+    examDate: '2026-08-20',
+    examTime: '10:30:00',
+    matchedKeywords,
+    attentionSource,
+  };
+}
+
+/** Serves one list of exam rows (plus the summary/sync chrome) for one test. */
+function stubExams(items: MonitorExamWorkbenchDto[]): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/monitor/exams/')) {
+        return jsonResponse({ error: { message: '未找到' } }, 404);
+      }
+      if (url.includes('/api/monitor/exams')) {
+        return jsonResponse({ items, total: items.length, page: 1, pageSize: 20 });
+      }
+      if (url.includes('/api/monitor/summary')) return jsonResponse(summary);
+      if (url.includes('/api/system/sync-status')) return jsonResponse(syncStatus);
+      return jsonResponse({ items: [], total: 0, page: 1, pageSize: 200 });
+    }),
+  );
+}
 
 const summary: MonitorSummaryDto = { total: 25, red: 10, yellow: 5, green: 9, unclassified: 1 };
 
@@ -125,17 +178,298 @@ describe('Workbench', () => {
     );
 
     const row1 = screen.getByRole('row', { name: /测试患者甲/ });
-    expect(within(row1).getByText('红色')).toBeInTheDocument();
+    // Issue #92: the row tag spells the level out (「红色关注」), like the drawer.
+    expect(within(row1).getByText('红色关注')).toBeInTheDocument();
     expect(within(row1).getByText('内镜中心')).toBeInTheDocument();
     expect(within(row1).getByText('12床')).toBeInTheDocument();
     expect(within(row1).getByText('住院（I）')).toBeInTheDocument();
     expect(within(row1).getByText('2026-08-20')).toBeInTheDocument();
     expect(within(row1).getByText('10:30:00')).toBeInTheDocument();
-    expect(within(row1).getByText('腺癌、浸润癌')).toBeInTheDocument();
+    // Issue #94: the column answers 「为什么需要关注」 in words. BOTH is stated
+    // as both, because a keyword alone may not be the higher of the two.
+    expect(within(row1).getByText('命中「腺癌」等 2 处；报告提示需要关注')).toBeInTheDocument();
+    // The level tag is its own element, so the reason cannot be mistaken for it.
+    expect(row1.querySelectorAll('.level-tag')).toHaveLength(1);
 
     const row2 = screen.getByRole('row', { name: /绿色/ });
+    expect(within(row2).getByText('绿色关注')).toBeInTheDocument();
     expect(within(row2).getByText('门诊（O）')).toBeInTheDocument();
-    expect(within(row2).getAllByText('—')).toHaveLength(7);
+    // Nothing found it, so there is no reason to state - and none is invented.
+    // The 8 placeholders are 发现来源 + 姓名 + 科室 + 床号 + 检查项目 + 检查日期 +
+    // 检查时间 + 关注理由 (issue #112 added the first); every other cell has a value.
+    expect(within(row2).getAllByText('—')).toHaveLength(8);
+  });
+
+  /**
+   * Issue #114: the header is branding + settings only, and the refresh control
+   * belongs to the list it refreshes.
+   *
+   * Two things are being pinned here. First, the toolbar entries now read
+   * exactly like the modals they open - if someone renames a modal title, the
+   * entry that promises it has to change with it. Second, the refresh button
+   * lives inside the list's own tools strip, not in the toolbar; that is what
+   * makes it obvious which thing is being refreshed.
+   */
+  it('keeps only settings entries in the toolbar and puts refresh in the list (issue #114)', async () => {
+    const onOpenRules = vi.fn();
+    const onOpenAiSemantics = vi.fn();
+    const { container } = render(
+      <Workbench onOpenRules={onOpenRules} onOpenAiSemantics={onOpenAiSemantics} />,
+    );
+    await screen.findByText('测试患者甲');
+
+    const toolbar = container.querySelector('.workbench__toolbar');
+    expect(toolbar).not.toBeNull();
+    // Entry wording === modal title, so the two have to be asserted together.
+    fireEvent.click(within(toolbar as HTMLElement).getByRole('button', { name: '关键词监控' }));
+    expect(onOpenRules).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(toolbar as HTMLElement).getByRole('button', { name: 'AI 语义监控' }));
+    expect(onOpenAiSemantics).toHaveBeenCalledTimes(1);
+
+    const list = container.querySelector('.workbench__list');
+    const tools = container.querySelector('.workbench__list-tools');
+    expect(list).not.toBeNull();
+    expect(tools).not.toBeNull();
+    // Nested: the strip is inside the card the table is inside, so the button
+    // is visually and structurally "this list", not "the page".
+    expect(list as HTMLElement).toContainElement(tools as HTMLElement);
+
+    const refresh = screen.getByRole('button', { name: '刷新列表' });
+    expect(tools as HTMLElement).toContainElement(refresh);
+    expect(toolbar as HTMLElement).not.toContainElement(refresh);
+    // No leftover text button: the countdown moved with it, and the old label
+    // is gone for good.
+    expect(within(toolbar as HTMLElement).queryByRole('button', { name: '立即刷新' })).toBeNull();
+    expect(within(tools as HTMLElement).getByText('60 秒后刷新')).toBeInTheDocument();
+  });
+
+  /**
+   * Issue #116: the toolbar keeps the two entries that are the product's value
+   * proposition visible, and folds the three configuration/administration ones
+   * into a「⋯」.
+   *
+   * "Exactly two" is asserted as a count of the toolbar's own buttons rather
+   * than by listing three absences: with the menu closed those three are not in
+   * the DOM at all, so an absence check would pass even if someone had left a
+   * fourth visible button next to them. The count is what pins the layout.
+   */
+  it('keeps two visible toolbar entries and folds the rest into「⋯」(issue #116)', async () => {
+    const onOpenNotifications = vi.fn();
+    const onOpenLevelConflicts = vi.fn();
+    const onOpenUsers = vi.fn();
+    const { container } = render(
+      <Workbench
+        onOpenRules={vi.fn()}
+        onOpenAiSemantics={vi.fn()}
+        onOpenNotifications={onOpenNotifications}
+        onOpenLevelConflicts={onOpenLevelConflicts}
+        onOpenUsers={onOpenUsers}
+      />,
+    );
+    await screen.findByText('测试患者甲');
+
+    const toolbar = container.querySelector('.workbench__toolbar') as HTMLElement;
+    expect(toolbar.querySelectorAll('button')).toHaveLength(3); // 关键词监控 + AI 语义监控 + ⋯
+
+    const trigger = within(toolbar).getByRole('button', { name: '更多配置' });
+    expect(within(toolbar).getByRole('button', { name: '关键词监控' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'AI 语义监控' })).toBeInTheDocument();
+    // 收起时一项都不在 DOM 里 —— 不是 CSS 藏起来
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      '消息推送',
+      '等级分歧',
+      '用户管理',
+    ]);
+
+    // 逐项点开的是原来那个弹窗 —— 三个回调各自被调到一次，没有串。
+    // 每选中一项菜单就自己关了，所以下面每次都要重新点开（这本身也顺带钉住了「选中即关闭」）。
+    fireEvent.click(screen.getByRole('menuitem', { name: '消息推送' }));
+    expect(onOpenNotifications).toHaveBeenCalledTimes(1);
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitem', { name: '等级分歧' }));
+    expect(onOpenLevelConflicts).toHaveBeenCalledTimes(1);
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitem', { name: '用户管理' }));
+    expect(onOpenUsers).toHaveBeenCalledTimes(1);
+    expect(onOpenNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Issue #116: with nothing to put in it, the「⋯」must not be there. An arrow
+   * that opens onto an empty panel is worse than no arrow.
+   *
+   * The three props are exactly what App.tsx withholds from a doctor who has
+   * neither RULE_ADMIN nor USER_ADMIN - and 消息推送 too in this render, since
+   * Workbench is usable without it.
+   */
+  it('renders no「⋯」at all when there is nothing to fold into it (issue #116)', async () => {
+    const { container } = render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const toolbar = container.querySelector('.workbench__toolbar') as HTMLElement;
+    expect(within(toolbar).getByRole('button', { name: '关键词监控' })).toBeInTheDocument();
+    expect(within(toolbar).queryByRole('button', { name: '更多配置' })).not.toBeInTheDocument();
+    expect(toolbar.querySelectorAll('button')).toHaveLength(1);
+  });
+
+  /**
+   * Issue #114: the product mark sits next to the page title. It is decorative
+   * - the h1 already names the system - so it must carry an empty alt rather
+   * than making a screen reader announce the same name twice.
+   */
+  it('shows the product mark next to the page title as decorative (issue #114)', async () => {
+    const { container } = render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const logo = container.querySelector('.workbench__brand .workbench__logo');
+    expect(logo).not.toBeNull();
+    expect(logo?.tagName).toBe('IMG');
+    // Absolute path from public/: the build empties dist/, so a relative import
+    // would break on the next build.
+    expect(logo?.getAttribute('src')).toBe('/logo.png');
+    expect(logo?.getAttribute('alt')).toBe('');
+    // The mark is not a substitute for the title - both are present.
+    expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
+  });
+
+  // Issue #94: one sentence per row, covering all four attention sources. The
+  // AI-only row matters most - it carries a level with no keyword at all, so a
+  // blank cell there would be a red record a doctor cannot explain.
+  it('explains each row for all four attention sources', async () => {
+    stubExams([
+      examRow('测试患者甲', 'RED', ['腺癌', '浸润癌'], 'RULE'),
+      examRow('测试患者乙', 'RED', [], 'AI_REPORT'),
+      examRow('测试患者丙', 'RED', ['溃疡'], 'BOTH'),
+      examRow('测试患者丁', 'UNCLASSIFIED', [], 'NONE'),
+    ]);
+
+    render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const reasonOf = (name: RegExp): string =>
+      screen.getByRole('row', { name }).querySelector('.workbench__reason')?.textContent ?? '';
+
+    expect(reasonOf(/测试患者甲/)).toBe('命中「腺癌」等 2 处');
+    expect(reasonOf(/测试患者乙/)).toBe('报告提示需要关注');
+    expect(reasonOf(/测试患者丙/)).toBe('命中「溃疡」；报告提示需要关注');
+    expect(reasonOf(/测试患者丁/)).toBe('—');
+  });
+
+  /**
+   * Issue #112: each row says which side found it, as an icon.
+   *
+   * Same four rows as the reason test above, so the icon column and the 关注理由
+   * sentence are pinned to say the same thing: 甲 keyword-only, 乙 report-only,
+   * 丙 both, 丁 neither.
+   */
+  it('marks each row with the icon of the side that found it (issue #112)', async () => {
+    stubExams([
+      examRow('测试患者甲', 'RED', ['腺癌'], 'RULE'),
+      examRow('测试患者乙', 'RED', [], 'AI_REPORT'),
+      examRow('测试患者丙', 'RED', ['溃疡'], 'BOTH'),
+      examRow('测试患者丁', 'UNCLASSIFIED', [], 'NONE'),
+    ]);
+
+    const { container } = render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const rowOf = (name: RegExp): HTMLElement => screen.getByRole('row', { name });
+    const iconsOf = (name: RegExp): HTMLImageElement[] => [
+      ...rowOf(name).querySelectorAll<HTMLImageElement>('.workbench__source-icon'),
+    ];
+    const sourcesOf = (name: RegExp): string[] =>
+      iconsOf(name).map((img) => img.getAttribute('alt') ?? '');
+    // The hover text lives on the wrapper (it is a ::after, not a title attribute:
+    // browser tooltips can't be resized and the owner wanted it twice as big).
+    const tipsOf = (name: RegExp): string[] =>
+      [...rowOf(name).querySelectorAll('.workbench__source-tip')].map(
+        (span) => span.getAttribute('data-tip') ?? '',
+      );
+
+    expect(sourcesOf(/测试患者甲/)).toEqual(['命中']);
+    expect(sourcesOf(/测试患者乙/)).toEqual(['报告提示']);
+    expect(sourcesOf(/测试患者丙/)).toEqual(['命中', '报告提示']);
+    // Neither side found anything: no icon at all, plus a visible placeholder
+    // (a blank cell reads as "failed to render", not as "nothing found it").
+    expect(sourcesOf(/测试患者丁/)).toEqual([]);
+    expect(rowOf(/测试患者丁/).querySelector('.workbench__source-none')?.textContent).toBe('—');
+
+    // Hovering tells the doctor what the icon means - a bare glyph in a dense
+    // table is just "some icon" the first time you see it.
+    expect(tipsOf(/测试患者甲/)).toEqual(['关键词命中']);
+    expect(tipsOf(/测试患者乙/)).toEqual(['AI 语义命中']);
+    expect(tipsOf(/测试患者丙/)).toEqual(['关键词命中', 'AI 语义命中']);
+    // One tip per icon: a wrapper without data-tip renders an empty bubble.
+    expect(tipsOf(/测试患者丙/)).toHaveLength(iconsOf(/测试患者丙/).length);
+
+    // The column is labelled and sits between the level and the patient name.
+    const headers = [...container.querySelectorAll('.workbench__table thead th')].map(
+      (th) => th.textContent,
+    );
+    expect(headers.slice(0, 3)).toEqual(['关注等级', '发现来源', '姓名']);
+  });
+
+  /**
+   * Issue #94: the workbench renders no mechanism vocabulary - this is the guard
+   * for removing the source badge, which used to put 「AI 语义」 on every row.
+   * Scans the rendered text, not the source.
+   *
+   * Issue #114 narrowed this guarantee and moved it. The settings toolbar now
+   * labels each entry with the modal title it opens, verbatim (关键词监控 /
+   * AI 语义监控): an entry that says one thing and opens another costs the user
+   * more than a mechanism word does. So the scan drops that one strip - which
+   * carries no patient information whatsoever - and keeps watching everything a
+   * doctor actually reads: level, reason, findings, wording.
+   *
+   * The toolbar is removed by selector from a copy of the live DOM, and the
+   * removal is asserted to have hit exactly one element, so a rename or a move
+   * fails here instead of silently letting the scan pass over the whole page.
+   *
+   * Issue #116 checked this was still true after folding three entries into a
+   * 「⋯」: the menu renders inside `.workbench__toolbar`, so removing the strip
+   * takes the panel with it (and it is not even in the DOM while collapsed).
+   * The menu items themselves carry no mechanism vocabulary anyway - they are
+   * the same three words that used to sit on the toolbar.
+   */
+  it('uses only doctor-facing wording, never the implementation vocabulary', async () => {
+    const { container } = render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const scanned = container.cloneNode(true) as HTMLElement;
+    const toolbars = scanned.querySelectorAll('.workbench__toolbar');
+    expect(toolbars).toHaveLength(1);
+    toolbars.forEach((toolbar) => toolbar.remove());
+    const rendered = scanned.textContent ?? '';
+
+    for (const leak of [
+      '关键词监控',
+      'AI 语义监控',
+      '语义',
+      '判读',
+      'Prompt',
+      '提示词',
+      'LLM',
+      '模型',
+      '分类器',
+      'JSON',
+      'Schema',
+      '置信度',
+      '哈希',
+      '大模型',
+    ]) {
+      expect(rendered).not.toContain(leak);
+    }
+    // Positive controls: the agreed wording really is on screen, so the scan
+    // above cannot pass by rendering nothing. 「内镜中心」 also pins down that
+    // the branding block (issue #114) sits inside the scanned region rather
+    // than having been swept out with the toolbar.
+    expect(rendered).toContain('红色关注');
+    expect(rendered).toContain('关注理由');
+    expect(rendered).toContain('内镜中心');
   });
 
   it('applies all filters to the list but excludes level from the summary', async () => {
@@ -278,19 +612,34 @@ describe('Workbench', () => {
     expect(screen.getByRole('button', { name: '下一页' })).toBeDisabled();
   });
 
-  it('refreshes list, summary, and sync status when 立即刷新 is clicked', async () => {
+  /**
+   * Issue #114: the button moved and turned into an icon, so its contract needs
+   * to be asserted for what the title claims. The old body only counted
+   * /api/monitor/exams while the name promised three surfaces; the summary and
+   * the sync status are what a viewer watches after a night shift, so the test
+   * now counts all three endpoints.
+   */
+  it('refreshes list, summary, and sync status when 刷新列表 is clicked', async () => {
     render(<Workbench onOpenRules={vi.fn()} />);
     await screen.findByText('测试患者甲');
-    const examsCalls = () =>
+    const callsTo = (fragment: string) =>
       vi
         .mocked(fetch)
         .mock.calls.map(([url]) => String(url))
-        .filter((url) => url.includes('/api/monitor/exams'));
-    const before = examsCalls().length;
+        .filter((url) => url.includes(fragment)).length;
+    const before = {
+      exams: callsTo('/api/monitor/exams'),
+      summary: callsTo('/api/monitor/summary'),
+      sync: callsTo('/api/system/sync-status'),
+    };
 
-    fireEvent.click(screen.getByRole('button', { name: '立即刷新' }));
+    fireEvent.click(screen.getByRole('button', { name: '刷新列表' }));
 
-    await waitFor(() => expect(examsCalls().length).toBeGreaterThan(before));
+    await waitFor(() => {
+      expect(callsTo('/api/monitor/exams')).toBeGreaterThan(before.exams);
+      expect(callsTo('/api/monitor/summary')).toBeGreaterThan(before.summary);
+      expect(callsTo('/api/system/sync-status')).toBeGreaterThan(before.sync);
+    });
   });
 
   it('shows an error state with a working retry', async () => {
@@ -385,6 +734,7 @@ describe('Workbench', () => {
                 examDate: null,
                 examTime: null,
                 matchedKeywords: [],
+                attentionSource: 'NONE',
               },
             ],
             total: 1,

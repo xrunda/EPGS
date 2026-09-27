@@ -1,0 +1,63 @@
+/*
+  「⋯」二级菜单（issue #116）。
+
+  这一层只管结构、层级和面板本身，**不带任何配色倾向** —— 同一个组件要用在深色的
+  顶栏（`.app-header`）和浅色的工作台工具栏两处，触发按钮什么颜色是调用方的事
+  （`triggerClassName`）。面板固定用浅底深字：菜单浮在页面之上，两处都读得清。
+*/
+.action-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.action-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  /* 「⋯」在有的字体下基线偏低，行高收紧一点免得触发按钮比旁边的按钮高 */
+  line-height: 1;
+}
+
+.action-menu__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 60;
+  display: grid;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: var(--shadow-md);
+}
+/* 贴哪一边由调用方给：顶栏与工具栏都在右上角，默认贴右 */
+.action-menu__panel--end {
+  right: 0;
+}
+.action-menu__panel--start {
+  left: 0;
+}
+
+.action-menu__item {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-700, #334b4f);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  /* 菜单项是按钮，标签不许在内部折行（同 issue #110 的规矩） */
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.action-menu__item:hover,
+.action-menu__item:focus-visible {
+  background: var(--surface-sunken);
+  color: var(--teal-700);
+  outline: none;
+}

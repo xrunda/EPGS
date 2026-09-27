@@ -36,6 +36,17 @@ export type AppRoleDto =
  * USER_CREATE/USER_ROLE_CHANGE/USER_DISABLE/USER_ENABLE/USER_DELETE/
  * USER_PASSWORD_RESET (issue #78/#79) are account and access-grant writes
  * made through the /api/users endpoints (issue #81).
+ * ATTENTION_SEMANTIC_CREATE/ATTENTION_SEMANTIC_UPDATE (issue #88) are
+ * attention-semantic configuration writes, mirroring RULE_CREATE/RULE_UPDATE.
+ * Loading the preset templates is recorded as a CREATE, with
+ * meta.source = 'DEFAULT_TEMPLATE' and the counts, so the audit log answers
+ * "who made these the hospital's configuration" - which matters because no
+ * migration ever writes medical semantics.
+ * MONITOR_LEVEL_CONFLICT_READ/UNREAD (issue #103) are an admin marking a
+ * level-conflict todo read or unread. They record a decision about a piece of
+ * CONFIGURATION (a rule and a semantic that disagree about the same spot in a
+ * report), never anything about a patient's report - see
+ * docs/monitor-level-conflict-api.md.
  */
 export type AuditActionDto =
   | 'EXAM_LIST'
@@ -53,7 +64,11 @@ export type AuditActionDto =
   | 'USER_DISABLE'
   | 'USER_ENABLE'
   | 'USER_DELETE'
-  | 'USER_PASSWORD_RESET';
+  | 'USER_PASSWORD_RESET'
+  | 'ATTENTION_SEMANTIC_CREATE'
+  | 'ATTENTION_SEMANTIC_UPDATE'
+  | 'MONITOR_LEVEL_CONFLICT_READ'
+  | 'MONITOR_LEVEL_CONFLICT_UNREAD';
 
 /** One row of `GET /api/audit`. */
 export interface AuditLogDto {

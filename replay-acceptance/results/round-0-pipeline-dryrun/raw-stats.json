@@ -1,0 +1,194 @@
+{
+  "stats": {
+    "total": 50,
+    "outcome": {
+      "OK": 50
+    },
+    "attempt_level": {
+      "RED": 13,
+      "(null)": 18,
+      "YELLOW": 18,
+      "GREEN": 1
+    },
+    "keyword_level_baseline": {
+      "RED": 15,
+      "YELLOW": 10,
+      "UNCLASSIFIED": 25
+    },
+    "current_level_after": {
+      "RED": 23,
+      "YELLOW": 20,
+      "UNCLASSIFIED": 7
+    },
+    "ai_attention_level_after": {
+      "RED": 13,
+      "(null)": 18,
+      "YELLOW": 18,
+      "GREEN": 1
+    },
+    "scenario": {
+      "A": 12,
+      "B": 12,
+      "C": 8,
+      "D": 4,
+      "CROSS_PATH": 1,
+      "E": 6,
+      "F": 7
+    },
+    "models": {
+      "deepseek-v4-flash": 50
+    },
+    "tasks": {
+      "classify-report/1": 50
+    },
+    "attempt_report_version_mismatch": 0,
+    "errored": 0,
+    "latency": {
+      "min": 2377,
+      "max": 13730,
+      "avg": 5941
+    }
+  },
+  "groups": {
+    "SHOULD_FIND_ALL": {
+      "label": "SHOULD_FIND 全体（A12+B12+E5）",
+      "n": 29,
+      "found": 27,
+      "missed": 2,
+      "missed_ids": [
+        "TEST-REPLAY-003",
+        "TEST-REPLAY-004"
+      ]
+    },
+    "SHOULD_FIND_KEYWORD_MISSED": {
+      "label": "SHOULD_FIND 且关键词零命中（README §9.1 的 17 例 = B12+E5）",
+      "n": 17,
+      "found": 17,
+      "missed": 0,
+      "missed_ids": []
+    },
+    "SHOULD_FILTER": {
+      "label": "SHOULD_FILTER（C8+D4，关键词假阳性）",
+      "n": 12,
+      "found": 3,
+      "missed": 9,
+      "missed_ids": [
+        "TEST-REPLAY-025",
+        "TEST-REPLAY-026",
+        "TEST-REPLAY-027",
+        "TEST-REPLAY-028",
+        "TEST-REPLAY-029",
+        "TEST-REPLAY-030",
+        "TEST-REPLAY-031",
+        "TEST-REPLAY-032",
+        "TEST-REPLAY-035"
+      ]
+    },
+    "SHOULD_FILTER_AND_FIND": {
+      "label": "SHOULD_FILTER_AND_FIND（037）",
+      "n": 1,
+      "found": 1,
+      "missed": 0,
+      "missed_ids": []
+    },
+    "SHOULD_NOT_FIND": {
+      "label": "SHOULD_NOT_FIND（F 组 7 例）",
+      "n": 7,
+      "found": 0,
+      "missed": 7,
+      "missed_ids": [
+        "TEST-REPLAY-044",
+        "TEST-REPLAY-045",
+        "TEST-REPLAY-046",
+        "TEST-REPLAY-047",
+        "TEST-REPLAY-048",
+        "TEST-REPLAY-049",
+        "TEST-REPLAY-050"
+      ]
+    },
+    "UNCERTAIN": {
+      "label": "UNCERTAIN（E 组 1 例）",
+      "n": 1,
+      "found": 1,
+      "missed": 0,
+      "missed_ids": []
+    }
+  },
+  "difficult": [
+    {
+      "case_id": "TEST-REPLAY-044",
+      "current_level": "UNCLASSIFIED",
+      "ai_attention_level": null,
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "outcome": "OK",
+      "attempt_level": null,
+      "semantic_count": 6,
+      "match_count": 0,
+      "model": "deepseek-v4-flash",
+      "model_version": "deepseek-v4-flash",
+      "task": "CLASSIFY_REPORT",
+      "task_version": "classify-report/1",
+      "latency_ms": 2545,
+      "error": null,
+      "attempt_report_version": 1,
+      "record_report_version": 1,
+      "scenario_type": "F",
+      "expected_ai_behavior": "SHOULD_NOT_FIND",
+      "expected_level": "NONE",
+      "expected_attention": "NO",
+      "ai_findings": [],
+      "ai_found_count": 0
+    },
+    {
+      "case_id": "TEST-REPLAY-048",
+      "current_level": "UNCLASSIFIED",
+      "ai_attention_level": null,
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "outcome": "OK",
+      "attempt_level": null,
+      "semantic_count": 6,
+      "match_count": 0,
+      "model": "deepseek-v4-flash",
+      "model_version": "deepseek-v4-flash",
+      "task": "CLASSIFY_REPORT",
+      "task_version": "classify-report/1",
+      "latency_ms": 3077,
+      "error": null,
+      "attempt_report_version": 1,
+      "record_report_version": 1,
+      "scenario_type": "F",
+      "expected_ai_behavior": "SHOULD_NOT_FIND",
+      "expected_level": "NONE",
+      "expected_attention": "NO",
+      "ai_findings": [],
+      "ai_found_count": 0
+    },
+    {
+      "case_id": "TEST-REPLAY-049",
+      "current_level": "UNCLASSIFIED",
+      "ai_attention_level": null,
+      "keyword_level": "UNCLASSIFIED",
+      "keyword_hits": 0,
+      "outcome": "OK",
+      "attempt_level": null,
+      "semantic_count": 6,
+      "match_count": 0,
+      "model": "deepseek-v4-flash",
+      "model_version": "deepseek-v4-flash",
+      "task": "CLASSIFY_REPORT",
+      "task_version": "classify-report/1",
+      "latency_ms": 2803,
+      "error": null,
+      "attempt_report_version": 1,
+      "record_report_version": 1,
+      "scenario_type": "F",
+      "expected_ai_behavior": "SHOULD_NOT_FIND",
+      "expected_level": "NONE",
+      "expected_attention": "NO",
+      "ai_findings": [],
+      "ai_found_count": 0
+    }
+  ]
+}

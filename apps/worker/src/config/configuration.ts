@@ -53,6 +53,70 @@ export interface WorkerConfig {
   alertLinkBaseUrl: string | null;
   /** Issue #72: alert-link lifetime in hours (1-168, default 24). */
   alertLinkTtlHours: number;
+  /**
+   * Issue #87: the AI semantic judge (Validate Match). FALSE by default - with
+   * it off the worker is byte-identical to pre-#87 behaviour (no queue scan, no
+   * model call, no audit rows) and every keyword hit stands as recorded. The
+   * judge can only ever REMOVE hits the keyword engine already found, never add
+   * or re-level any; see packages/ai-semantic.
+   *
+   * Nothing below is validated as required-when-enabled: this process also runs
+   * the sync job, so a missing model URL must disable the judge (loudly, in the
+   * log) rather than stop the worker from booting.
+   */
+  semanticJudgeEnabled: boolean;
+  /** OpenAI-compatible gateway base URL (e.g. http://10.0.0.5:8000/v1). Never logged. */
+  semanticModelBaseUrl?: string;
+  /** Bearer token for the gateway. Optional - a self-hosted gateway may need none. Never logged. */
+  semanticModelApiKey?: string;
+  /** Model identifier to send, recorded on every audit row. */
+  semanticModelName?: string;
+  /** Wire protocol. Only 'openai-chat' is implemented; the seam for the hospital's own gateway. */
+  semanticModelApiStyle: string;
+  /** Per-call timeout in ms (1000-60000, default 10000). */
+  semanticModelTimeoutMs: number;
+  /** Generated-token cap per call (64-4096, default 512). */
+  semanticModelMaxTokens: number;
+  /** Context window budget in characters (50-4000, default 400). */
+  semanticContextCharBudget: number;
+  /** Judge tick cadence in seconds (5-3600, default 30). */
+  semanticJudgeIntervalSeconds: number;
+  /** Hits claimed per tick (1-50, default 10). Kept small so a tick stays short. */
+  semanticJudgeBatchSize: number;
+  /** Attempts per hit before it is resolved terminally and fail-open (1-10, default 3). */
+  semanticJudgeMaxAttempts: number;
+  /** How long a claim is held before another worker may take the row (30-3600s, default 300). */
+  semanticJudgeLeaseSeconds: number;
+  /**
+   * Issue #88: the AI report classifier. FALSE by default, and INDEPENDENT of
+   * SEMANTIC_JUDGE_ENABLED - the two tasks can be switched on separately in
+   * either order. With it off, every `ai_*` column stays NULL and
+   * `monitor_record.current_level` is exactly the keyword level, i.e. the
+   * pre-#88 system.
+   *
+   * It shares #87's gateway variables (SEMANTIC_MODEL_*) - one hospital, one
+   * gateway - and adds only the settings that describe the SHAPE of a
+   * classification call, which differs from a judging call because a whole
+   * report is a far larger input than one sentence.
+   *
+   * Nothing below is validated as required-when-enabled, for the same reason as
+   * the judge: this process also runs the sync job.
+   */
+  semanticReportEnabled: boolean;
+  /** One classification call's ceiling in ms (1000-120000, default 20000). */
+  semanticReportTimeoutMs: number;
+  /** Generated-token cap per classification (64-4096, default 1024). */
+  semanticReportMaxTokens: number;
+  /** Whole-report size cap in characters (1000-100000, default 20000). */
+  semanticReportMaxChars: number;
+  /** Classifier tick cadence in seconds (5-3600, default 60). */
+  semanticReportIntervalSeconds: number;
+  /** Records claimed per tick (1-50, default 5). Smaller than the judge's: a report is a bigger prompt. */
+  semanticReportBatchSize: number;
+  /** Attempts per record before it is resolved terminally with no AI finding (1-10, default 3). */
+  semanticReportMaxAttempts: number;
+  /** How long a claim is held before another worker may take the row (30-3600s, default 600). */
+  semanticReportLeaseSeconds: number;
 }
 
 export default (): WorkerConfig => ({
@@ -85,4 +149,27 @@ export default (): WorkerConfig => ({
   assistantEventRetentionDays: parseInt(process.env.ASSISTANT_EVENT_RETENTION_DAYS ?? '7', 10),
   alertLinkBaseUrl: process.env.ALERT_LINK_BASE_URL?.trim() || null,
   alertLinkTtlHours: parseInt(process.env.ALERT_LINK_TTL_HOURS ?? '24', 10),
+  semanticJudgeEnabled: process.env.SEMANTIC_JUDGE_ENABLED === 'true',
+  semanticModelBaseUrl: process.env.SEMANTIC_MODEL_BASE_URL,
+  semanticModelApiKey: process.env.SEMANTIC_MODEL_API_KEY,
+  semanticModelName: process.env.SEMANTIC_MODEL_NAME,
+  semanticModelApiStyle: process.env.SEMANTIC_MODEL_API_STYLE ?? 'openai-chat',
+  semanticModelTimeoutMs: parseInt(process.env.SEMANTIC_MODEL_TIMEOUT_MS ?? '10000', 10),
+  semanticModelMaxTokens: parseInt(process.env.SEMANTIC_MODEL_MAX_TOKENS ?? '512', 10),
+  semanticContextCharBudget: parseInt(process.env.SEMANTIC_CONTEXT_CHAR_BUDGET ?? '400', 10),
+  semanticJudgeIntervalSeconds: parseInt(process.env.SEMANTIC_JUDGE_INTERVAL_SECONDS ?? '30', 10),
+  semanticJudgeBatchSize: parseInt(process.env.SEMANTIC_JUDGE_BATCH_SIZE ?? '10', 10),
+  semanticJudgeMaxAttempts: parseInt(process.env.SEMANTIC_JUDGE_MAX_ATTEMPTS ?? '3', 10),
+  semanticJudgeLeaseSeconds: parseInt(process.env.SEMANTIC_JUDGE_LEASE_SECONDS ?? '300', 10),
+  semanticReportEnabled: process.env.SEMANTIC_REPORT_ENABLED === 'true',
+  semanticReportTimeoutMs: parseInt(process.env.SEMANTIC_REPORT_TIMEOUT_MS ?? '20000', 10),
+  semanticReportMaxTokens: parseInt(process.env.SEMANTIC_REPORT_MAX_TOKENS ?? '1024', 10),
+  semanticReportMaxChars: parseInt(process.env.SEMANTIC_REPORT_MAX_CHARS ?? '20000', 10),
+  semanticReportIntervalSeconds: parseInt(
+    process.env.SEMANTIC_REPORT_INTERVAL_SECONDS ?? '60',
+    10,
+  ),
+  semanticReportBatchSize: parseInt(process.env.SEMANTIC_REPORT_BATCH_SIZE ?? '5', 10),
+  semanticReportMaxAttempts: parseInt(process.env.SEMANTIC_REPORT_MAX_ATTEMPTS ?? '3', 10),
+  semanticReportLeaseSeconds: parseInt(process.env.SEMANTIC_REPORT_LEASE_SECONDS ?? '600', 10),
 });

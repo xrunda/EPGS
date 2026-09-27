@@ -12,11 +12,33 @@
  * back to the rule version that produced it. See
  * apps/api/prisma/schema.prisma and docs/data-dictionary.md for the
  * authoritative field-level documentation.
+ *
+ * Issue #87 adds three fields to the hit row (`semanticFiltered` + the
+ * `semantic` verdict) describing whether an AI judged the hit to be a real
+ * expression of the rule's intent. This is NOT the closed-loop status the
+ * #26 model forbids: it says nothing about whether anyone read, acknowledged
+ * or handled the report. The raw hit is still always present and its
+ * deterministic `level` is unchanged.
+ *
+ * Issue #88 (PR-B) adds the report-level AI side: where the record's current
+ * attention level came FROM (`attentionSource`) and what the AI read out of the
+ * whole report (`aiSemantics` + `aiJudged`). Both live on WORKBENCH-ONLY
+ * extension interfaces (MonitorExamWorkbenchDto / MonitorExamWorkbenchDetailDto)
+ * rather than on the base DTOs, so the alert-link H5 surface - which aliases the
+ * base detail type - cannot name them. Levels and names here are configured
+ * values snapshotted at judge time, not a model's classification, and no audit
+ * field (hash, model, latency, error) ever crosses this boundary.
+ *
+ * Issue #103 adds `levelConflicts`: the keyword path and the report-level path
+ * agreeing on WHERE something is but disagreeing on how much attention it needs.
+ * It names both sides, and both names are already on this same response - so it
+ * opens no new report-text exit. It carries no offsets and no excerpt.
  */
 
-import { MatchFieldDto, MonitorLevelDto } from './rules';
+import { AttentionLevelDto } from './attention-semantics';
+import { MatchFieldDto, MonitorLevelDto, SemanticConfidenceDto, SemanticStatusDto } from './rules';
 
-export type { MatchFieldDto, MonitorLevelDto };
+export type { AttentionLevelDto, MatchFieldDto, MonitorLevelDto, SemanticConfidenceDto, SemanticStatusDto };
 
 /**
  * Patient type as shown in the workbench: the source code (PAADM_Type raw
@@ -30,7 +52,10 @@ export interface MonitorPatientTypeDto {
 }
 
 /**
- * One row of `GET /api/monitor/exams`. Read-only display snapshot - NO
+ * The read-only row snapshot shared by every surface that lists records - the
+ * workbench list (`GET /api/monitor/exams`, which serves the wider
+ * MonitorExamWorkbenchDto) and the alert-link H5 list (`GET
+ * /api/alert-links/me/exams`, which serves exactly this). NO
  * reportContent/diagnosis (detail endpoint only) and NO disposition/status.
  */
 export interface MonitorExamDto {
@@ -79,6 +104,45 @@ export interface MonitorExamHitDto {
   contextSnippet: string | null;
   /** ISO 8601 UTC instant. */
   matchedAt: string;
+  /**
+   * Issue #87: true = this hit was judged NOT to express the rule's
+   * `semanticIntent`, so it does not count as an effective attention result -
+   * it is excluded from `MonitorExamDto.matchedKeywords`, from the keyword
+   * filter, from the push keyword counts, and from the record's
+   * `monitorLevel`. The hit row itself is never hidden or deleted (the raw
+   * keyword evidence is permanent); the detail drawer shows it with a
+   * "未计入关注" annotation.
+   *
+   * `level` is deliberately NOT adjusted: it stays the deterministic keyword
+   * level, so the workbench never implies the model classified anything.
+   */
+  semanticFiltered: boolean;
+  /** Issue #87: the current AI verdict, or null when the hit was never judged. */
+  semantic: MonitorHitSemanticDto | null;
+}
+
+/**
+ * Issue #87: the newest AI judgement on a hit. Present only when the model
+ * actually returned a usable verdict - a hit that was never judged (no
+ * `semanticIntent`, judge disabled) or whose last attempt failed has
+ * `semantic: null`, and in both cases the hit stands.
+ *
+ * `status`/`confidence` are the model's OPINION; `semanticFiltered` on the hit
+ * is the DECISION, which deterministic code makes. They can disagree in one
+ * direction only: a NEGATED verdict at MEDIUM/LOW confidence leaves
+ * `semanticFiltered` false.
+ */
+export interface MonitorHitSemanticDto {
+  status: SemanticStatusDto;
+  confidence: SemanticConfidenceDto;
+  /**
+   * The model's own one-sentence explanation, in Chinese. Nulled when the
+   * server masks HIGH-sensitivity fields (issue #13) - the model may quote the
+   * report body into it, so it is report-adjacent text.
+   */
+  reason: string | null;
+  /** ISO 8601 UTC instant of the call that produced this verdict. */
+  judgedAt: string;
 }
 
 /**
@@ -110,9 +174,298 @@ export interface MonitorExamDetailDto extends MonitorExamDto {
   dataAccess?: MonitorDataAccess;
 }
 
+/**
+ * Issue #88 (PR-B): WHERE this record's current attention level came from.
+ *
+ * A statement about PROVENANCE, never about severity, and it never influences a
+ * level - the level is already decided by `computeEffectiveLevel` in the worker.
+ * Derived deterministically in the API read path from data the record already
+ * carries; no extra column, no migration.
+ *
+ * | value       | condition                                          |
+ * | ----------- | -------------------------------------------------- |
+ * | `RULE`      | effective keyword hits, no AI finding              |
+ * | `AI_REPORT` | no effective keyword hit, AI finding               |
+ * | `BOTH`      | both - regardless of which one is HIGHER           |
+ * | `NONE`      | neither, i.e. the record is UNCLASSIFIED           |
+ *
+ * Issue #94 removed the source BADGE from the clinical views: a doctor reads
+ * WHY the patient needs attention, not which engine found him. The field stays
+ * on the wire for operations and audit, and `attentionReason.ts` still reads it
+ * to decide whether to say "报告提示…" - it is just never rendered on its own.
+ *
+ * `BOTH` deliberately does NOT mean "the AI raised the level": a keyword RED
+ * with an AI YELLOW is still `BOTH`, because both paths found something a
+ * doctor should read. `NONE` is a member rather than null because
+ * UNCLASSIFIED records are list-visible by design, so "neither path found
+ * anything" is a real state - a nullable field would re-create the ambiguous
+ * NULL that schema.prisma's attentionLevel comment warns about.
+ */
+export type MonitorAttentionSourceDto = 'RULE' | 'AI_REPORT' | 'BOTH' | 'NONE';
+
+/**
+ * Issue #102: whether this record's report-level AI judgement produced a
+ * verdict, and if not, WHY not.
+ *
+ * Before this, the wire carried one boolean (`aiJudged`) and `false` covered two
+ * very different facts: "the AI read the report and had nothing to say" and "the
+ * AI was asked and could not answer". The drawer rendered nothing for both, so a
+ * failed judgement was indistinguishable from a clean one - a doctor reading
+ * "no AI finding" could not tell whether that meant anything.
+ *
+ * | value        | meaning                                                     |
+ * | ------------ | ----------------------------------------------------------- |
+ * | `JUDGED`     | an OK attempt exists for THIS report version (was `true`)    |
+ * | `FAILED`     | no such attempt, a failed attempt exists, and the record has |
+ * |              | left the queue (`aiResolvedAt` set) - no further attempt is  |
+ * |              | coming                                                       |
+ * | `NOT_JUDGED` | everything else: never asked, still being retried, or the    |
+ * |              | report text has since changed                                |
+ *
+ * The three are derived from existing columns, which is why this needed no
+ * migration. `JUDGED` says nothing about whether anything was found - read
+ * `aiSemantics` for that.
+ */
+export type MonitorAiStatusDto = 'JUDGED' | 'FAILED' | 'NOT_JUDGED';
+
+/** Mirrors Prisma's ReportAiField enum: which report column an excerpt sits in. */
+export type ReportAiFieldDto = 'EXAM_ITEM' | 'FINDINGS' | 'IMPRESSION';
+
+/**
+ * Issue #88 (PR-B): one verbatim excerpt backing an AI finding.
+ *
+ * The excerpt is reconstructed SERVER-SIDE on every read, from
+ * `monitor_report_ai_evidence`'s stored offsets against the CURRENT report
+ * text - the audit tables deliberately store only the hash and the offsets,
+ * never the excerpt itself. `text` is therefore never the stored hash, and no
+ * audit vocabulary (hash, model, latency) reaches this shape.
+ */
+export interface MonitorAiEvidenceDto {
+  field: ReportAiFieldDto;
+  text: string;
+}
+
+/**
+ * Issue #88 (PR-B): one attention semantic the AI verified against this report.
+ *
+ * `name` and `attentionLevel` are the CONFIGURED values snapshotted at judge
+ * time (the semantic is versioned, so a later re-wording cannot rewrite what
+ * this finding meant) - they are not a second model opinion. `confidence` is
+ * the model's self-reported certainty and is descriptive only: #88 never
+ * filters or ranks on it.
+ */
+export interface MonitorAiSemanticDto {
+  /** The exact attention_semantic version row the finding was made against. */
+  semanticId: string;
+  semanticVersion: number;
+  /** Configured name snapshot, in the hospital's own words. */
+  name: string;
+  attentionLevel: AttentionLevelDto;
+  confidence: SemanticConfidenceDto;
+  /**
+   * The model's one-sentence Chinese explanation. Nulled when the server masks
+   * HIGH-sensitivity fields - the model may quote the report body into it, so
+   * it is report-adjacent text, exactly like a hit's `contextSnippet`.
+   */
+  reason: string | null;
+  /**
+   * Verified excerpts of the CURRENT report text, each labelled with the field
+   * it came from. Empty when masked, and also empty (never absent, never a
+   * 500) when a stored offset no longer lands on the text it was computed
+   * against - dropping the excerpt rather than the finding keeps the drawer
+   * consistent with a `monitorLevel` that still counts it.
+   */
+  evidence: MonitorAiEvidenceDto[];
+}
+
+/**
+ * Issue #103: one place in the report where the keyword path and the report-level
+ * path BOTH found something, but asked for different levels of attention.
+ *
+ * Until now the drawer showed such a pair as two ordinary rows in one merged list
+ * - a red one and a yellow one, side by side - which reads as "this report has
+ * two things worth reading", when the truth is "two rules disagree about one
+ * thing and a human has to settle it". This type is that missing sentence.
+ *
+ * Scope, deliberately narrow:
+ *
+ * - It reports a DISAGREEMENT, never a winner. Neither side is called wrong.
+ * - Equal levels are not a conflict and are never reported.
+ * - The pair must land in the SAME report column. A keyword hit in the findings
+ *   and a finding in the impression are two different places even when the words
+ *   overlap, so they are not a conflict.
+ *
+ * Both sides are already on this response (`hits[].keyword` + `.level`,
+ * `aiSemantics[].name` + `.attentionLevel`), so nothing here is new patient data;
+ * `field` is the enum name of a column, not text. No offset and no excerpt is
+ * ever carried - the agreement test itself is computed server-side.
+ */
+export interface MonitorLevelConflictDto {
+  /** The matched keyword. Also visible as `hits[].keyword`. */
+  keyword: string;
+  /** The level the KEYWORD rule asked for. Not adjusted by anything. */
+  keywordLevel: MonitorLevelDto;
+  /** The configured name of the finding. Also visible as `aiSemantics[].name`. */
+  semanticName: string;
+  /** The level that finding asked for. */
+  semanticLevel: AttentionLevelDto;
+  /**
+   * The report column both sides landed in. Only `FINDINGS` (reportContent) and
+   * `IMPRESSION` (diagnosis) can ever appear: the matcher stores the concrete
+   * column a rule actually hit, and only those two have a text source on both
+   * sides (see apps/api/src/monitor/level-conflict.ts).
+   */
+  field: MatchFieldDto;
+}
+
+/**
+ * Issue #103: one entry of the admin's level-conflict list - a configuration
+ * disagreement, aggregated over the records that exhibit it.
+ *
+ * The doctor's drawer shows the same disagreement in prose on one record; this is
+ * that same sentence turned into a piece of work with a stable identity, so an
+ * admin can find it, fix the configuration, and record that they looked at it.
+ *
+ * `conflictKey` is the identity, and it is built from GROUP ids plus the report
+ * column plus the two levels - never from a rule or semantic VERSION row. Rules
+ * and semantics are immutable and versioned, so a key built from version rows
+ * would make every re-wording look like a brand new problem, and an admin who
+ * had already dealt with one would keep seeing it come back. Re-colouring either
+ * side DOES produce a new key, because that is a genuinely different
+ * disagreement.
+ *
+ * Nothing here is patient data: a keyword, a configured semantic name, two
+ * levels, a column name and two numbers. No report text, no offsets, no record
+ * ids.
+ */
+export interface MonitorLevelConflictTodoDto {
+  /** Stable across rule and semantic version bumps. See the type comment. */
+  conflictKey: string;
+  keyword: string;
+  keywordLevel: MonitorLevelDto;
+  semanticName: string;
+  semanticLevel: AttentionLevelDto;
+  /** The report column both sides landed in: FINDINGS or IMPRESSION. */
+  field: MatchFieldDto;
+  /**
+   * How many records inside the requested window show this conflict. It is the
+   * only sense of scale the list has, and it is what separates a problem worth
+   * fixing from a one-off: a rule and a semantic that disagree on one report are
+   * a curiosity, on forty they are a live misconfiguration.
+   */
+  recordCount: number;
+  /** ISO 8601 UTC instant of the most recent matching record in the window. */
+  lastSeenAt: string;
+  /** ISO 8601 UTC instant an admin marked this read; null = unread. */
+  readAt: string | null;
+}
+
+/**
+ * Response for the two write endpoints - the read state of one conflict, after
+ * the write.
+ *
+ * Returned rather than 204 so a client can update one row without refetching the
+ * list, and so the response is a statement of the state that now holds rather
+ * than an acknowledgement that something happened.
+ */
+export interface MonitorLevelConflictStateDto {
+  conflictKey: string;
+  /** ISO 8601 UTC instant; null = unread. */
+  readAt: string | null;
+}
+
+/** Response for `GET /api/monitor/level-conflicts`. Not paginated - see below. */
+export interface MonitorLevelConflictListDto {
+  items: MonitorLevelConflictTodoDto[];
+  /** The window actually applied, echoed so the client need not re-derive it. */
+  days: number;
+  /** Entries with `readAt === null`, so the toolbar/tab can count without filtering. */
+  unreadCount: number;
+}
+
+/**
+ * Query params for `GET /api/monitor/level-conflicts`.
+ *
+ * NOT PAGINATED, deliberately: the entry count is a function of the
+ * CONFIGURATION (rules x semantics x columns), not of record volume, so it is
+ * bounded by something an admin controls by hand. The two list endpoints that do
+ * paginate (`rules`, `attention-semantics`) are per-row tables that grow with
+ * use; this one cannot.
+ */
+export interface MonitorLevelConflictListQuery {
+  /** Trailing window in days. Defaults to LEVEL_CONFLICT_DEFAULT_DAYS, capped at LEVEL_CONFLICT_MAX_DAYS. */
+  days?: number;
+  /** Filter to only unread (false) or only read (true) entries. Omit for both. */
+  read?: boolean;
+}
+
+/** Default trailing window for the admin list, in days. */
+export const LEVEL_CONFLICT_DEFAULT_DAYS = 90;
+/** Hard cap on the window - bounds the aggregation scan. */
+export const LEVEL_CONFLICT_MAX_DAYS = 365;
+/** The windows the UI offers. Every value must be <= LEVEL_CONFLICT_MAX_DAYS. */
+export const LEVEL_CONFLICT_DAY_PRESETS = [7, 30, 90, 180, 365] as const;
+
+/**
+ * Issue #88 (PR-B): the workbench list row. An EXTENSION of MonitorExamDto, not
+ * a change to it, so `AlertLinkExamListDto` (which keeps `MonitorExamDto[]`)
+ * is structurally incapable of carrying the new field to the alert-link H5
+ * page. Same reasoning for MonitorExamWorkbenchDetailDto below, which is why
+ * `AlertLinkExamDetailDto = MonitorExamDetailDto` stays byte-identical.
+ */
+export interface MonitorExamWorkbenchDto extends MonitorExamDto {
+  attentionSource: MonitorAttentionSourceDto;
+}
+
+/**
+ * Issue #88 (PR-B): the workbench detail row. Extends MonitorExamDetailDto for
+ * the same reason as the list extension above.
+ */
+export interface MonitorExamWorkbenchDetailDto extends MonitorExamDetailDto {
+  attentionSource: MonitorAttentionSourceDto;
+  /**
+   * True when the AI has judged THIS report version - an OK attempt whose
+   * `reportVersion` matches the record's. Carries no timestamp, model or
+   * latency: it only lets the doctor tell "the AI looked and found nothing"
+   * apart from "the AI never looked". Says nothing about whether it found
+   * anything; read `aiSemantics` for that.
+   */
+  aiJudged: boolean;
+  /**
+   * Issue #102: the same fact as `aiJudged`, plus the failure case it could not
+   * express. Kept alongside `aiJudged` rather than replacing it because that
+   * field is an already-shipped contract with its own tests; the two are
+   * equal by construction when the status is `JUDGED`, and `aiJudged` is
+   * exactly `aiStatus === 'JUDGED'`.
+   *
+   * `FAILED` and an empty `aiSemantics` together are what tell the doctor "the
+   * level you are looking at is keyword-only, and the AI layer that might have
+   * raised it did not run". That combination must be rendered, not swallowed.
+   */
+  aiStatus: MonitorAiStatusDto;
+  /**
+   * Ordered by attention level priority (RED -> YELLOW -> GREEN), then by the
+   * stored ordinal, so the doctor reads the most attention-worthy finding
+   * first - the same ordering the level itself was computed under. Empty when
+   * no current finding is showable; see aiJudged.
+   */
+  aiSemantics: MonitorAiSemanticDto[];
+  /**
+   * Issue #103: places where the two paths agree on WHERE but not on HOW MUCH.
+   * Empty is the normal case and renders nothing at all - this is a notice about
+   * a configuration problem, and one that appears on every record stops being
+   * read.
+   *
+   * Every entry names a finding that is also in `aiSemantics` above (they are
+   * derived from the same attempt, under the same gate), so the notice can never
+   * point at something the drawer does not show.
+   */
+  levelConflicts: MonitorLevelConflictDto[];
+}
+
 /** Paginated response envelope for `GET /api/monitor/exams`. */
 export interface PaginatedMonitorExams {
-  items: MonitorExamDto[];
+  items: MonitorExamWorkbenchDto[];
   total: number;
   page: number;
   pageSize: number;

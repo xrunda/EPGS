@@ -2,10 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { hashAlertLinkToken } from '@epgs/notification-push';
 import { AppModule } from '../src/app.module';
 import { GlobalExceptionFilter } from '../src/common/filters/global-exception.filter';
+import { MonitorService } from '../src/monitor/monitor.service';
 
 /**
  * e2e for the WeCom alert-link surface (issue #72): the opaque link token as
@@ -31,9 +32,24 @@ describe('Alert links (e2e): token credential, snapshot boundary, masking', () =
   const EXPIRED_TOKEN = 'e2eExpiredToken_0123456789abcdefghijklmnopqrs';
   const UNKNOWN_TOKEN = 'e2eUnknownToken_0123456789abcdefghijklmnopqrs';
 
-  const ids: { rule?: string; inSnapshot?: string; outOfSnapshot?: string; links: string[] } = {
+  const ids: {
+    rule?: string;
+    inSnapshot?: string;
+    outOfSnapshot?: string;
+    semantic?: string;
+    links: string[];
+  } = {
     links: [],
   };
+
+  /** Issue #88: the AI explanation attached to the in-snapshot record. */
+  const AI_REASON = '报告描述了浆膜层中断，提示穿孔可能。';
+  const AI_EVIDENCE = '浆膜层显示中断'; // inSnapshot reportContent.slice(10, 17)
+  const AI_SEMANTIC_NAME = '明确或高度疑似恶性病变';
+
+  function sha256Hex(value: string): string {
+    return createHash('sha256').update(value, 'utf8').digest('hex');
+  }
 
   async function seed(): Promise<void> {
     const ruleId = randomUUID();
@@ -79,6 +95,68 @@ describe('Alert links (e2e): token credential, snapshot boundary, masking', () =
         matchedField: 'REPORT_TEXT',
         contextSnippet: '…不除外疑似穿孔可能。',
         reportVersion: 1,
+      },
+    });
+
+    // Issue #88: a COMPLETED AI classification on the in-snapshot record, so
+    // the H5 payload is built from a workbench detail that genuinely carries
+    // the new fields. Without this the "H5 cannot grow them" assertion would
+    // pass vacuously.
+    const semantic = await prisma.attentionSemantic.create({
+      data: {
+        semanticGroupId: randomUUID(),
+        name: AI_SEMANTIC_NAME,
+        description: '报告描述了提示恶性或高度可疑恶性的表现。',
+        attentionLevel: 'RED',
+        createdBy: 'alert-links-e2e',
+        updatedBy: 'alert-links-e2e',
+      },
+    });
+    ids.semantic = semantic.id;
+    const attempt = await prisma.monitorReportAi.create({
+      data: {
+        monitorRecordId: inSnapshot.id,
+        reportVersion: 1,
+        task: 'CLASSIFY_REPORT',
+        taskVersion: 'alert-links-e2e-1',
+        outcome: 'OK',
+        attentionLevel: 'RED',
+        modelAttentionLevel: 'RED',
+        semanticCount: 1,
+        matchCount: 1,
+        model: 'alert-links-e2e-model',
+        inputHash: sha256Hex('input'),
+        reportHash: sha256Hex('report'),
+        configHash: sha256Hex('config'),
+        createdAt: new Date('2026-09-05T01:05:00Z'),
+      },
+    });
+    // The record's own AI state must agree, or the read path would (correctly)
+    // hide the attempt as stale and the assertion would prove nothing.
+    await prisma.monitorRecord.update({
+      where: { id: inSnapshot.id },
+      data: { aiAttentionLevel: 'RED', aiResolvedAt: new Date('2026-09-05T01:05:00Z') },
+    });
+    const match = await prisma.monitorReportAiMatch.create({
+      data: {
+        reportAiId: attempt.id,
+        semanticId: semantic.id,
+        semanticVersion: semantic.version,
+        semanticName: AI_SEMANTIC_NAME,
+        attentionLevel: 'RED',
+        confidence: 'HIGH',
+        reason: AI_REASON,
+        ordinal: 0,
+      },
+    });
+    await prisma.monitorReportAiEvidence.create({
+      data: {
+        matchId: match.id,
+        ordinal: 0,
+        field: 'FINDINGS',
+        evidenceHash: sha256Hex(AI_EVIDENCE),
+        evidenceStart: 10,
+        evidenceEnd: 17,
       },
     });
 
@@ -156,6 +234,9 @@ describe('Alert links (e2e): token credential, snapshot boundary, masking', () =
       const recordIds = [ids.inSnapshot, ids.outOfSnapshot].filter((id): id is string => !!id);
       await prisma.monitorMatch.deleteMany({ where: { monitorRecordId: { in: recordIds } } });
       await prisma.monitorRecord.deleteMany({ where: { id: { in: recordIds } } });
+      // After the records: monitor_report_ai_match references attention_semantic
+      // with onDelete: Restrict.
+      if (ids.semantic) await prisma.attentionSemantic.deleteMany({ where: { id: ids.semantic } });
       if (ids.rule) await prisma.monitorRule.deleteMany({ where: { id: ids.rule } });
     }
     if (app) await app.close();
@@ -234,6 +315,11 @@ describe('Alert links (e2e): token credential, snapshot boundary, masking', () =
       expect(res.body.items[0]).not.toHaveProperty('reportContent');
       expect(JSON.stringify(res.body)).not.toContain(ids.outOfSnapshot);
       expect(JSON.stringify(res.body)).not.toContain('测试患者');
+      // Issue #88: the record DOES have an AI level (seeded above), so the
+      // workbench list would badge it BOTH - the H5 list must still not name
+      // the field at all. A link travels further than a workbench session.
+      expect(res.body.items[0]).not.toHaveProperty('attentionSource');
+      expect(JSON.stringify(res.body)).not.toContain('attentionSource');
     },
   );
 
@@ -258,6 +344,39 @@ describe('Alert links (e2e): token credential, snapshot boundary, masking', () =
         contextSnippet: '…不除外疑似穿孔可能。',
       });
       expect(res.body.dataAccess).toBeUndefined();
+      // Issue #88: the workbench detail for this very record carries the AI
+      // explanation (proven below), and the H5 detail must not. This is a
+      // narrowing, not an empty field: the owner's rule is that the
+      // notification surface keeps its shape, and an alert link can be
+      // forwarded anywhere.
+      expect(res.body).not.toHaveProperty('attentionSource');
+      expect(res.body).not.toHaveProperty('aiJudged');
+      expect(res.body).not.toHaveProperty('aiSemantics');
+      const serialized = JSON.stringify(res.body);
+      expect(serialized).not.toContain('aiSemantics');
+      expect(serialized).not.toContain('attentionSource');
+      // Not even the model's sentence - free text that exists in no other
+      // field, so its absence here is a real statement.
+      expect(serialized).not.toContain(AI_REASON);
+      // Deliberately NOT asserted: that AI_EVIDENCE is absent. The excerpt is a
+      // substring of the report body, which this page legitimately shows in
+      // full, so its presence would prove nothing about the AI path.
+    },
+  );
+
+  itWithDb(
+    'the SAME record served on the workbench DOES carry the AI explanation (issue #88)',
+    async () => {
+      // The other half of the pair above: proves the H5 narrowing is a
+      // deliberate removal rather than a feature that was never wired up.
+      const service = app.get(MonitorService);
+      const detail = await service.getDetail(ids.inSnapshot!);
+
+      expect(detail.attentionSource).toBe('BOTH');
+      expect(detail.aiJudged).toBe(true);
+      expect(detail.aiSemantics).toHaveLength(1);
+      expect(detail.aiSemantics[0].reason).toBe(AI_REASON);
+      expect(detail.aiSemantics[0].evidence).toEqual([{ field: 'FINDINGS', text: AI_EVIDENCE }]);
     },
   );
 

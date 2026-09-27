@@ -6,10 +6,10 @@ import { SummaryQueryDto } from './dto/summary.query.dto';
 import { MonitorFiltersDto } from './dto/monitor-filters.query.dto';
 import { MonitorRecordNotFoundException } from './errors/monitor-record-not-found.exception';
 import { resolveDateRange } from './monitor-time';
-import { toExamDetailDto, toExamDto } from './monitor.mapper';
+import { toExamDetailDto, toExamDto, toWorkbenchExamDto } from './monitor.mapper';
 import {
-  MonitorExamDetailDto,
   MonitorExamDto,
+  MonitorExamWorkbenchDetailDto,
   MonitorSummaryDto,
   PaginatedMonitorExams,
 } from '@epgs/shared-types';
@@ -68,7 +68,19 @@ export class MonitorService {
     examItem: true,
     examTime: true,
     currentLevel: true,
+    // Issue #88: one scalar, so the row can say WHERE its level came from. It is
+    // deliberately the only AI column here - no relation, no reportVersion, no
+    // aiResolvedAt - because a list response must not carry AI text or audit
+    // fields, and this scalar is the same input the level itself was computed
+    // from, so the badge cannot disagree with the level.
+    aiAttentionLevel: true,
     matches: {
+      // Issue #87: the list's keyword chips are EFFECTIVE hits. A hit the AI
+      // judged not to express the rule's intent is not one of "the keywords
+      // that fired for this patient", so it must not appear in a row's
+      // matchedKeywords - otherwise the chip count would contradict the
+      // record's level, which is computed from unfiltered hits only.
+      where: { semanticFiltered: false },
       select: { keyword: true, matchedAt: true },
       // Ascending so distinctKeywords (first-appearance order) == earliest-match order.
       orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
@@ -83,15 +95,111 @@ export class MonitorService {
       UNCLASSIFIED: 'unclassified',
     };
 
-  /** Detail hit evidence + rule provenance (issue #8) - shared by both lookup paths. */
-  private static readonly DETAIL_INCLUDE = {
+  /**
+   * Detail hit evidence + rule provenance (issue #8) - shared by both lookup
+   * paths.
+   *
+   * PUBLIC since issue #103, and reused verbatim by LevelConflictsService. That
+   * is deliberate: the admin's conflict list must be computed from EXACTLY the
+   * rows the doctor's drawer reads, or an admin would be shown conflicts the
+   * drawer does not render (or miss ones it does). A second, slightly different
+   * select here would be a second definition of "what the drawer knows", and the
+   * two would drift the first time either side gained a field.
+   */
+  static readonly DETAIL_INCLUDE = {
     matches: {
       orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
       // Issue #8: each hit carries the exact rule version that produced
       // it (ruleId is a scalar on the match row; version lives on the
       // versioned, never-deleted rule). list() never needs this - only
       // the detail endpoint surfaces hit evidence.
-      include: { rule: { select: { version: true } } },
+      include: {
+        // ruleGroupId (issue #103) is the hit's stable anchor across rule
+        // versions: the conflict key is built from it, not from ruleId, so
+        // re-wording a rule does not resurrect a todo an admin has read. It
+        // never reaches the wire - MonitorExamHitDto carries ruleId/ruleVersion,
+        // which is what makes a hit auditable back to the exact version.
+        rule: { select: { version: true, ruleGroupId: true } },
+        // Issue #87: the NEWEST successful judgement, for the explainability
+        // line in the drawer. Filtered to outcome OK because a failed attempt
+        // wrote no verdict (its row exists to record the failure, and pairing
+        // it with the denormalized columns would show a verdict fetched from a
+        // different attempt). take: 1 keeps this a bounded join, and the
+        // (matchId, createdAt) index backs it. A hit that was never judged
+        // simply has no rows here - the mapper then reports semantic: null.
+        semanticJudgements: {
+          where: { outcome: 'OK' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            semanticStatus: true,
+            confidence: true,
+            reason: true,
+            createdAt: true,
+          },
+        },
+      },
+    },
+    // Issue #88 (PR-B): the report-level AI findings behind the drawer's
+    // explanation. The display-only `select` below IS the privacy boundary, the
+    // same way LIST_SELECT refuses to select reportContent: model, modelVersion,
+    // inputHash, reportHash, configHash, taskVersion, latencyMs, error,
+    // modelAttentionLevel and the counts are absent, so no audit field can reach
+    // the doctor-facing wire even by accident (docs/api/monitor-api.md).
+    //
+    // Only outcome OK: a failed attempt has no verdict and no matches, and
+    // pairing it with a level it did not produce would put words in the model's
+    // mouth (the same reasoning as semanticJudgements above).
+    //
+    // take: 5 rather than 1 so the mapper can prefer the attempt whose createdAt
+    // equals the record's aiResolvedAt - the one actually in force. A concurrent
+    // attempt that loses the `aiResolvedAt: null` guard still writes its audit
+    // row without touching the record, so the newest row is not always the one
+    // the level came from. Backed by (monitor_record_id, created_at).
+    // Issue #102: whether a FAILED attempt exists, answered in the same round
+    // trip. It cannot be read off `reportAiAttempts` below, which is filtered to
+    // OK - and it must not be, because widening that list would let ERROR rows
+    // crowd out the OK attempt inside its `take: 5` window and silently turn a
+    // judged record into an unjudged one. A count is also all the mapper needs:
+    // the failure's CODE stays in the audit table, off the doctor-facing wire.
+    _count: {
+      select: {
+        reportAiAttempts: { where: { outcome: 'ERROR' } },
+      },
+    },
+    reportAiAttempts: {
+      where: { outcome: 'OK' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 5,
+      select: {
+        reportVersion: true,
+        createdAt: true,
+        matches: {
+          orderBy: { ordinal: 'asc' },
+          select: {
+            semanticId: true,
+            semanticVersion: true,
+            semanticName: true,
+            attentionLevel: true,
+            confidence: true,
+            reason: true,
+            ordinal: true,
+            // Issue #103: the finding's stable anchor, for the same reason as
+            // the hit's ruleGroupId above - and, like it, off the wire.
+            semantic: { select: { semanticGroupId: true } },
+            evidence: {
+              orderBy: { ordinal: 'asc' },
+              select: {
+                ordinal: true,
+                field: true,
+                evidenceHash: true,
+                evidenceStart: true,
+                evidenceEnd: true,
+              },
+            },
+          },
+        },
+      },
     },
   } as const satisfies Prisma.MonitorRecordInclude;
 
@@ -112,10 +220,10 @@ export class MonitorService {
       this.prisma.monitorRecord.count({ where }),
     ]);
 
-    const items = rows.map((row) => toExamDto(row));
+    const items = rows.map((row) => toWorkbenchExamDto(row));
     const masked = opts?.maskPatient ?? false;
     return {
-      items: masked ? items.map(maskExamRow) : items,
+      items: masked ? items.map((item) => maskExamRow(item)) : items,
       total,
       page,
       pageSize,
@@ -138,13 +246,17 @@ export class MonitorService {
     if (ids.length === 0) return [];
     const rows = await this.prisma.monitorRecord.findMany({
       where: { id: { in: ids } },
-      orderBy: [{ examTime: { sort: 'desc', nulls: 'last' } }, { currentLevel: 'asc' }, { id: 'asc' }],
+      orderBy: [
+        { examTime: { sort: 'desc', nulls: 'last' } },
+        { currentLevel: 'asc' },
+        { id: 'asc' },
+      ],
       select: MonitorService.LIST_SELECT,
     });
     return rows.map((row) => toExamDto(row));
   }
 
-  async getDetail(id: string, opts?: MonitorQueryOptions): Promise<MonitorExamDetailDto> {
+  async getDetail(id: string, opts?: MonitorQueryOptions): Promise<MonitorExamWorkbenchDetailDto> {
     // Horizontal-escalation guard (issue #13): when the caller is scoped,
     // the lookup is narrowed to their departments, so an out-of-scope id
     // resolves to "not found" (404) rather than 403 - it never reveals that
@@ -220,7 +332,14 @@ export class MonitorService {
       ...(query.patientName
         ? { patientName: { contains: query.patientName, mode: 'insensitive' } }
         : {}),
-      ...(query.keyword ? { matches: { some: { keyword: query.keyword } } } : {}),
+      // Issue #87: filtering by a keyword means "show me the patients this
+      // keyword actually flagged". A hit the AI judged to be a non-expression
+      // of the rule's intent was not flagged, so it must not put its record in
+      // the result - the same effective-hit rule LIST_SELECT applies to the
+      // chips, so the two can never disagree about the same record.
+      ...(query.keyword
+        ? { matches: { some: { keyword: query.keyword, semanticFiltered: false } } }
+        : {}),
     };
   }
 

@@ -12,6 +12,7 @@ import type {
 } from '@epgs/shared-types';
 import { ATTENTION_LEVEL_LABELS } from './attentionSource';
 import { attentionReason } from './attentionReason';
+import { KEYWORD_SOURCE_ICON, REPORT_SOURCE_ICON } from './findingSource';
 import { getExamDetail, MonitorApiError } from './monitorApi';
 import {
   DIAGNOSIS_TEXT_FIELDS,
@@ -169,9 +170,11 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
     if (!detail) return [];
     const items: ReasonItem[] = [
       ...detail.hits.map((hit): ReasonItem => ({ kind: 'hit', level: hit.level, hit })),
-      ...detail.aiSemantics.map(
-        (finding): ReasonItem => ({ kind: 'finding', level: finding.attentionLevel, finding }),
-      ),
+      ...detail.aiSemantics.map((finding): ReasonItem => ({
+        kind: 'finding',
+        level: finding.attentionLevel,
+        finding,
+      })),
     ];
     return items.sort(
       (a, b) =>
@@ -412,6 +415,16 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                       >
                         <div className="drawer__hit-head">
                           {/*
+                            发现来源图标（issue #112）：这张卡是关键词命中来的。放在最左边，
+                            同一份报告两路各出一条时，两张卡一眼分得开 —— 在这之前只能靠
+                            右上角写的是列名还是「把握高」去猜。
+                          */}
+                          <img
+                            className="drawer__source-icon"
+                            src={KEYWORD_SOURCE_ICON.src}
+                            alt={KEYWORD_SOURCE_ICON.alt}
+                          />
+                          {/*
                             等级标签与下面每条依据、以及摘要区的主标签用同一份文案
                             （attentionSource.ts）：同一个列表里一处写「红色」、一处写
                             「红色关注」才是最费解的。
@@ -431,7 +444,9 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                             <span className="drawer__hit-flag">未计入关注</span>
                           )}
                         </div>
-                        <blockquote className="drawer__snippet">{item.hit.contextSnippet}</blockquote>
+                        <blockquote className="drawer__snippet">
+                          {item.hit.contextSnippet}
+                        </blockquote>
                         {item.hit.semantic && (
                           <p className="drawer__hit-semantic">
                             <span className="drawer__hit-semantic-label">结合上下文</span>
@@ -454,6 +469,12 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                     ) : (
                       <li className="drawer__ai-item" key={`finding-${item.finding.semanticId}`}>
                         <div className="drawer__ai-head">
+                          {/* 发现来源图标（issue #112）：这张卡是整份报告读出来的发现。 */}
+                          <img
+                            className="drawer__source-icon"
+                            src={REPORT_SOURCE_ICON.src}
+                            alt={REPORT_SOURCE_ICON.alt}
+                          />
                           <span
                             className={`level-tag level-tag--${item.finding.attentionLevel.toLowerCase()}`}
                           >

@@ -198,6 +198,23 @@
   font-weight: 600;
   white-space: nowrap;
 }
+/*
+  发现来源图标（issue #112）：每张依据卡第一行最左边，说清这张卡是哪一路来的。
+
+  24px —— 比列表（22px）大一号。列表那个尺寸是表格行高算出来的上限（见 Workbench.css），
+  抽屉没有这个约束。两个尺寸都从同一个 64px 资源缩下来，不会糊。
+
+  放在最左而不是接在右上角「报告内容 / 诊断」或「把握高」后面：卡片等宽，图标因此
+  自然对齐成一列，两类依据竖着扫就分得开。
+*/
+.drawer__source-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .drawer__hit-head {
   display: flex;
   align-items: center;

@@ -283,6 +283,38 @@
 .workbench__table tbody tr:hover {
   background: var(--surface-sunken);
 }
+/*
+  发现来源一列（issue #112）：图标说清这一行是哪一路发现的（关键词命中 / 报告级发现 /
+  两路都有 / 都没有）。含义见 findingSource.ts。
+
+  尺寸是实测定的，不是拍的：首页表格 1178px、行高 54px、等级色标 25px 高。图标做到
+  22px 行高一点不变，24px 涨 1px，28px 涨 3px —— **22px 是「不撑高表格」的上限**，
+  所以列表取 22px（抽屉不受行高约束，取 24px）。
+
+  单独一列、固定 78px（两枚 22px + 5px 间隙 + 两侧 14px 内边距），而不是塞进「关注等级」
+  格子里：那样图标要跟着色标宽度跑，「红色关注」和「未分级」的起点差十几个像素，竖着
+  扫会抖。加这一列实测表格仍是 1178px、不产生横向滚动（各列按内容让出一点）。
+*/
+.workbench__source {
+  width: 78px;
+  white-space: nowrap;
+}
+.workbench__source-icons {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.workbench__source-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+/* 两路都没有：留一个淡占位符，不留空（留空像没渲染出来）。 */
+.workbench__source-none {
+  color: var(--ink-100);
+}
+
 /* 关注理由一列（issue #94）：一句话，允许换行，最长不超过这个宽度。 */
 .workbench__reason {
   max-width: 240px;

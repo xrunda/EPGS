@@ -283,6 +283,79 @@
 .workbench__table tbody tr:hover {
   background: var(--surface-sunken);
 }
+/*
+  发现来源一列（issue #112）：图标说清这一行是哪一路发现的（关键词命中 / 报告级发现 /
+  两路都有 / 都没有）。含义见 findingSource.ts。
+
+  尺寸是实测定的，不是拍的：首页表格 1178px、行高 54px、等级色标 25px 高。图标做到
+  22px 行高一点不变，24px 涨 1px，28px 涨 3px —— **22px 是「不撑高表格」的上限**，
+  所以列表取 22px（抽屉不受行高约束，取 24px）。
+
+  单独一列、固定 78px（两枚 22px + 5px 间隙 + 两侧 14px 内边距），而不是塞进「关注等级」
+  格子里：那样图标要跟着色标宽度跑，「红色关注」和「未分级」的起点差十几个像素，竖着
+  扫会抖。加这一列实测表格仍是 1178px、不产生横向滚动（各列按内容让出一点）。
+*/
+.workbench__source {
+  width: 78px;
+  white-space: nowrap;
+}
+.workbench__source-icons {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.workbench__source-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+/*
+  悬停提示（issue #112）。
+
+  不用原生 `title`：那个气泡由浏览器画，字号、字体、圆角都不在 CSS 的势力范围内
+  —— 所有者要它「和列表里其他文字一样大」（患者姓名那种 13px），原生做不到，
+  所以自己画一个，字号 `inherit` 跟着所在行走。
+
+  位置在图标**右侧、垂直居中**，不是习惯上的正上方 —— `.workbench__table-wrap`
+  为了窄屏横向滚动带着 `overflow-x: auto`，按 CSS 规则另一轴的 `visible` 会被算成
+  `auto`，于是整个外框成了裁剪容器。正上方的气泡在第一行会直接顶出外框被切掉；
+  右侧居中则整条都落在本行 54px 的高度里，第一行和最后一行都不会被裁到。
+*/
+.workbench__source-tip {
+  position: relative;
+  display: block;
+}
+.workbench__source-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-900);
+  color: #fff;
+  /* 与所在行的正文同号（.workbench__table 的 13px）—— 继承而不是写死，
+     这样抽屉那边不用再配一个数字，两处都跟着各自容器的字号走。 */
+  font-size: inherit;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+  z-index: 30;
+}
+.workbench__source-tip:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+/* 两路都没有：留一个淡占位符，不留空（留空像没渲染出来）。 */
+.workbench__source-none {
+  color: var(--ink-100);
+}
+
 /* 关注理由一列（issue #94）：一句话，允许换行，最长不超过这个宽度。 */
 .workbench__reason {
   max-width: 240px;

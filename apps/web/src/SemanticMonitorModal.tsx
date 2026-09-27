@@ -527,8 +527,12 @@ export function SemanticMonitorModal({
                           {POOL_LABELS[semantic.attentionLevel]}
                         </span>
                       </td>
+                      {/*
+                        issue #108：说明整段展示，所以不再需要 title —— 全文就在
+                        眼前，悬停再弹一遍同样的字只是重复的噪音，还会盖住相邻行。
+                      */}
                       <td className="semantic-table__description">
-                        <span title={semantic.description}>{semantic.description}</span>
+                        <span>{semantic.description}</span>
                       </td>
                       <td>
                         <span className="semantic-table__version">v{semantic.version}</span>

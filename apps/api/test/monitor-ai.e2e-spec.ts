@@ -61,9 +61,7 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
    * assertions can isolate exactly these rows whatever else is in the table.
    *
    * `attempt` is the OK monitor_report_ai row to write, or null for "never
-   * judged". `matches` is the keyword-match fixture: an EMPTY array means the
-   * keyword path found nothing, and `filtered: true` means it found something
-   * that #87 then ruled out - which does not count as an effective finding.
+   * judged", and its `matches` are the AI findings.
    */
   interface RecordFixture {
     key: string;
@@ -81,7 +79,23 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
     aiLevel: 'RED' | 'YELLOW' | 'GREEN' | null;
     reportContent: string;
     diagnosis: string | null;
-    keywordMatch: { filtered: boolean } | null;
+    /**
+     * The keyword-match fixture. An EMPTY array means the keyword path found
+     * nothing, and `filtered: true` means it found something that #87 then ruled
+     * out - which does not count as an effective finding.
+     *
+     * `matchedField` defaults to REPORT_TEXT, the CONFIGURED field, which is what
+     * the fixtures that only care about the level use. The stored column is what
+     * actually matched, and issue #103's conflict rule reads the stored one - so
+     * the disagreement fixtures below pin it to FINDINGS explicitly, offset and
+     * all, exactly as the matcher writes it.
+     */
+    keywordMatch: {
+      filtered: boolean;
+      matchedField?: 'REPORT_TEXT' | 'FINDINGS' | 'IMPRESSION';
+      start?: number;
+      end?: number;
+    } | null;
     attempt: {
       /**
        * Defaults to OK. An ERROR attempt (issue #102) carries a failure code
@@ -196,6 +210,52 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
         ],
       },
     },
+    // Issue #103: the keyword path and the AI both found the SAME SPAN, at
+    // different levels (3..10 = 巨大不规则隆起). The record's level is the max,
+    // so nothing about the badge changes - the point is that the two are not
+    // two independent findings, and the drawer has to say so.
+    {
+      key: 'disagree',
+      patientName: '合成庚',
+      level: 'RED',
+      aiLevel: 'YELLOW',
+      reportContent: BOTH_REPORT,
+      diagnosis: null,
+      keywordMatch: { filtered: false, matchedField: 'FINDINGS', start: 3, end: 10 },
+      attempt: {
+        level: 'YELLOW',
+        matches: [
+          {
+            name: '性质待定、需活检的病变',
+            level: 'YELLOW',
+            reason: '报告提示性质待定，需要活检或短期复查。',
+            evidence: [{ field: 'FINDINGS', start: 3, end: 10 }],
+          },
+        ],
+      },
+    },
+    // The same span, the SAME level. Two paths agreeing is not a conflict, and
+    // a notice here would be permanent noise on the records that need it least.
+    {
+      key: 'aligned',
+      patientName: '合成辛',
+      level: 'RED',
+      aiLevel: 'RED',
+      reportContent: BOTH_REPORT,
+      diagnosis: null,
+      keywordMatch: { filtered: false, matchedField: 'FINDINGS', start: 3, end: 10 },
+      attempt: {
+        level: 'RED',
+        matches: [
+          {
+            name: '明确或高度疑似恶性病变',
+            level: 'RED',
+            reason: '报告描述了不规则隆起与质脆，提示恶性可能。',
+            evidence: [{ field: 'FINDINGS', start: 3, end: 10 }],
+          },
+        ],
+      },
+    },
     // Issue #102: the AI was asked and could not answer. The record resolved -
     // no further attempt is coming - so the doctor is looking at a keyword-only
     // level and must be told that is what it is.
@@ -303,10 +363,12 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
             ruleId: rule.id,
             keyword: KEYWORD,
             level: 'RED',
-            matchedField: 'REPORT_TEXT',
+            matchedField: fixture.keywordMatch.matchedField ?? 'REPORT_TEXT',
             contextSnippet: `…${KEYWORD}…`,
             matchedAt: new Date('2026-09-26T01:30:10Z'),
             reportVersion: 1,
+            matchStart: fixture.keywordMatch.start ?? null,
+            matchEnd: fixture.keywordMatch.end ?? null,
             semanticFiltered: fixture.keywordMatch.filtered,
           },
         });
@@ -595,6 +657,76 @@ describe('Monitor AI explanation (e2e, real Postgres) - issue #88', () => {
       expect(body.aiSemantics[0].evidence).toEqual([]);
       // The level still counts this finding, so the badge must still say so.
       expect(body.attentionSource).toBe('BOTH');
+    });
+  });
+
+  describe('the level disagreement notice (issue #103)', () => {
+    itWithDb('names both sides when they found the same place at different levels', async () => {
+      const body = await detail('disagree');
+
+      expect(body.levelConflicts).toEqual([
+        {
+          keyword: KEYWORD,
+          keywordLevel: 'RED',
+          semanticName: '性质待定、需活检的病变',
+          semanticLevel: 'YELLOW',
+          field: 'FINDINGS',
+        },
+      ]);
+      // The conflict is a statement ABOUT the findings, not a replacement for
+      // them: both sides are still listed, and the level is still the max.
+      expect(body.aiSemantics).toHaveLength(1);
+      expect(body.monitorLevel).toBe('RED');
+      expect(body.attentionSource).toBe('BOTH');
+    });
+
+    itWithDb('says nothing when the two sides agree', async () => {
+      const body = await detail('aligned');
+
+      expect(body.levelConflicts).toEqual([]);
+      // Same inputs that produce a notice above - the silence is the levels
+      // matching, not the pairing failing.
+      expect(body.aiSemantics).toHaveLength(1);
+      expect(body.attentionSource).toBe('BOTH');
+    });
+
+    itWithDb('says nothing when the keyword hit is in a field no finding can pair with', async () => {
+      // The `both` fixture's hit is stored against REPORT_TEXT, the field the
+      // RULE was configured with rather than the column that matched. Nothing
+      // can pair with it, and the rule refuses it rather than guessing which
+      // column it meant.
+      const body = await detail('both');
+
+      expect(body.levelConflicts).toEqual([]);
+      expect(body.hits[0].matchedField).toBe('REPORT_TEXT');
+    });
+
+    itWithDb('carries no excerpt and no offset - only what the drawer already shows', async () => {
+      const body = await detail('disagree');
+
+      // Both names are already on this response (hits[].keyword,
+      // aiSemantics[].name) and `field` is a column name, not text - so the
+      // notice adds no new report content for the masking rules to cover. The
+      // exact key set is the assertion: a new field here would be a new
+      // disclosure, and it should take a deliberate edit to this line.
+      expect(Object.keys(body.levelConflicts[0]).sort()).toEqual([
+        'field',
+        'keyword',
+        'keywordLevel',
+        'semanticLevel',
+        'semanticName',
+      ]);
+    });
+
+    itWithDb('is absent from the list envelope, like every other AI field', async () => {
+      const res = await agent
+        .get('/api/monitor/exams')
+        .query({ department: DEPARTMENT, pageSize: 50 })
+        .expect(200);
+
+      for (const item of res.body.items) {
+        expect(item).not.toHaveProperty('levelConflicts');
+      }
     });
   });
 

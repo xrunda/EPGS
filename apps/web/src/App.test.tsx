@@ -194,12 +194,33 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
   });
 
-  it('shows password and logout actions for the current user', async () => {
+  /*
+    issue #116：修改密码 / 退出登录 从顶栏平铺位置收进用户名后面的「⋯」。
+    这条盯两件事 —— 两个操作**不再**平铺，以及它们仍然在、点下去仍然到原来那个
+    目标（修改密码开的是 AuthGate 里那个「修改密码」弹层）。
+  */
+  it('keeps password and logout in the account menu after the username (issue #116)', async () => {
     render(<App />);
 
     expect(await screen.findByLabelText('当前用户')).toHaveTextContent('测试医生');
-    expect(screen.getByRole('button', { name: '修改密码' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '修改密码' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '退出登录' })).not.toBeInTheDocument();
+
+    const trigger = screen.getByRole('button', { name: '账号操作' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    // 菜单整体就排在用户名后面（触发按钮在 .action-menu 里面，比的是那一层）
+    expect(trigger.closest('.action-menu')!.previousElementSibling).toBe(
+      screen.getByLabelText('当前用户'),
+    );
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('menuitem', { name: '修改密码' }));
+
+    expect(await screen.findByRole('dialog', { name: '修改密码' })).toBeInTheDocument();
+    // 选中之后菜单自己关掉，不残留在弹层底下
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menuitem', { name: '退出登录' })).not.toBeInTheDocument();
   });
 
   it('opens the read-only detail drawer and preserves the workbench behind it', async () => {

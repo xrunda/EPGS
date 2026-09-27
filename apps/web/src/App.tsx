@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ActionMenu } from './ActionMenu';
 import { AuthGate } from './AuthGate';
 import type { AuthUser } from './authApi';
 import { LevelConflictsModal } from './LevelConflictsModal';
@@ -55,12 +56,19 @@ function AuthenticatedApp({
           <span className="app-user" aria-label="当前用户">
             {user.displayName}
           </span>
-          <button type="button" onClick={openChangePassword}>
-            修改密码
-          </button>
-          <button type="button" onClick={() => void logout()}>
-            退出登录
-          </button>
+          {/*
+            修改密码 / 退出登录收进用户名后面的「⋯」（issue #116）：两个低频操作
+            不再跟主功能平铺抢位置。菜单项文案、目标弹窗、行为一律不变，只是换了
+            入口位置。
+          */}
+          <ActionMenu
+            label="账号操作"
+            triggerClassName="app-header__menu-trigger"
+            items={[
+              { label: '修改密码', onSelect: openChangePassword },
+              { label: '退出登录', onSelect: () => void logout() },
+            ]}
+          />
         </div>
       </header>
       <Workbench

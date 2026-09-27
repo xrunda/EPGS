@@ -370,9 +370,11 @@
   border-radius: var(--radius-sm);
   background: var(--ink-900);
   color: #fff;
-  /* 与所在行的正文同号（.workbench__table 的 13px）—— 继承而不是写死，
-     这样抽屉那边不用再配一个数字，两处都跟着各自容器的字号走。 */
-  font-size: inherit;
+  /* 与抽屉那一份**逐字相同**的 13px（= .workbench__table 的正文字号），理由见
+     DetailDrawer.css：第一版两边都写 `inherit`，想让气泡跟着各自容器的字号走，
+     结果抽屉继承到 16px（`body` 没设字号），同一个气泡两处不一样大。现在两边都是
+     字面量，改一个必须改另一个 —— findingSource.test.ts 里有一条测试盯着这件事。 */
+  font-size: 13px;
   line-height: 1.2;
   white-space: nowrap;
   opacity: 0;

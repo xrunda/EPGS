@@ -29,7 +29,7 @@
 | 入口       | 到达方式                                      | 拥有什么能力                                                                          |
 | ---------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
 | 网络入口   | 浏览器访问 `http://<入口>:5173`               | 只能走 HTTP 接口，受 JWT + 角色校验约束                                                |
-| 主机入口   | 堡垒机 → 应用主机 `/data/epgs-git` 的 shell   | 跑 CLI、读 `.env`、直接 `psql`、改代码、重启服务、删日志                                |
+| 主机入口   | 堡垒机 → 应用主机上的仓库目录（当前 `/root/EPGS`）的 shell | 跑 CLI、读 `.env`、直接 `psql`、改代码、重启服务、删日志                                |
 | 数据库入口 | 拿到 `DATABASE_URL`（或网络可达 5432 + 口令） | **绕过全部应用层校验**：读写任意表、改权限、删审计日志                                  |
 
 **结论一**：应用层那套角色体系（`VIEWER` / `RULE_ADMIN` / `SYSTEM_ADMIN` / `AUDITOR` /
@@ -156,11 +156,12 @@ P2 = 视等保要求排期。
 **改**（先做这一步，不依赖任何决策）：
 
 ```bash
-chown <部署账号>:<部署账号> /data/epgs-git/apps/api/.env /data/epgs-git/apps/worker/.env
-chmod 600 /data/epgs-git/apps/api/.env /data/epgs-git/apps/worker/.env
+REPO=/root/EPGS   # 当前堡垒机上的仓库目录，换机器时改这一行
+chown <部署账号>:<部署账号> "$REPO"/apps/api/.env "$REPO"/apps/worker/.env
+chmod 600 "$REPO"/apps/api/.env "$REPO"/apps/worker/.env
 ```
 
-同时确认 `/data/epgs-git` 目录本身不对无关账号开放。
+同时确认 `$REPO` 目录本身不对无关账号开放。
 
 **影响面**：无。唯一风险是**别把属主改错**——api/worker 由 `start.sh` 以当前登录用户
 启动，改了属主而该用户读不到 `.env`，服务起不来。改完 `bash start.sh nopull` 验证一次。
@@ -318,11 +319,13 @@ location /alert { access_log off; }
 
 1. **`.env` 的实际权限与属主**
    ```bash
-   ls -l /data/epgs-git/apps/api/.env /data/epgs-git/apps/worker/.env
+   REPO=/root/EPGS
+   ls -l "$REPO"/apps/api/.env "$REPO"/apps/worker/.env
    ```
 2. **`.env` 里 `COOKIE_SECURE` 的实际取值**（决定 S2 的严重程度）
    ```bash
-   grep -c '^COOKIE_SECURE=false$' /data/epgs-git/apps/api/.env
+   REPO=/root/EPGS
+   grep -c '^COOKIE_SECURE=false$' "$REPO"/apps/api/.env
    ```
    （只输出计数，**不要把 `.env` 内容打印到终端或聊天里**）
 3. **ssh 配置**：root 能否直登、是否允许口令登录、是否强制密钥

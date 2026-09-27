@@ -247,6 +247,12 @@ describe('Workbench', () => {
     ];
     const sourcesOf = (name: RegExp): string[] =>
       iconsOf(name).map((img) => img.getAttribute('alt') ?? '');
+    // The hover text lives on the wrapper (it is a ::after, not a title attribute:
+    // browser tooltips can't be resized and the owner wanted it twice as big).
+    const tipsOf = (name: RegExp): string[] =>
+      [...rowOf(name).querySelectorAll('.workbench__source-tip')].map(
+        (span) => span.getAttribute('data-tip') ?? '',
+      );
 
     expect(sourcesOf(/测试患者甲/)).toEqual(['命中']);
     expect(sourcesOf(/测试患者乙/)).toEqual(['报告提示']);
@@ -258,12 +264,11 @@ describe('Workbench', () => {
 
     // Hovering tells the doctor what the icon means - a bare glyph in a dense
     // table is just "some icon" the first time you see it.
-    expect(iconsOf(/测试患者甲/).map((img) => img.getAttribute('title'))).toEqual(['监测规则命中']);
-    expect(iconsOf(/测试患者乙/).map((img) => img.getAttribute('title'))).toEqual(['报告全文提示']);
-    expect(iconsOf(/测试患者丙/).map((img) => img.getAttribute('title'))).toEqual([
-      '监测规则命中',
-      '报告全文提示',
-    ]);
+    expect(tipsOf(/测试患者甲/)).toEqual(['监测规则命中']);
+    expect(tipsOf(/测试患者乙/)).toEqual(['报告全文提示']);
+    expect(tipsOf(/测试患者丙/)).toEqual(['监测规则命中', '报告全文提示']);
+    // One tip per icon: a wrapper without data-tip renders an empty bubble.
+    expect(tipsOf(/测试患者丙/)).toHaveLength(iconsOf(/测试患者丙/).length);
 
     // The column is labelled and sits between the level and the patient name.
     const headers = [...container.querySelectorAll('.workbench__table thead th')].map(

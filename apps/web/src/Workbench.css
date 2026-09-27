@@ -310,6 +310,45 @@
   height: 22px;
   border-radius: 50%;
 }
+/*
+  悬停提示（issue #112）。
+
+  不用原生 `title`：那个气泡由浏览器画，字号、字体、圆角都不在 CSS 的势力范围内
+  （Chrome 固定约 13px），所有者要求「加大一倍」改不动，所以自己画一个。
+
+  位置在图标**右侧、垂直居中**，不是习惯上的正上方 —— `.workbench__table-wrap`
+  为了窄屏横向滚动带着 `overflow-x: auto`，按 CSS 规则另一轴的 `visible` 会被算成
+  `auto`，于是整个外框成了裁剪容器。正上方的气泡在第一行会直接顶出外框被切掉；
+  右侧居中则整条都落在本行 54px 的高度里，第一行和最后一行都不会被裁到。
+*/
+.workbench__source-tip {
+  position: relative;
+  display: block;
+}
+.workbench__source-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-900);
+  color: #fff;
+  /* 26px = 浏览器原生提示（约 13px）的两倍，所有者要求。改这一个数字即可。 */
+  font-size: 26px;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+  z-index: 30;
+}
+.workbench__source-tip:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
 /* 两路都没有：留一个淡占位符，不留空（留空像没渲染出来）。 */
 .workbench__source-none {
   color: var(--ink-100);

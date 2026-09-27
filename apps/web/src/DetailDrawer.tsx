@@ -419,12 +419,13 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                             同一份报告两路各出一条时，两张卡一眼分得开 —— 在这之前只能靠
                             右上角写的是列名还是「把握高」去猜。
                           */}
-                          <img
-                            className="drawer__source-icon"
-                            src={KEYWORD_SOURCE_ICON.src}
-                            alt={KEYWORD_SOURCE_ICON.alt}
-                            title={KEYWORD_SOURCE_ICON.tip}
-                          />
+                          <span className="drawer__source-tip" data-tip={KEYWORD_SOURCE_ICON.tip}>
+                            <img
+                              className="drawer__source-icon"
+                              src={KEYWORD_SOURCE_ICON.src}
+                              alt={KEYWORD_SOURCE_ICON.alt}
+                            />
+                          </span>
                           {/*
                             等级标签与下面每条依据、以及摘要区的主标签用同一份文案
                             （attentionSource.ts）：同一个列表里一处写「红色」、一处写
@@ -471,12 +472,13 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                       <li className="drawer__ai-item" key={`finding-${item.finding.semanticId}`}>
                         <div className="drawer__ai-head">
                           {/* 发现来源图标（issue #112）：这张卡是整份报告读出来的发现。 */}
-                          <img
-                            className="drawer__source-icon"
-                            src={REPORT_SOURCE_ICON.src}
-                            alt={REPORT_SOURCE_ICON.alt}
-                            title={REPORT_SOURCE_ICON.tip}
-                          />
+                          <span className="drawer__source-tip" data-tip={REPORT_SOURCE_ICON.tip}>
+                            <img
+                              className="drawer__source-icon"
+                              src={REPORT_SOURCE_ICON.src}
+                              alt={REPORT_SOURCE_ICON.alt}
+                            />
+                          </span>
                           <span
                             className={`level-tag level-tag--${item.finding.attentionLevel.toLowerCase()}`}
                           >

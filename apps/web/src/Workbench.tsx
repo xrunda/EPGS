@@ -607,13 +607,13 @@ export function Workbench({
                     ) : (
                       <span className="workbench__source-icons">
                         {findingSourceIcons(exam.attentionSource).map((icon) => (
-                          <img
-                            className="workbench__source-icon"
+                          <span
+                            className="workbench__source-tip"
                             key={icon.src}
-                            src={icon.src}
-                            alt={icon.alt}
-                            title={icon.tip}
-                          />
+                            data-tip={icon.tip}
+                          >
+                            <img className="workbench__source-icon" src={icon.src} alt={icon.alt} />
+                          </span>
                         ))}
                       </span>
                     )}

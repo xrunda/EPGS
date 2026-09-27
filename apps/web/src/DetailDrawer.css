@@ -207,12 +207,44 @@
   放在最左而不是接在右上角「报告内容 / 诊断」或「把握高」后面：卡片等宽，图标因此
   自然对齐成一列，两类依据竖着扫就分得开。
 */
+.drawer__source-tip {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+}
 .drawer__source-icon {
   display: block;
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  flex-shrink: 0;
+}
+/*
+  悬停提示：与列表同一套画法、同一个 26px（见 Workbench.css 的说明 —— 原生 title
+  的字号改不动，所以自己画）。这里同样放在图标右侧、垂直居中：`.drawer__body` 是
+  `overflow: auto` 的滚动容器，放在正上方的气泡在卡片靠顶时会被切掉。
+*/
+.drawer__source-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-900);
+  color: #fff;
+  font-size: 26px;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+  z-index: 30;
+}
+.drawer__source-tip:hover::after {
+  opacity: 1;
+  visibility: visible;
 }
 
 .drawer__hit-head {

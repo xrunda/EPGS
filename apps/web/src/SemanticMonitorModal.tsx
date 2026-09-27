@@ -380,8 +380,7 @@ export function SemanticMonitorModal({
           <div id="semantic-explainer" className="semantic-modal__explainer">
             <p className="semantic-modal__lead">理解医生这句话真正表达了什么意思。</p>
             <p className="semantic-modal__sublead">
-              用医生自己的话写下需要关注的情况。系统会读完整份报告，判断有没有表达这层意思 ——
-              即使报告里一个字都没写到。
+              用医生自己的话写下需要关注的情况。系统会读完整份报告，判断有没有表达这层意思。
             </p>
             <p className="semantic-modal__crosssell">关键词监控看「字」 · AI 语义监控看「意思」</p>
 

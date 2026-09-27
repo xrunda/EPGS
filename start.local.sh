@@ -3,7 +3,7 @@
 #
 # 与 start.sh（堡垒机生产部署专用，不写死具体主机）的区别:
 #   - 不做 git pull（本地由你自己管理分支/提交）
-#   - 不改写 apps/{api,web}/.env（不会把 WEB_ORIGIN/VITE_API_BASE_URL 强改成堡垒机 IP）
+#   - 不改写 apps/api/.env（不会把 WEB_ORIGIN 强改成堡垒机的对外地址）
 #   - 不强制 NODE_ENV=production（保留 .env 里已有的值，通常是 development）
 #   - 用 `pnpm dev`（concurrently）启动，而不是三个独立 nohup 进程
 #

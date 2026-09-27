@@ -30,9 +30,12 @@
 
 判定顺序是「**已存在 `epgs-postgres` 容器 → docker**，否则探测 `DATABASE_URL` 指向的地址有没有响应 → native，都不行才 `docker compose up` 引导首次安装」。容器优先是刻意的：绝不能因为容器一时不健康就静默切到宿主机上的另一个库——那等于悄无声息换了一个数据库。三种形态都不成立时脚本**报错退出**，不会带着一个连不上的库往下走。
 
-> **新堡垒机是首次安装，本文档不是首次安装 runbook。** 那台机器上有代码，但没有 `epgs` 库、
-> 没有任何 `.env`，`start.sh` 从未在那里跑过；建库建角色、三个 `.env` 填什么、网闸怎么映射，
-> 目前没有文档，待补（要先定下医生侧入口地址、以及旧机器的账号与规则配置要不要迁过来）。
+> **新堡垒机已完成首次安装并投入运行（2026-09-27）**：建库建角色、三个 `.env`、迁移与种子、
+> 管理员账号、首次同步、以及 AI 语义监控的接入都已落地。**首次安装的完整 runbook 见
+> [first-install.md](./first-install.md)**（本文档是架构与故障记录，不是安装指引）。
+>
+> 该机与旧机的差异**只在 PostgreSQL 形态**（§1.1 上表），其余步骤相同；两台上都可用同一条
+> `bash start.sh` 重启，不需要带 `PG_MODE`。
 
 ## 2. 故障记录
 
@@ -81,10 +84,13 @@
 - `PG_MODE=docker|native|auto`（默认 auto）强制 PostgreSQL 形态；宿主机形态下脚本全程不调用 docker，机器上没装 docker 也能跑（issue #121）
 - env fail-fast 预检：`NOTIFICATION_SECRET_KEY` 强制必填（`openssl rand -hex 24` 生成），缺了立刻报错，避免 60 秒等待后以「未就绪」收场
 - env 预检（#72/#76）：`ALERT_LINK_BASE_URL` 可选——两端都不配 = 卡片关闭（打印提示）；只配一端或两端不同值 → **报错退出**（否则 worker 签出的链接医生打不开且不报错）；指向 `localhost`/`127.0.0.1` → 报错退出；`ALERT_LINK_TTL_HOURS` 两端不一致仅警告
-- `.env` 不进 git，缺失即报错
+- env 状态打印（#127）：启动时把 **AI 语义层的两项开关与模型连接配置**打印出来（`SEMANTIC_JUDGE_ENABLED`、`SEMANTIC_REPORT_ENABLED`，以及 `SEMANTIC_MODEL_BASE_URL` / `_NAME` / `_API_KEY` 三项是否齐全，**只打印是否齐全，绝不打印值**）。**只提示不拦截**：语义层是可选能力，缺配置时分类/判读模块自我禁用，同步与推送照常。加这一段是因为「开关是 `true`、模型地址却是空的」在现场是一次纯静默故障——worker 照常启动，只有分类永远不动，直到手工跑 `classify:once` 才报错。
+- `.env` 不进 git：`apps/api/.env` 与 `apps/worker/.env` **缺失即报错退出**；`apps/web/.env` **不再要求**（#127——生产构建不读它，单端口反代后前端全走相对路径，仓库内无任何代码读 `VITE_API_BASE_URL`）
+- `git pull` 带 `--ff-only`（#127）：堡垒机是只读部署目标，不允许在那里产生合并提交；有本地提交或分叉时快速失败，而不是悄悄合并
 - 构建顺序：`pnpm run build:libs`（shared-types/matching-engine）→ `prisma migrate deploy` → `pnpm --filter web run build`
 - `LISTEN_PORT` 默认沿用 5173；换端口用 `LISTEN_PORT=xxxx bash start.sh nopull`
 - Nginx：`nginx -t -c` 通过再 reload
+- **服务用 `start:dev`（`nest start --watch`）拉起——这是 §2.6 孤儿端口的根因，尚未改。** `--watch` 只为改代码即时生效，生产不需要；它派生出的 `dist/main` 子进程会在父进程被杀后存活并占住端口，于是 `stop_all` 必须按端口清理而不能只信 pid 文件。api 与 worker 都已具备 `start:prod`（`node dist/main.js`），改过去能根治，但要多一步 `nest build`、启动变慢，属**改部署方式**，需单独评估（#127 未包含）。
 
 ## 4. 企业微信集成要点
 
@@ -95,6 +101,7 @@
 
 ## 5. 相关文档
 
+- **首次安装 runbook（机器是空的时看这份）**：`docs/first-install.md`
 - 上线清单与回滚 runbook：`docs/go-live.md`
 - 账号与权限：`docs/auth.md`（角色/科室范围/脱敏）
 - 推送设计：`docs/notification-design.md`、`docs/notification-api.md`、`docs/notification-rules-api.md`

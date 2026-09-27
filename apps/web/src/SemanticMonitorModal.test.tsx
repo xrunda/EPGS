@@ -184,14 +184,44 @@ describe('SemanticMonitorModal', () => {
     await screen.findByText('明确或高度疑似恶性病变');
 
     expect(screen.getByRole('heading', { name: 'AI 语义监控' })).toBeInTheDocument();
-    expect(screen.getByText('理解医生这句话真正表达了什么意思。')).toBeInTheDocument();
-    expect(screen.getByText('关键词监控看「字」 · AI 语义监控看「意思」')).toBeInTheDocument();
+
+    // 「不作为正式诊断」常驻：不需要展开任何东西就在页面上。issue #123 把顶部说明
+    // 区收了起来，这条提示刻意不在收起之列（AGENTS.md 第 1 节、docs/auth.md）。
     expect(screen.getByText(/不作为正式诊断/)).toBeInTheDocument();
     expect(screen.getByText(/不是诊断结论，也不代表病情严重程度/)).toBeInTheDocument();
+
+    // 说明区默认收起，展开后原来那两句一字不少地回来。
+    expect(screen.queryByText('理解医生这句话真正表达了什么意思。')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /这些关注等级是怎么定的/ }));
+    expect(screen.getByText('理解医生这句话真正表达了什么意思。')).toBeInTheDocument();
+    expect(screen.getByText('关键词监控看「字」 · AI 语义监控看「意思」')).toBeInTheDocument();
 
     for (const leak of ['Prompt', '提示词', '大模型', 'LLM', 'Classifier', '分类器', 'JSON', '模型']) {
       expect(screen.queryByText(new RegExp(leak, 'i'))).not.toBeInTheDocument();
     }
+  });
+
+  // Issue #123：说明区默认收起，弹层一打开就是筛选和列表；收起状态必须留下一个
+  // 显眼、可键盘操作的入口，且「不作为正式诊断」不能被一起收走。
+  it('collapses the explainer by default and toggles it from a labelled entry', async () => {
+    render(<SemanticMonitorModal open onClose={vi.fn()} />);
+    await screen.findByText('明确或高度疑似恶性病变');
+
+    const toggle = screen.getByRole('button', { name: /这些关注等级是怎么定的/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('理解医生这句话真正表达了什么意思。')).not.toBeInTheDocument();
+    // 入口自带一句「点开能看什么」，而不是一个光秃秃的箭头。
+    expect(screen.getByText(/点开看：这套监控在看什么/)).toBeInTheDocument();
+    // 免责提示跟展开状态无关，收起时也在。
+    expect(screen.getByText(/不作为正式诊断/)).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('理解医生这句话真正表达了什么意思。')).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('理解医生这句话真正表达了什么意思。')).not.toBeInTheDocument();
   });
 
   // Issue #88 定稿文案的机械守门：这一页任何一处等级文字都不能只写颜色。
@@ -226,6 +256,9 @@ describe('SemanticMonitorModal', () => {
   it('summarises the three-colour pool over ENABLED semantics only', async () => {
     render(<SemanticMonitorModal open onClose={vi.fn()} />);
     await screen.findByText('明确或高度疑似恶性病变');
+
+    // 概览在默认收起的说明区里（issue #123），先展开它。
+    fireEvent.click(screen.getByRole('button', { name: /这些关注等级是怎么定的/ }));
 
     const pool = await screen.findByLabelText('三色关注池');
     // 2 + 1 + 0 — the counts come from the server, so a page of 20 cannot
@@ -445,8 +478,12 @@ describe('SemanticMonitorModal', () => {
 
     render(<SemanticMonitorModal open onClose={vi.fn()} />);
 
-    // The overview is an extra; losing it must not replace a working page.
     expect(await screen.findByText('明确或高度疑似恶性病变')).toBeInTheDocument();
+    // 概览在收起区里，先展开再断言：否则下面两条只是因为「说明区默认收起」而成立，
+    // 测不到「取不到计数时概览不显示」这件事（issue #123）。
+    fireEvent.click(screen.getByRole('button', { name: /这些关注等级是怎么定的/ }));
+
+    // The overview is an extra; losing it must not replace a working page.
     expect(screen.queryByText('需要尽快人工确认')).not.toBeInTheDocument();
     expect(screen.queryByText('当前生效')).not.toBeInTheDocument();
   });

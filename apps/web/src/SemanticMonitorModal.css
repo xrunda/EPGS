@@ -84,6 +84,66 @@
   font-weight: 600;
 }
 
+/* 说明区默认收起后的入口（issue #123）。几段说明连起来占掉弹层顶部一大片，把
+   筛选和列表挤到要滚动才看得到；收起后留这一条入口，点开是原来一字不少的说明。
+   用整行按钮而不是小链接：它要显眼到一眼看得见，且天然可键盘操作与读屏。 */
+.semantic-modal__explainer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 56px);
+  margin: 14px 28px 0;
+  padding: 11px 14px;
+  border: 1px solid var(--teal-600);
+  border-radius: var(--radius-sm);
+  background: #eaf4f5;
+  color: #315b62;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.semantic-modal__explainer-toggle:hover {
+  background: #dcecee;
+}
+.semantic-modal__explainer-toggle:focus-visible {
+  outline: 2px solid var(--teal-700);
+  outline-offset: 2px;
+}
+.semantic-modal__explainer-mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--teal-600);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.semantic-modal__explainer-label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.semantic-modal__explainer-label small {
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 400;
+}
+.semantic-modal__explainer-chevron {
+  flex-shrink: 0;
+  color: var(--teal-700);
+  font-size: 14px;
+  transition: transform 0.15s ease;
+}
+.semantic-modal__explainer-chevron--open {
+  transform: rotate(180deg);
+}
+
 /* 「仅用于监测，不作为正式诊断」——与 .rules-modal__notice 同款，但按 ADR 要求
    常驻在页面顶部，不折叠、不可关闭。 */
 .semantic-modal__notice {

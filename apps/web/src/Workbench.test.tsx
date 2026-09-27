@@ -244,6 +244,79 @@ describe('Workbench', () => {
   });
 
   /**
+   * Issue #116: the toolbar keeps the two entries that are the product's value
+   * proposition visible, and folds the three configuration/administration ones
+   * into a「⋯」.
+   *
+   * "Exactly two" is asserted as a count of the toolbar's own buttons rather
+   * than by listing three absences: with the menu closed those three are not in
+   * the DOM at all, so an absence check would pass even if someone had left a
+   * fourth visible button next to them. The count is what pins the layout.
+   */
+  it('keeps two visible toolbar entries and folds the rest into「⋯」(issue #116)', async () => {
+    const onOpenNotifications = vi.fn();
+    const onOpenLevelConflicts = vi.fn();
+    const onOpenUsers = vi.fn();
+    const { container } = render(
+      <Workbench
+        onOpenRules={vi.fn()}
+        onOpenAiSemantics={vi.fn()}
+        onOpenNotifications={onOpenNotifications}
+        onOpenLevelConflicts={onOpenLevelConflicts}
+        onOpenUsers={onOpenUsers}
+      />,
+    );
+    await screen.findByText('测试患者甲');
+
+    const toolbar = container.querySelector('.workbench__toolbar') as HTMLElement;
+    expect(toolbar.querySelectorAll('button')).toHaveLength(3); // 关键词监控 + AI 语义监控 + ⋯
+
+    const trigger = within(toolbar).getByRole('button', { name: '更多配置' });
+    expect(within(toolbar).getByRole('button', { name: '关键词监控' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'AI 语义监控' })).toBeInTheDocument();
+    // 收起时一项都不在 DOM 里 —— 不是 CSS 藏起来
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      '消息推送',
+      '等级分歧',
+      '用户管理',
+    ]);
+
+    // 逐项点开的是原来那个弹窗 —— 三个回调各自被调到一次，没有串。
+    // 每选中一项菜单就自己关了，所以下面每次都要重新点开（这本身也顺带钉住了「选中即关闭」）。
+    fireEvent.click(screen.getByRole('menuitem', { name: '消息推送' }));
+    expect(onOpenNotifications).toHaveBeenCalledTimes(1);
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitem', { name: '等级分歧' }));
+    expect(onOpenLevelConflicts).toHaveBeenCalledTimes(1);
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitem', { name: '用户管理' }));
+    expect(onOpenUsers).toHaveBeenCalledTimes(1);
+    expect(onOpenNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Issue #116: with nothing to put in it, the「⋯」must not be there. An arrow
+   * that opens onto an empty panel is worse than no arrow.
+   *
+   * The three props are exactly what App.tsx withholds from a doctor who has
+   * neither RULE_ADMIN nor USER_ADMIN - and 消息推送 too in this render, since
+   * Workbench is usable without it.
+   */
+  it('renders no「⋯」at all when there is nothing to fold into it (issue #116)', async () => {
+    const { container } = render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+
+    const toolbar = container.querySelector('.workbench__toolbar') as HTMLElement;
+    expect(within(toolbar).getByRole('button', { name: '关键词监控' })).toBeInTheDocument();
+    expect(within(toolbar).queryByRole('button', { name: '更多配置' })).not.toBeInTheDocument();
+    expect(toolbar.querySelectorAll('button')).toHaveLength(1);
+  });
+
+  /**
    * Issue #114: the product mark sits next to the page title. It is decorative
    * - the h1 already names the system - so it must carry an empty alt rather
    * than making a screen reader announce the same name twice.
@@ -355,6 +428,12 @@ describe('Workbench', () => {
    * The toolbar is removed by selector from a copy of the live DOM, and the
    * removal is asserted to have hit exactly one element, so a rename or a move
    * fails here instead of silently letting the scan pass over the whole page.
+   *
+   * Issue #116 checked this was still true after folding three entries into a
+   * 「⋯」: the menu renders inside `.workbench__toolbar`, so removing the strip
+   * takes the panel with it (and it is not even in the DOM while collapsed).
+   * The menu items themselves carry no mechanism vocabulary anyway - they are
+   * the same three words that used to sit on the toolbar.
    */
   it('uses only doctor-facing wording, never the implementation vocabulary', async () => {
     const { container } = render(<Workbench onOpenRules={vi.fn()} />);

@@ -198,6 +198,38 @@ describe('Rules API (e2e, real Postgres)', () => {
   );
 
   itWithDb(
+    'lists by attention level RED -> YELLOW -> GREEN -> UNCLASSIFIED, not by when each was edited (issue #131)',
+    async () => {
+      // Created in the order that used to produce the wrong answer: the least
+      // attention-worthy rule is created LAST, so a newest-first list would put
+      // it on top and bury the RED one at the bottom. This is the assertion
+      // that depends on the real database rather than the mock - `level` is a
+      // PG enum, and the service orders it ascending because Postgres orders
+      // enums by declaration, not alphabetically.
+      for (const [keyword, level] of [
+        ['A排序测试未分级', 'UNCLASSIFIED'],
+        ['A排序测试红色', 'RED'],
+        ['A排序测试黄色', 'YELLOW'],
+        ['A排序测试绿色', 'GREEN'],
+      ] as const) {
+        await agent
+          .post('/api/rules')
+          .send({ keyword, level, matchField: 'REPORT_TEXT', actorId: 'tester' })
+          .expect(201);
+      }
+
+      const listRes = await agent.get('/api/rules').expect(200);
+
+      expect(listRes.body.items.map((item: { level: string }) => item.level)).toEqual([
+        'RED',
+        'YELLOW',
+        'GREEN',
+        'UNCLASSIFIED',
+      ]);
+    },
+  );
+
+  itWithDb(
     'rejects a duplicate enabled rule with RULE_CONFLICT and a conflictingRuleId',
     async () => {
       const first = await agent

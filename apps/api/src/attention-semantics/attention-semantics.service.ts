@@ -45,15 +45,22 @@ export class AttentionSemanticsService {
       ...(query.isEnabled !== undefined ? { isEnabled: query.isEnabled } : {}),
     };
 
-    // Newest-edited first, ALL versions included - the same shape as
-    // /api/rules. A superseded version shows up as a disabled row rather than
-    // disappearing, so an operator who edits wording can see that the previous
-    // one is now off instead of wondering where it went. Old rows are
-    // distinguishable by `version` and `semanticGroupId`.
+    // Highest attention level first, then newest-edited, ALL versions included -
+    // the same shape as /api/rules. A superseded version shows up as a disabled
+    // row rather than disappearing, so an operator who edits wording can see
+    // that the previous one is now off instead of wondering where it went. Old
+    // rows are distinguishable by `version` and `semanticGroupId`.
+    //
+    // Issue #131: the level comes first because this list is read top-down to
+    // see what the hospital cares about most, and it used to be ordered purely
+    // by `updatedAt` - so touching one old YELLOW row buried the RED ones at the
+    // bottom. `attentionLevel` is a PG enum declared RED < YELLOW < GREEN, so
+    // ascending IS the importance order. `id` breaks updatedAt ties so paging
+    // cannot drop or repeat a row.
     const [items, total] = await this.prisma.$transaction([
       this.prisma.attentionSemantic.findMany({
         where,
-        orderBy: [{ updatedAt: 'desc' }],
+        orderBy: [{ attentionLevel: 'asc' }, { updatedAt: 'desc' }, { id: 'asc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

@@ -41,12 +41,19 @@
   }
 }
 
+/* issue #133：吸附在弹层顶部，滚动时标题与 × 不跟着正文滚走。
+   背景与 .users-modal 同色（原本透明，靠弹层底色透出来），详见 RulesModal.css
+   里同一处修复的说明。 */
 .users-modal__header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 24px 28px 18px;
   border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-panel);
 }
 .users-modal__header h2 {
   margin: 2px 0 0;

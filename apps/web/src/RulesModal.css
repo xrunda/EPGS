@@ -67,8 +67,21 @@ button:disabled {
 }
 
 .rules-modal__header {
+  /* issue #133：弹层自身就是滚动容器（`.rules-modal { overflow: auto }`），标题栏
+     是它的第一个孩子，不吸附的话会跟着正文一起滚走 —— 往下滚一点，右上角的 × 就
+     看不见了，鼠标用户会以为关不掉。吸附在顶部后只有正文滚动，任何滚动位置下 ×
+     都在原位（Esc 与点遮罩两条路不受影响）。
+     背景必须显式给：它原本是透明的、靠弹层自身的底色透出来，固定之后正文会从它
+     下面滑过，不给底色就穿帮。取与 `.rules-modal` 同一个 `--surface-panel`，
+     所以未滚动时的外观与改动前一致（实测只有圆角抗锯齿的几十个像素、最大差 8/255）。
+     同一处修复见 .semantic- / .users- / .notification- / .level-conflict- 四个
+     弹层的标题栏（同一段 chrome 的复制）。 */
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 24px 28px 18px;
   border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-panel);
 }
 .rules-modal__header h2,
 .panel-heading h3 {

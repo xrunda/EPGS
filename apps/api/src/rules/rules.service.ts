@@ -51,7 +51,14 @@ export class RulesService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.monitorRule.findMany({
         where,
-        orderBy: [{ updatedAt: 'desc' }],
+        // Issue #131: highest attention level first. `level` is a PG enum
+        // declared RED < YELLOW < GREEN < UNCLASSIFIED, so ascending IS the
+        // importance order - the same ordering the monitor list already reads
+        // under. Within one level the previous newest-edited-first behaviour is
+        // kept, so an operator who just changed a rule still finds it at the top
+        // of its own group rather than having it jump the whole list; `id`
+        // breaks ties so paging cannot drop or repeat a row.
+        orderBy: [{ level: 'asc' }, { updatedAt: 'desc' }, { id: 'asc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

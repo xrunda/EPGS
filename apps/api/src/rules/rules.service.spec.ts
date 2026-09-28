@@ -4,6 +4,53 @@ import { RuleNotFoundException } from './errors/rule-not-found.exception';
 import { RuleVersionConflictException } from './errors/rule-version-conflict.exception';
 
 /**
+ * Applies exactly the `orderBy` the service asked for, and nothing else - a
+ * mock that sorted on whatever it liked would let a wrong ordering in the
+ * service pass unnoticed.
+ *
+ * The level columns are PG enums, so Postgres orders them by declaration
+ * (RED < YELLOW < GREEN < UNCLASSIFIED) rather than alphabetically; that is
+ * reproduced here for the two the rule list can carry.
+ */
+const LEVEL_ENUM_ORDER: Record<string, readonly string[]> = {
+  level: ['RED', 'YELLOW', 'GREEN', 'UNCLASSIFIED'],
+  attentionLevel: ['RED', 'YELLOW', 'GREEN'],
+};
+
+/** One column always holds one kind of value, so like-for-like is enough. */
+function compareValues(left: unknown, right: unknown): number {
+  if (typeof left === 'number' && typeof right === 'number') return left - right;
+  return String(left) < String(right) ? -1 : 1;
+}
+
+function sortRows<T extends Record<string, unknown>>(rows: T[], orderBy: unknown): T[] {
+  const keys = (Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : []) as Array<
+    Record<string, 'asc' | 'desc'>
+  >;
+  if (keys.length === 0) return rows;
+
+  const value = (row: T, field: string): unknown => {
+    const raw = row[field];
+    if (raw instanceof Date) return raw.getTime();
+    const enumOrder = LEVEL_ENUM_ORDER[field];
+    if (enumOrder && typeof raw === 'string') return enumOrder.indexOf(raw);
+    return raw;
+  };
+
+  return rows.sort((a, b) => {
+    for (const key of keys) {
+      const [field, direction] = Object.entries(key)[0];
+      const left = value(a, field);
+      const right = value(b, field);
+      if (left === right) continue;
+      const cmp = compareValues(left, right);
+      return direction === 'desc' ? -cmp : cmp;
+    }
+    return 0;
+  });
+}
+
+/**
  * Unit tests against a mocked PrismaService - no real database. These
  * cover the business logic (conflict detection, optimistic locking,
  * versioning decision) in isolation; apps/api/test/rules.e2e-spec.ts
@@ -72,7 +119,7 @@ describe('RulesService', () => {
 
         return candidates[0] ?? null;
       }),
-      findMany: jest.fn(async () => Array.from(store.values())),
+      findMany: jest.fn(async ({ orderBy }: any = {}) => sortRows(Array.from(store.values()), orderBy)),
       count: jest.fn(async () => store.size),
       create: jest.fn(async ({ data }: any) => {
         const id = `rule-${Math.random().toString(36).slice(2)}`;
@@ -450,6 +497,67 @@ describe('RulesService', () => {
       expect(result.page).toBe(1);
       expect(result.pageSize).toBe(20);
       expect(result.total).toBe(2);
+    });
+
+    it('lists the highest attention level first, regardless of when it was edited (issue #131)', async () => {
+      // Deliberately built in the order that used to produce the wrong answer:
+      // the GREEN rule was edited last and the UNCLASSIFIED rule first. Under
+      // the old `updatedAt desc` this read GREEN, YELLOW, RED, UNCLASSIFIED.
+      makeRule({
+        keyword: '未分级',
+        level: 'UNCLASSIFIED',
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      makeRule({
+        keyword: '红色',
+        level: 'RED',
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      });
+      makeRule({
+        keyword: '黄色',
+        level: 'YELLOW',
+        updatedAt: new Date('2026-01-03T00:00:00Z'),
+      });
+      makeRule({
+        keyword: '绿色',
+        level: 'GREEN',
+        updatedAt: new Date('2026-01-04T00:00:00Z'),
+      });
+
+      const result = await service.list({} as any);
+
+      expect(result.items.map((item) => item.keyword)).toEqual([
+        '红色',
+        '黄色',
+        '绿色',
+        '未分级',
+      ]);
+    });
+
+    it('keeps newest-edited first within one level, so a rule just changed stays on top of its group', async () => {
+      makeRule({
+        keyword: '红色旧的',
+        level: 'RED',
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      makeRule({
+        keyword: '红色新改的',
+        level: 'RED',
+        updatedAt: new Date('2026-01-05T00:00:00Z'),
+      });
+      makeRule({
+        keyword: '绿色',
+        level: 'GREEN',
+        updatedAt: new Date('2026-01-09T00:00:00Z'),
+      });
+
+      const result = await service.list({} as any);
+
+      expect(result.items.map((item) => item.keyword)).toEqual([
+        '红色新改的',
+        '红色旧的',
+        '绿色',
+      ]);
     });
   });
 });

@@ -5,6 +5,51 @@ import { AttentionSemanticVersionConflictException } from './errors/attention-se
 import { DEFAULT_ATTENTION_SEMANTICS } from './defaults';
 
 /**
+ * Applies exactly the `orderBy` the service asked for, and nothing else - a
+ * mock that sorted on whatever it liked would let a wrong ordering in the
+ * service pass unnoticed.
+ *
+ * `attentionLevel` is a PG enum, so Postgres orders it by declaration
+ * (RED < YELLOW < GREEN) rather than alphabetically; that is reproduced here.
+ */
+const LEVEL_ENUM_ORDER: Record<string, readonly string[]> = {
+  attentionLevel: ['RED', 'YELLOW', 'GREEN'],
+};
+
+/** One column always holds one kind of value, so like-for-like is enough. */
+function compareValues(left: unknown, right: unknown): number {
+  if (typeof left === 'number' && typeof right === 'number') return left - right;
+  return String(left) < String(right) ? -1 : 1;
+}
+
+function sortRows<T extends Record<string, unknown>>(rows: T[], orderBy: unknown): T[] {
+  const keys = (Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : []) as Array<
+    Record<string, 'asc' | 'desc'>
+  >;
+  if (keys.length === 0) return rows;
+
+  const value = (row: T, field: string): unknown => {
+    const raw = row[field];
+    if (raw instanceof Date) return raw.getTime();
+    const enumOrder = LEVEL_ENUM_ORDER[field];
+    if (enumOrder && typeof raw === 'string') return enumOrder.indexOf(raw);
+    return raw;
+  };
+
+  return rows.sort((a, b) => {
+    for (const key of keys) {
+      const [field, direction] = Object.entries(key)[0];
+      const left = value(a, field);
+      const right = value(b, field);
+      if (left === right) continue;
+      const cmp = compareValues(left, right);
+      return direction === 'desc' ? -cmp : cmp;
+    }
+    return 0;
+  });
+}
+
+/**
  * Unit tests against a mocked PrismaService - no real database. They cover the
  * business logic (name conflict detection, optimistic locking, the
  * version-vs-edit-in-place decision, and the idempotency of the preset import).
@@ -76,18 +121,9 @@ describe('AttentionSemanticsService', () => {
 
         return candidates[0] ?? null;
       }),
-      findMany: jest.fn(async ({ orderBy }: any = {}) => {
-        const rows = Array.from(store.values());
-        // Only the ordering the service actually asks for is honoured - a mock
-        // that sorted on anything would let a wrong orderBy in the service pass.
-        const order = Array.isArray(orderBy) ? orderBy[0] : orderBy;
-        if (order?.updatedAt === 'desc') {
-          return rows.sort(
-            (a: any, b: any) => b.updatedAt.getTime() - a.updatedAt.getTime(),
-          );
-        }
-        return rows;
-      }),
+      findMany: jest.fn(async ({ orderBy }: any = {}) =>
+        sortRows(Array.from(store.values()), orderBy),
+      ),
       count: jest.fn(async () => store.size),
       create: jest.fn(async ({ data }: any) => {
         const id = `sem-${Math.random().toString(36).slice(2)}`;
@@ -374,6 +410,57 @@ describe('AttentionSemanticsService', () => {
       expect(page.items[0].version).toBe(2);
       expect(page.page).toBe(1);
       expect(page.pageSize).toBe(20);
+    });
+
+    it('lists the highest attention level first, regardless of when it was edited (issue #131)', async () => {
+      // Built in the order that used to produce the wrong answer: the GREEN
+      // entry was edited last, so under the old `updatedAt desc` it came first
+      // and the RED entries were pushed to the bottom.
+      makeSemantic({
+        name: '与既往检查相比出现变化',
+        attentionLevel: 'GREEN',
+        updatedAt: new Date('2026-01-04T00:00:00Z'),
+      });
+      makeSemantic({
+        name: '良性器质性或功能性病变',
+        attentionLevel: 'YELLOW',
+        updatedAt: new Date('2026-01-03T00:00:00Z'),
+      });
+      makeSemantic({
+        name: '活动性出血或近期出血征象',
+        attentionLevel: 'RED',
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      });
+
+      const page = await service.list({ page: 1, pageSize: 20 } as any);
+
+      expect(page.items.map((item) => item.attentionLevel)).toEqual([
+        'RED',
+        'YELLOW',
+        'GREEN',
+      ]);
+    });
+
+    it('keeps newest-edited first within one level, so a semantic just changed stays on top of its group', async () => {
+      makeSemantic({
+        name: '红色旧的',
+        attentionLevel: 'RED',
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      makeSemantic({
+        name: '红色新改的',
+        attentionLevel: 'RED',
+        updatedAt: new Date('2026-01-05T00:00:00Z'),
+      });
+      makeSemantic({
+        name: '绿色',
+        attentionLevel: 'GREEN',
+        updatedAt: new Date('2026-01-09T00:00:00Z'),
+      });
+
+      const page = await service.list({ page: 1, pageSize: 20 } as any);
+
+      expect(page.items.map((item) => item.name)).toEqual(['红色新改的', '红色旧的', '绿色']);
     });
   });
 

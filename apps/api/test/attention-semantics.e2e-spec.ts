@@ -503,6 +503,38 @@ describe('Attention semantics API (e2e, real Postgres)', () => {
     expect(unchanged.body.version).toBe(1);
   });
 
+  itWithDb(
+    'lists by attention level RED -> YELLOW -> GREEN, not by when each was edited (issue #131)',
+    async () => {
+      // Created coldest-first and in the order that used to produce the wrong
+      // answer: the GREEN entry is created LAST, so a newest-first list would
+      // put it on top. This is the assertion that depends on the real database
+      // rather than the mock - `attentionLevel` is a PG enum, and the service
+      // orders it ascending because Postgres orders enums by declaration.
+      for (const [name, attentionLevel] of [
+        ['A排序测试恶性', 'RED'],
+        ['A排序测试良性', 'YELLOW'],
+        ['A排序测试纵向变化', 'GREEN'],
+      ] as const) {
+        await agent
+          .post('/api/attention-semantics')
+          .send({
+            name,
+            description: '用于校验列表排序的说明文字。',
+            attentionLevel,
+            actorId: 'tester',
+          })
+          .expect(201);
+      }
+
+      const listRes = await agent.get('/api/attention-semantics').expect(200);
+
+      expect(listRes.body.items.map((item: { attentionLevel: string }) => item.attentionLevel)).toEqual(
+        ['RED', 'YELLOW', 'GREEN'],
+      );
+    },
+  );
+
   itWithDb('records an audit row for every configuration write', async () => {
     const created = await agent
       .post('/api/attention-semantics')

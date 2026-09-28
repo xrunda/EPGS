@@ -337,14 +337,7 @@ export function SemanticMonitorModal({
           </button>
         </header>
 
-        <div className="semantic-modal__notice">
-          <span aria-hidden="true">i</span>
-          <p>
-            关注等级是管理上的<b>关注等级</b>
-            （需要多快看到），不是诊断结论，也不代表病情严重程度。本页结果仅用于监测，
-            <b>不作为正式诊断</b>；未经审核的报告仅供参考。
-          </p>
-        </div>
+       
 
         {/* 说明区默认收起（issue #123）：这几段连起来占掉弹层顶部一大片高度，把
             真正要用的筛选和列表挤到要滚动才看得到。收起时留一个显眼的入口，点开

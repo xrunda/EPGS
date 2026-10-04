@@ -42,6 +42,8 @@ function makeSummary(overrides: Partial<PushSummary> = {}): PushSummary {
     green: 3,
     unclassified: 1,
     keywordHits: [],
+    aiExcludedHits: 0,
+    aiFoundRecords: 0,
     ...overrides,
   };
 }

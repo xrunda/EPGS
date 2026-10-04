@@ -49,6 +49,8 @@ export class WorkerSummaryProvider implements NotificationSummaryProvider {
       green: 0,
       unclassified: 0,
       keywordHits: [],
+      aiExcludedHits: 0,
+      aiFoundRecords: 0,
     };
     for (const group of groups) {
       const key = LEVEL_KEYS[group.currentLevel];
@@ -65,6 +67,14 @@ export class WorkerSummaryProvider implements NotificationSummaryProvider {
     // Issue #87: hits the AI semantic judge filtered are excluded too, so this
     // count matches the api's MonitorSummaryProvider and the 监控看板.
     result.keywordHits = await this.aggregateKeywordHits(range);
+
+    // The AI's two effects in the same window (issue #87 removal, issue #88
+    // report-level finds), reported alongside the keyword detail so a push can
+    // say what the AI did. Mirrors the api's MonitorSummaryProvider exactly -
+    // the two must agree or the scheduled push and the manual "run now" would
+    // render different messages from the same data.
+    result.aiExcludedHits = await this.countAiExcludedHits(range);
+    result.aiFoundRecords = await this.countAiFoundRecords(range);
     return result;
   }
 
@@ -86,5 +96,30 @@ export class WorkerSummaryProvider implements NotificationSummaryProvider {
       level: row.level,
       count: row._count._all,
     }));
+  }
+
+  /** Issue #87: the exact inverse of aggregateKeywordHits' filter (see there). */
+  private async countAiExcludedHits(range: { gte: Date; lt: Date } | undefined): Promise<number> {
+    return this.prisma.monitorMatch.count({
+      where: {
+        ...(range ? { record: { examTime: range } } : {}),
+        rule: { isEnabled: true },
+        semanticFiltered: true,
+      },
+    });
+  }
+
+  /**
+   * Issue #88: records whose only finding is report-level (`attentionSource =
+   * 'AI_REPORT'`) - an AI level with no effective keyword hit beneath it.
+   */
+  private async countAiFoundRecords(range: { gte: Date; lt: Date } | undefined): Promise<number> {
+    return this.prisma.monitorRecord.count({
+      where: {
+        ...(range ? { examTime: range } : {}),
+        aiAttentionLevel: { not: null },
+        matches: { none: { semanticFiltered: false } },
+      },
+    });
   }
 }

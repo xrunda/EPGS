@@ -13,8 +13,8 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 describe('WorkerSummaryProvider', () => {
   let prisma: {
-    monitorRecord: { groupBy: jest.Mock };
-    monitorMatch: { groupBy: jest.Mock };
+    monitorRecord: { groupBy: jest.Mock; count: jest.Mock };
+    monitorMatch: { groupBy: jest.Mock; count: jest.Mock };
   };
   let provider: WorkerSummaryProvider;
 
@@ -31,12 +31,14 @@ describe('WorkerSummaryProvider', () => {
           { currentLevel: 'YELLOW', _count: { _all: 1 } },
           { currentLevel: 'UNCLASSIFIED', _count: { _all: 1 } },
         ]),
+        count: jest.fn(async () => 1),
       },
       monitorMatch: {
         groupBy: jest.fn(async () => [
           { keyword: '恶性肿瘤', level: 'RED', _count: { _all: 2 } },
           { keyword: '肿物', level: 'YELLOW', _count: { _all: 1 } },
         ]),
+        count: jest.fn(async () => 4),
       },
     };
     provider = new WorkerSummaryProvider(prisma as unknown as PrismaService);
@@ -62,6 +64,18 @@ describe('WorkerSummaryProvider', () => {
       },
       _count: { _all: true },
     });
+    // The AI half, same window, #87 filter inverted.
+    expect(prisma.monitorMatch.count).toHaveBeenCalledWith({
+      where: { record: { examTime: DAY_RANGE }, rule: { isEnabled: true }, semanticFiltered: true },
+    });
+    // Issue #88: an AI level with no effective keyword hit under it.
+    expect(prisma.monitorRecord.count).toHaveBeenCalledWith({
+      where: {
+        examTime: DAY_RANGE,
+        aiAttentionLevel: { not: null },
+        matches: { none: { semanticFiltered: false } },
+      },
+    });
     expect(summary).toEqual({
       total: 4,
       red: 2,
@@ -72,6 +86,8 @@ describe('WorkerSummaryProvider', () => {
         { keyword: '恶性肿瘤', level: 'RED', count: 2 },
         { keyword: '肿物', level: 'YELLOW', count: 1 },
       ],
+      aiExcludedHits: 4,
+      aiFoundRecords: 1,
     });
   });
 
@@ -108,6 +124,8 @@ describe('WorkerSummaryProvider', () => {
   it('maps every level key including GREEN to zero when no group matches', async () => {
     prisma.monitorRecord.groupBy.mockResolvedValueOnce([]);
     prisma.monitorMatch.groupBy.mockResolvedValueOnce([]);
+    prisma.monitorRecord.count.mockResolvedValueOnce(0);
+    prisma.monitorMatch.count.mockResolvedValueOnce(0);
 
     const summary = await provider.get({ date: '2026-08-23' });
 
@@ -118,6 +136,8 @@ describe('WorkerSummaryProvider', () => {
       green: 0,
       unclassified: 0,
       keywordHits: [],
+      aiExcludedHits: 0,
+      aiFoundRecords: 0,
     });
   });
 });

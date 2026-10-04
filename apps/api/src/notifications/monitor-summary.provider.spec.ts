@@ -11,9 +11,16 @@ import { MonitorService } from '../monitor/monitor.service';
  * enabled-rules-only rule plus issue #87's effective-hits-only rule.
  */
 describe('MonitorSummaryProvider', () => {
-  function makeFakePrisma(keywordGroups: unknown[] = []) {
+  function makeFakePrisma(
+    keywordGroups: unknown[] = [],
+    aiCounts: { excluded?: number; found?: number } = {},
+  ) {
     return {
-      monitorMatch: { groupBy: jest.fn().mockResolvedValue(keywordGroups) },
+      monitorMatch: {
+        groupBy: jest.fn().mockResolvedValue(keywordGroups),
+        count: jest.fn().mockResolvedValue(aiCounts.excluded ?? 0),
+      },
+      monitorRecord: { count: jest.fn().mockResolvedValue(aiCounts.found ?? 0) },
     };
   }
 
@@ -35,7 +42,10 @@ describe('MonitorSummaryProvider', () => {
   }
 
   it('counts effective hits inside the same day window, honoring the scope', async () => {
-    const prisma = makeFakePrisma([{ keyword: '恶性肿瘤', level: 'RED', _count: { _all: 3 } }]);
+    const prisma = makeFakePrisma([{ keyword: '恶性肿瘤', level: 'RED', _count: { _all: 3 } }], {
+      excluded: 4,
+      found: 1,
+    });
     const monitor = makeFakeMonitor({ red: 2, total: 2 });
     const provider = build(prisma, monitor);
 
@@ -63,6 +73,37 @@ describe('MonitorSummaryProvider', () => {
       },
       _count: { _all: true },
     });
+
+    // The AI half: the same window and scope, with the #87 filter INVERTED.
+    // Anything else and the reported "excluded" count would describe a
+    // different population than the keyword list it is explaining.
+    expect(prisma.monitorMatch.count).toHaveBeenCalledWith({
+      where: {
+        record: {
+          examTime: {
+            gte: new Date('2026-09-02T16:00:00.000Z'),
+            lt: new Date('2026-09-03T16:00:00.000Z'),
+          },
+          department: { in: ['消化内科'] },
+        },
+        rule: { isEnabled: true },
+        semanticFiltered: true,
+      },
+    });
+    // Issue #88: an AI level with no effective keyword hit under it - the
+    // reports the keyword engine alone would not have surfaced.
+    expect(prisma.monitorRecord.count).toHaveBeenCalledWith({
+      where: {
+        examTime: {
+          gte: new Date('2026-09-02T16:00:00.000Z'),
+          lt: new Date('2026-09-03T16:00:00.000Z'),
+        },
+        department: { in: ['消化内科'] },
+        aiAttentionLevel: { not: null },
+        matches: { none: { semanticFiltered: false } },
+      },
+    });
+
     expect(summary).toEqual({
       total: 2,
       red: 2,
@@ -70,6 +111,8 @@ describe('MonitorSummaryProvider', () => {
       green: 0,
       unclassified: 0,
       keywordHits: [{ keyword: '恶性肿瘤', level: 'RED', count: 3 }],
+      aiExcludedHits: 4,
+      aiFoundRecords: 1,
     });
   });
 
@@ -85,6 +128,14 @@ describe('MonitorSummaryProvider', () => {
       // relation filter is always present, with only its contents conditional.
       where: { record: {}, rule: { isEnabled: true }, semanticFiltered: false },
       _count: { _all: true },
+    });
+    // The AI counts follow the same rule: the window disappears from the
+    // filter, the relation filter (and the AI conditions) stay.
+    expect(prisma.monitorMatch.count).toHaveBeenCalledWith({
+      where: { record: {}, rule: { isEnabled: true }, semanticFiltered: true },
+    });
+    expect(prisma.monitorRecord.count).toHaveBeenCalledWith({
+      where: { aiAttentionLevel: { not: null }, matches: { none: { semanticFiltered: false } } },
     });
   });
 

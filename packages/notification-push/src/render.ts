@@ -46,8 +46,8 @@ export function formatKeywordHits(keywordHits: KeywordHit[], level: PushLevel, t
  * Builds the variable dictionary passed to renderTemplate from a summary.
  * Keys are the FIXED dictionary served by GET /api/notification-templates/
  * variables (reportDate / hospitalName / redCount / yellowCount / greenCount /
- * unclassifiedCount / totalCount / redKeywords / yellowKeywords) - never
- * user-defined variable names.
+ * unclassifiedCount / totalCount / redKeywords / yellowKeywords /
+ * aiExcludedCount / aiFoundCount) - never user-defined variable names.
  */
 export function buildNotificationVariables(
   summary: PushSummary,
@@ -63,5 +63,12 @@ export function buildNotificationVariables(
     totalCount: String(summary.total),
     redKeywords: formatKeywordHits(summary.keywordHits, 'RED', 5),
     yellowKeywords: formatKeywordHits(summary.keywordHits, 'YELLOW', 3),
+    // Both render as plain counts, INCLUDING zero - unlike formatKeywordHits'
+    // "—". Zero is the informative answer here ("the AI reviewed and changed
+    // nothing"), whereas "—" would read as "not applicable" and leave the
+    // reader unable to tell that apart from a template the operator never
+    // wired up.
+    aiExcludedCount: String(summary.aiExcludedHits),
+    aiFoundCount: String(summary.aiFoundRecords),
   };
 }

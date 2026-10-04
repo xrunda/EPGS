@@ -24,6 +24,8 @@ function makeSummary(overrides: Partial<PushSummary> = {}): PushSummary {
       { keyword: '活动性出血', level: 'RED', count: 2 },
       { keyword: '息肉待复核', level: 'YELLOW', count: 1 },
     ],
+    aiExcludedHits: 0,
+    aiFoundRecords: 0,
     ...overrides,
   };
 }

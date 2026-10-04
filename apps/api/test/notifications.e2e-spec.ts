@@ -371,9 +371,9 @@ describe('Notification API (e2e, real Postgres)', () => {
       .expect(404);
   });
 
-  itWithDb('variables dictionary exposes the 9 fixed placeholders (7 counts + 2 keyword lists from #69)', async () => {
+  itWithDb('variables dictionary exposes the 11 fixed placeholders (7 counts + 2 keyword lists + 2 AI review counts)', async () => {
     const res = await adminAgent.get('/api/notification-templates/variables').expect(200);
-    expect(res.body).toHaveLength(9);
+    expect(res.body).toHaveLength(11);
     expect(res.body.map((v: any) => v.key)).toEqual([
       'reportDate',
       'hospitalName',
@@ -384,6 +384,8 @@ describe('Notification API (e2e, real Postgres)', () => {
       'totalCount',
       'redKeywords',
       'yellowKeywords',
+      'aiExcludedCount',
+      'aiFoundCount',
     ]);
   });
 

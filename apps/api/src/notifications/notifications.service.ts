@@ -36,6 +36,11 @@ const TEMPLATE_VARIABLES: NotificationVariableDto[] = [
   { key: 'totalCount', label: '总记录数', example: '22' },
   { key: 'redKeywords', label: '红色命中词（TOP5）', example: '恶性肿瘤 ×1、穿孔 ×1' },
   { key: 'yellowKeywords', label: '黄色命中词（TOP3）', example: '肿物 ×2、溃疡 ×1' },
+  // The unit is part of the label on purpose: the two counts measure
+  // different things (一处命中 vs 一例报告), and an operator wiring one into
+  // a 例 sentence is the mistake this makes visible at edit time.
+  { key: 'aiExcludedCount', label: 'AI 语义复核排除命中数（处）', example: '4' },
+  { key: 'aiFoundCount', label: 'AI 语义复核补充发现数（例）', example: '1' },
 ];
 
 /**
@@ -58,7 +63,8 @@ const TEMPLATE_PRESETS: NotificationTemplatePresetDto[] = [
       '{{reportDate}} {{hospitalName}} 内镜关注汇总\n' +
       '红 {{redCount}} 例｜黄 {{yellowCount}} 例｜绿 {{greenCount}} 例｜未分级 {{unclassifiedCount}} 例｜共 {{totalCount}} 例\n' +
       '红色命中：{{redKeywords}}\n' +
-      '黄色命中：{{yellowKeywords}}',
+      '黄色命中：{{yellowKeywords}}\n' +
+      'AI 语义复核：已排除 {{aiExcludedCount}} 处，补充发现 {{aiFoundCount}} 例',
   },
   {
     id: 'quick-alert',

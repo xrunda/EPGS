@@ -49,6 +49,27 @@ export interface PushSummary {
   green: number;
   unclassified: number;
   keywordHits: KeywordHit[];
+  /**
+   * Hits in the same window that the AI semantic judge REMOVED from the
+   * effective set - `monitor_match.semantic_filtered = true`, enabled rules
+   * only (issue #87). Counts MATCHES, like KeywordHit.count and unlike the
+   * level counts above: one report can have several hits removed. Every one
+   * of these rows is already absent from `keywordHits` AND from the levels,
+   * so this is a report of work already folded in - never a correction the
+   * reader has to apply. It exists so a push can still say what the AI did
+   * on a day it added nothing.
+   */
+  aiExcludedHits: number;
+  /**
+   * Records in the same window whose ONLY finding is report-level:
+   * `ai_attention_level IS NOT NULL` with no effective keyword hit, i.e.
+   * issue #88 PR-B's `attentionSource = 'AI_REPORT'`. Counts RECORDS, unlike
+   * `aiExcludedHits` above - these are reports the keyword engine alone would
+   * never have surfaced. They are ALREADY inside the level counts (the AI
+   * raised their level); this number says how many of those the keywords
+   * missed.
+   */
+  aiFoundRecords: number;
 }
 
 /** A channel row as loaded by the store. */

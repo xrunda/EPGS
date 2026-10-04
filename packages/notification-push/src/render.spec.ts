@@ -46,6 +46,8 @@ describe('buildNotificationVariables', () => {
         { keyword: '穿孔', level: 'RED' as const, count: 1 },
         { keyword: '肿物', level: 'YELLOW' as const, count: 1 },
       ],
+      aiExcludedHits: 4,
+      aiFoundRecords: 1,
     };
     expect(
       buildNotificationVariables(summary, { reportDate: '2026-08-23', hospitalName: '菏泽市中医医院' }),
@@ -59,7 +61,30 @@ describe('buildNotificationVariables', () => {
       totalCount: '7',
       redKeywords: '恶性肿瘤 ×2、穿孔 ×1',
       yellowKeywords: '肿物 ×1',
+      aiExcludedCount: '4',
+      aiFoundCount: '1',
     });
+  });
+
+  it('renders the AI counts as "0" rather than "—" when nothing was changed', () => {
+    // The distinction the daily template depends on: "排除 0 处" says the AI
+    // reviewed the day and had nothing to remove, which "—" cannot say.
+    const summary = {
+      total: 0,
+      red: 0,
+      yellow: 0,
+      green: 0,
+      unclassified: 0,
+      keywordHits: [],
+      aiExcludedHits: 0,
+      aiFoundRecords: 0,
+    };
+    const variables = buildNotificationVariables(summary, {
+      reportDate: '2026-08-23',
+      hospitalName: '菏泽市中医医院',
+    });
+    expect(variables.aiExcludedCount).toBe('0');
+    expect(variables.aiFoundCount).toBe('0');
   });
 });
 

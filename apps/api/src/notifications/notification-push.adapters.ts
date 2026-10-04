@@ -149,6 +149,15 @@ export class MonitorSummaryProvider implements NotificationSummaryProvider {
     const range = input.date !== undefined ? resolveShanghaiDayRange(input.date) : undefined;
     const keywordHits = await this.aggregateKeywordHits(range, input.scope);
 
+    // The AI's two effects in the SAME window and scope as the numbers above,
+    // so a push message can report them without the reader having to reconcile
+    // two different populations. Both are already folded into the counts -
+    // see PushSummary's field docs.
+    const [aiExcludedHits, aiFoundRecords] = await Promise.all([
+      this.countAiExcludedHits(range, input.scope),
+      this.countAiFoundRecords(range, input.scope),
+    ]);
+
     return {
       total: summary.total,
       red: summary.red,
@@ -156,6 +165,8 @@ export class MonitorSummaryProvider implements NotificationSummaryProvider {
       green: summary.green,
       unclassified: summary.unclassified,
       keywordHits,
+      aiExcludedHits,
+      aiFoundRecords,
     };
   }
 
@@ -181,6 +192,51 @@ export class MonitorSummaryProvider implements NotificationSummaryProvider {
       level: row.level,
       count: row._count._all,
     }));
+  }
+
+  /**
+   * Issue #87: the hits the semantic judge REMOVED. Deliberately the exact
+   * inverse of aggregateKeywordHits' `semanticFiltered` condition and nothing
+   * else - same window, same scope, same enabled-rules-only rule - so this
+   * number and the keyword list it explains can never describe different
+   * populations.
+   */
+  private async countAiExcludedHits(
+    range: { gte: Date; lt: Date } | undefined,
+    scope: string[] | undefined,
+  ): Promise<number> {
+    return this.prisma.monitorMatch.count({
+      where: {
+        record: {
+          ...(range ? { examTime: range } : {}),
+          ...(scope && scope.length > 0 ? { department: { in: scope } } : {}),
+        },
+        rule: { isEnabled: true },
+        semanticFiltered: true,
+      },
+    });
+  }
+
+  /**
+   * Issue #88: reports the AI found on its own. This is
+   * `attentionSource = 'AI_REPORT'` (report-ai.mapper.ts) asked of the
+   * database instead of of a loaded row: an AI level with no effective
+   * keyword hit beneath it. `none` rather than "load the hits and check
+   * length" so the exclusion happens in SQL - a day's window can hold
+   * thousands of match rows and none of them are needed here.
+   */
+  private async countAiFoundRecords(
+    range: { gte: Date; lt: Date } | undefined,
+    scope: string[] | undefined,
+  ): Promise<number> {
+    return this.prisma.monitorRecord.count({
+      where: {
+        ...(range ? { examTime: range } : {}),
+        ...(scope && scope.length > 0 ? { department: { in: scope } } : {}),
+        aiAttentionLevel: { not: null },
+        matches: { none: { semanticFiltered: false } },
+      },
+    });
   }
 }
 

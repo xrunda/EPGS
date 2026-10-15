@@ -32,9 +32,20 @@ export function maskName(name: string | null): string | null {
 }
 
 /**
- * Masks a phone number keeping the first three and last four characters:
- * 13800000000 -> 138****0000. Short values that cannot keep both ends keep only
- * the tail (7 chars -> ***1234); four characters or fewer are masked whole.
+ * Masks a phone number for callers that do not hold the `patientDetail` grant.
+ *
+ * A full mobile number keeps the first three and last four characters, which is
+ * the shape the docs promise: 13800000000 -> 138****0000.
+ *
+ * A value too short for that shape must not degenerate into "everything but one
+ * character is on screen". Masking at least four characters is what makes the
+ * result unusable as a number, so a value shorter than a mobile number drops the
+ * leading group and pads the hidden run up to four - a 9-character landline
+ * gives 0531-1234 -> *****1234. Under eight characters there is no room for four
+ * hidden characters plus a recognisable tail, so the whole value is masked: a
+ * 7-character number would otherwise show 4 of its 7 characters. Four characters
+ * or fewer are masked whole.
+ *
  * null/blank -> null, matching maskName's rule so the drawer's "—" fallback is
  * driven by a real absence rather than by masking.
  *
@@ -46,10 +57,15 @@ export function maskPhone(phone: string | null): string | null {
   if (!phone) return null;
   const trimmed = phone.trim();
   if (trimmed.length === 0) return null;
-  if (trimmed.length <= 4) return '*'.repeat(trimmed.length);
-  const head = trimmed.length >= 8 ? trimmed.slice(0, 3) : '';
+  // Fewer than 8 characters cannot hide four characters and still leave a tail
+  // worth recognising, so they are masked whole rather than mostly revealed.
+  if (trimmed.length < 8) return '*'.repeat(trimmed.length);
+  // The leading group only earns its place on a full mobile number; it is what
+  // the remainder of the value has to pay for in hidden characters.
+  const head = trimmed.length >= 11 ? trimmed.slice(0, 3) : '';
   const tail = trimmed.slice(-4);
-  return `${head}${'*'.repeat(trimmed.length - head.length - tail.length)}${tail}`;
+  const hidden = Math.max(trimmed.length - head.length - tail.length, 4);
+  return `${head}${'*'.repeat(hidden)}${tail}`;
 }
 
 /**

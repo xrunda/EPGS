@@ -52,7 +52,8 @@
 - **科室范围**：非空 `departmentScope` 时，列表/汇总/详情只返回授权科室的记录。
 - **患者脱敏**：`patientDetail=false` 时，姓名保留姓氏、床号 → `***`、
   `reportContent`/`diagnosis`/命中 `contextSnippet` → `null`，**手机号 →
-  `138****0000`**（保留前 3 位与后 4 位，见 `maskPhone`），响应附加
+  `138****0000`**（保留前 3 位与后 4 位；短于手机号的号码丢掉前导段、隐藏位补足
+  4 位，如 `0531-1234` → `*****1234`，不足 8 位整体打码；见 `maskPhone`），响应附加
   `dataAccess: { masked: true }`；未脱敏响应不带 `dataAccess`。
   性别和开单医生属 MEDIUM，两种情况都原样返回。
 - **越权即 404**：请求范围外详情返回 `404 MONITOR_RECORD_NOT_FOUND`。

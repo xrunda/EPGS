@@ -216,15 +216,22 @@ describe('data-scope helpers (issue #13)', () => {
       expect(maskPhone('  13800000000  ')).toBe('138****0000');
     });
 
-    it('keeps only the tail for values too short to keep both ends', () => {
-      // A 9-character landline still keeps the area code and the four digits a
-      // reader needs to recognise it, and stars everything between: the restored
-      // string is not a number anyone can dial.
-      expect(maskPhone('0531-1234')).toBe('053**1234');
-      expect(maskPhone('1234567')).toBe('***4567');
+    it('hides at least four characters on short values instead of revealing them', () => {
+      // A length-matched mask is the trap: keeping "first 3 + last 4" of an
+      // 8-character value would leave 7 of 8 characters on screen, and a
+      // 5-character value would come back as `*1234`. The tail is what makes the
+      // row recognisable, so short values give up the leading group and pad the
+      // hidden run instead.
+      expect(maskPhone('05311234')).toBe('****1234');
+      expect(maskPhone('0531-1234')).toBe('*****1234');
+      expect(maskPhone('0531123456')).toBe('******3456');
     });
 
-    it('masks short values whole rather than revealing them', () => {
+    it('masks values under eight characters whole', () => {
+      // No room for four hidden characters plus a usable tail, and hiding fewer
+      // than four would show most of the number.
+      expect(maskPhone('1234567')).toBe('*******');
+      expect(maskPhone('123456')).toBe('******');
       expect(maskPhone('1234')).toBe('****');
       expect(maskPhone('12')).toBe('**');
     });

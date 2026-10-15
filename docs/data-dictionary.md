@@ -181,6 +181,9 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
 | `reportVersion`                  | int           | LOW      | 源报告版本号（内部记账，如修订后递增）                                       |
 | `sourceUpdatedAt`                | timestamptz   | LOW      | 源系统报告最后更新时间（内部记账），配合 reportVersion 做幂等/陈旧判断       |
 | `patientName`                    | varchar(100)? | **HIGH** | 患者姓名快照，仅供工作台详情展示                                             |
+| `patientSex`                     | varchar(10)?  | MEDIUM   | 患者性别快照（issue #137，来源网关列 `性别`）。**逐字保存、不做归一化**：来源没有代码字典，只给"男/女"这类原文，转成枚举等于替来源猜值。MEDIUM 而不是 HIGH——单独一列性别不指向任何个人；为空表示"来源没有这个值"，展示为"—" |
+| `patientPhone`                   | varchar(30)?  | **HIGH** | 患者联系电话快照（issue #137，来源网关列 `手机号`）。本系统保存的**最直接可识别人身**的字段。**永不写日志、永不进审计 `meta`、永不进推送正文、永不送进模型、永不出现在列表响应**；只有详情接口在调用方持有 `patientDetail` 授权时返回原文，否则脱敏为 `138****0000`（见 apps/api/src/access/data-scope.ts 的 `maskPhone`）。为空 = 来源没有，展示为"—"，**不是缺数据** |
+| `orderingDoctor`                 | varchar(100)? | MEDIUM   | 开单医生姓名快照（issue #137，来源网关列 `开单医生`）。指向**本院职工**而非患者，工作台展示是为了让阅读者知道这份检查是谁开的；不脱敏。为空 = 来源没有（首次携带这三列之前同步进来的历史记录都是空） |
 | `department`                     | varchar(100)? | MEDIUM   | 开单/执行科室，工作台筛选用                                                  |
 | `bedNo`                          | varchar(50)?  | MEDIUM   | 床号（新增，issue #26）；门诊/未知为空，展示为"—"                            |
 | `patientTypeCode`                | varchar(20)?  | MEDIUM   | 患者类型代码（来源 PAADM_Type 原值，如 `I`/`O`）                             |
@@ -197,6 +200,13 @@ schema 中声明的逻辑名是 `uq_monitor_record_source_version`）。同步�
 | `aiResolvedAt`                   | timestamptz?  | LOW      | 本记录的 AI 分类到达终点、离开分类队列的时间（issue #88）。队列定义就是 `ai_resolved_at IS NULL`——是这一列（不是状态列）在排空队列，与 #87 的 `semanticResolvedAt` 同构。**报告内容变化（重新同步）时置回 NULL**，改过文字的报告会被重新分类，而不是留着一条对已不存在文字的结论 |
 | `aiClaimedAt`                    | timestamptz?  | LOW      | 分类 worker 认领本记录的时刻（乐观租约，issue #88），用于跨进程互斥 |
 | `aiAttempts`                     | int NOT NULL DEFAULT 0 | LOW | 本记录已消耗的分类尝试次数（issue #88），认领时递增，上限由配置约束，防止坏行无限消耗模型调用 |
+
+> **#137 三列的共同点**：`patientSex` / `patientPhone` / `orderingDoctor` 都是
+> **来源快照列**，不是业务键，也不参与匹配、分级、去重或任何判断——只用于展示。
+> 因此三列都可空、不加索引、不进任何唯一约束；同步时缺失或空串一律落 NULL
+> （`item.x || null`），**不会**因为网关少给一列而让整批记录失败。首次携带这三列
+> 之前同步进来的老记录会一直是 NULL，直到该记录被重新同步覆盖——是否需要回填由
+> 项目所有者决定（issue #137）。
 
 > **AI 只加不减（issue #88）**：超时、输出非法、证据不可追溯、语义不存在这四类
 > 失败**都不动上面任何一列**，所以关键词结果——以及 #87 的过滤结论——和没有 #88

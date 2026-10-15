@@ -630,9 +630,20 @@ export function Workbench({
                   <th>关注等级</th>
                   <th>发现来源</th>
                   <th>姓名</th>
+                  {/*
+                    性别（issue #137）：紧跟姓名，一个字宽，和姓名一起回答「这是谁」。
+                    来源没有性别字典，原样展示，值缺失就显示占位符 —— 不猜、不补。
+                  */}
+                  <th>性别</th>
                   <th>科室</th>
                   <th>床号</th>
                   <th>类型</th>
+                  {/*
+                    开单医生（issue #137）：本院医生姓名，不是患者信息。放在这里是为了让
+                    读到这条记录的人知道该找谁问这份报告，所以它和「检查项目」挨着，而不是
+                    和患者身份字段放一起。
+                  */}
+                  <th>开单医生</th>
                   <th>检查项目</th>
                   <th>检查日期</th>
                   <th>检查时间</th>
@@ -689,9 +700,11 @@ export function Workbench({
                       )}
                     </td>
                     <td>{exam.patientName ?? '—'}</td>
+                    <td>{exam.patientSex ?? '—'}</td>
                     <td>{exam.department ?? '—'}</td>
                     <td>{exam.bedNo ?? '—'}</td>
                     <td>{formatPatientType(exam)}</td>
+                    <td>{exam.orderingDoctor ?? '—'}</td>
                     <td>{exam.examItem ?? '—'}</td>
                     <td>{exam.examDate ?? '—'}</td>
                     <td>{exam.examTime ?? '—'}</td>

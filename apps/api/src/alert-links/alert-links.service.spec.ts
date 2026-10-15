@@ -42,6 +42,13 @@ function makeDetail(
 ): MonitorExamWorkbenchDetailDto {
   return {
     ...makeRow(),
+    // Issue #137: the fixture carries the three new workbench-only fields so the
+    // narrowing assertions below have something real to drop. Synthetic values
+    // only (AGENTS.md) - and the phone especially, since the H5 surface is
+    // exactly where a real one must never appear.
+    patientSex: '女',
+    patientPhone: '13800000000',
+    orderingDoctor: '测试医生',
     reportContent: '胃窦见一枚 0.6cm 息肉，息肉待复核。',
     diagnosis: '胃息肉。',
     hits: [
@@ -154,6 +161,13 @@ describe('AlertLinksService', () => {
       // Issue #88: and no attentionSource - the H5 list's wire type is the base
       // MonitorExamDto, which has no such field.
       expect(result.items[0]).not.toHaveProperty('attentionSource');
+      // Issue #137: nor the three gateway snapshot columns. listByIds maps
+      // through the BASE toExamDto, so a list row is structurally incapable of
+      // carrying them - the phone in particular, which is HIGH sensitivity and
+      // has no business on any list response.
+      expect(result.items[0]).not.toHaveProperty('patientSex');
+      expect(result.items[0]).not.toHaveProperty('patientPhone');
+      expect(result.items[0]).not.toHaveProperty('orderingDoctor');
       expect(result).not.toHaveProperty('dataAccess');
     });
 
@@ -194,6 +208,14 @@ describe('AlertLinksService', () => {
       expect(detail).not.toHaveProperty('aiJudged');
       expect(detail).not.toHaveProperty('aiStatus');
       expect(detail).not.toHaveProperty('aiSemantics');
+      // Issue #137: all three gateway snapshot columns stay off this surface.
+      // `patientPhone` is the one that matters - it is HIGH sensitivity and this
+      // payload is reachable through a link that travels further than a
+      // workbench session, so it must be dropped even though the whitelist makes
+      // that automatic.
+      expect(detail).not.toHaveProperty('patientSex');
+      expect(detail).not.toHaveProperty('patientPhone');
+      expect(detail).not.toHaveProperty('orderingDoctor');
       // Everything the H5 page does show is still there.
       expect(detail.reportContent).toBe('胃窦见一枚 0.6cm 息肉，息肉待复核。');
       expect(detail.hits).toHaveLength(1);

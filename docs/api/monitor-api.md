@@ -51,8 +51,10 @@
 
 - **科室范围**：非空 `departmentScope` 时，列表/汇总/详情只返回授权科室的记录。
 - **患者脱敏**：`patientDetail=false` 时，姓名保留姓氏、床号 → `***`、
-  `reportContent`/`diagnosis`/命中 `contextSnippet` → `null`，响应附加
+  `reportContent`/`diagnosis`/命中 `contextSnippet` → `null`，**手机号 →
+  `138****0000`**（保留前 3 位与后 4 位，见 `maskPhone`），响应附加
   `dataAccess: { masked: true }`；未脱敏响应不带 `dataAccess`。
+  性别和开单医生属 MEDIUM，两种情况都原样返回。
 - **越权即 404**：请求范围外详情返回 `404 MONITOR_RECORD_NOT_FOUND`。
 
 ### 审计（Issue #13）
@@ -176,9 +178,11 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "recordId": "11111111-1111-4111-8111-000000000008",
       "monitorLevel": "RED",
       "patientName": "测试患者庚",
+      "patientSex": "女",
       "department": "消化内科",
       "bedNo": "12-8",
       "patientType": { "code": "I", "name": "住院" },
+      "orderingDoctor": "测试医生甲",
       "examItem": "电子胃镜检查",
       "examDate": "2026-08-20",
       "examTime": "18:00:00",
@@ -189,9 +193,11 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "recordId": "11111111-1111-4111-8111-000000000001",
       "monitorLevel": "RED",
       "patientName": "测试患者甲",
+      "patientSex": "男",
       "department": "消化内科",
       "bedNo": "12-1",
       "patientType": { "code": "I", "name": "住院" },
+      "orderingDoctor": "测试医生乙",
       "examItem": "电子胃镜检查",
       "examDate": "2026-08-20",
       "examTime": "16:15:00",
@@ -205,11 +211,14 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
 }
 ```
 
-**列表行字段固定为**：`recordId`、`monitorLevel`、`patientName`、`department`、
-`bedNo`、`patientType`、`examItem`、`examDate`、`examTime`、`matchedKeywords`、
-`attentionSource`（issue #88）。
+**列表行字段固定为**：`recordId`、`monitorLevel`、`patientName`、`patientSex`、
+`department`、`bedNo`、`patientType`、`orderingDoctor`、`examItem`、`examDate`、
+`examTime`、`matchedKeywords`、`attentionSource`（issue #88）。
 **绝不含** `reportContent`/`diagnosis`，也绝不含任何 `reportStatus`/
 `handlingStatus` 类字段——这是 wire 类型 `MonitorExamWorkbenchDto` 的硬约束。
+**也绝不含** `patientPhone`：手机号是本系统最直接的可识别字段，只在详情接口、
+且调用方持有 `patientDetail` 授权时才以原文返回（否则 `138****0000`），
+列表任何情况下都不带它（issue #137）。
 **也绝不含** `aiSemantics`/`aiJudged`/`aiStatus`：AI 文本与审计字段只出现在详情接口，
 列表行上的 `aiAttentionLevel` 标量只用于推导 `attentionSource`，本身不外发。
 （"这一行的 AI 判读失败了"是详情页要讲清的事，列表不承担这个信息；列表要的是
@@ -222,9 +231,11 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
   "recordId": "11111111-1111-4111-8111-000000000012",
   "monitorLevel": "UNCLASSIFIED",
   "patientName": "测试患者子",
+  "patientSex": null,
   "department": null,
   "bedNo": null,
   "patientType": { "code": "X", "name": null },
+  "orderingDoctor": null,
   "examItem": null,
   "examDate": "2026-08-17",
   "examTime": "23:59:00",
@@ -232,6 +243,10 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
   "attentionSource": "NONE"
 }
 ```
+
+> **#137 的三个新字段**：`patientSex`（性别）、`patientPhone`（手机号，仅详情）、
+> `orderingDoctor`（开单医生）。三者都是**来源快照**、逐字透传，不参与筛选、排序或
+> 分级；没有值时为 `null`，前端渲染"—"。老记录在重新同步覆盖前一直是 `null`。
 
 ### `GET /api/monitor/exams/{id}`
 
@@ -244,9 +259,12 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
   "recordId": "11111111-1111-4111-8111-000000000001",
   "monitorLevel": "RED",
   "patientName": "测试患者甲",
+  "patientSex": "男",
+  "patientPhone": "13800000000",
   "department": "消化内科",
   "bedNo": "12-1",
   "patientType": { "code": "I", "name": "住院" },
+  "orderingDoctor": "测试医生乙",
   "examItem": "电子胃镜检查",
   "examDate": "2026-08-20",
   "examTime": "16:15:00",

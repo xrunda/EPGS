@@ -44,6 +44,14 @@ import { formatShanghaiDateTime } from './monitor-time';
 export interface MonitorExamListRow {
   id: string;
   patientName: string | null;
+  /**
+   * Issue #137: sex + ordering doctor. Selected on the list row because the
+   * workbench list renders both as columns. They are NOT mapped by the BASE
+   * `toExamDto` below - only by `toWorkbenchExamDto` - so an alert-link list
+   * response cannot carry them, even though it shares this select.
+   */
+  patientSex: string | null;
+  orderingDoctor: string | null;
   department: string | null;
   bedNo: string | null;
   patientTypeCode: string | null;
@@ -94,6 +102,13 @@ export interface SemanticJudgementRow {
 export interface MonitorExamDetailRow extends MonitorExamListRow {
   reportContent: string | null;
   diagnosis: string | null;
+  /**
+   * Issue #137: the patient's phone, detail-only. `DETAIL_INCLUDE` selects all
+   * scalars, so it is present here without being named - but the BASE
+   * `toExamDetailDto` is not what the alert H5 serves; that surface narrows
+   * through `maskAlertExamDetail`'s whitelist, which does not copy it.
+   */
+  patientPhone: string | null;
   reportVersion: number;
   aiResolvedAt: Date | null;
   /**
@@ -154,12 +169,25 @@ export function toWorkbenchExamDto(row: MonitorExamListRow): MonitorExamWorkbenc
   return {
     ...toExamDto(row),
     attentionSource: toAttentionSource(row.matches.length > 0, row.aiAttentionLevel ?? null),
+    // Issue #137: added here and not in toExamDto above, which is the surface the
+    // alert-link H5 list serves. Both fields are MEDIUM sensitivity, but keeping
+    // them on the extension is what keeps the notification surface's shape
+    // frozen - the same rule #88 and #102 followed.
+    patientSex: row.patientSex,
+    orderingDoctor: row.orderingDoctor,
   };
 }
 
 export function toExamDetailDto(row: MonitorExamDetailRow): MonitorExamWorkbenchDetailDto {
   return {
     ...toExamDto(row),
+    // Issue #137: all three live on the extension, so the alert H5 detail -
+    // which narrows through maskAlertExamDetail's whitelist - carries none of
+    // them. `patientPhone` is HIGH sensitivity and the reason that whitelist
+    // matters here rather than being a formality.
+    patientSex: row.patientSex,
+    orderingDoctor: row.orderingDoctor,
+    patientPhone: row.patientPhone,
     reportContent: row.reportContent,
     diagnosis: row.diagnosis,
     hits: row.matches.map(toHitDto),

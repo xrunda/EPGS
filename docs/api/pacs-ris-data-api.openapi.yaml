@@ -228,6 +228,24 @@ components:
           type: string
           nullable: true
           description: PA_PatMas.PAPMI_Name
+        patientSex:
+          type: string
+          nullable: true
+          description: >-
+            issue #137：医院网关在同一查询中新增的「性别」列。可选——老网关不返回
+            即为 null。逐字透传、不做归一化（来源无代码字典）。不是 issue #26 删除的
+            遗留 sex 字段。
+        patientPhone:
+          type: string
+          nullable: true
+          description: >-
+            issue #137：「手机号」列，HIGH 敏感。可选。适配器会接收并落库，但该值
+            永不写日志、不进审计、不进推送正文、不送模型，也永不出现在列表响应；
+            仅在调用方持有 patientDetail 授权时由详情接口返回原文，否则脱敏。
+        orderingDoctor:
+          type: string
+          nullable: true
+          description: issue #137：「开单医生」列，MEDIUM。可选。逐字透传。
         department:
           type: string
           nullable: true

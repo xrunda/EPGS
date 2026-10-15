@@ -299,6 +299,11 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                   <dt>姓名</dt>
                   <dd>{detail.patientName ?? '—'}</dd>
                 </div>
+                {/* 性别（issue #137）：来源没有性别字典，原样展示；缺失显示占位符。 */}
+                <div>
+                  <dt>性别</dt>
+                  <dd>{detail.patientSex ?? '—'}</dd>
+                </div>
                 <div>
                   <dt>科室</dt>
                   <dd>{detail.department ?? '—'}</dd>
@@ -306,6 +311,17 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                 <div>
                   <dt>床号</dt>
                   <dd>{detail.bedNo ?? '—'}</dd>
+                </div>
+                {/*
+                  手机号（issue #137）：三个新字段里唯一的 HIGH 敏感项，因此只在抽屉里
+                  出现、不进列表。服务端在请求者没有 patientDetail 授权时已经把它掩成
+                  138****0000 并置 dataAccess.masked —— 也就是和报告正文同一道门。这里
+                  只负责展示，不做二次判断：界面上再掩一次会让「有权限的人」也看不到，
+                  而权限判断的正确位置是服务端。
+                */}
+                <div>
+                  <dt>手机号</dt>
+                  <dd>{detail.patientPhone ?? '—'}</dd>
                 </div>
                 <div>
                   <dt>患者类型</dt>
@@ -315,6 +331,10 @@ export function DetailDrawer({ recordId, onClose }: DetailDrawerProps): JSX.Elem
                       ? `（${detail.patientType.code}）`
                       : ''}
                   </dd>
+                </div>
+                <div>
+                  <dt>开单医生</dt>
+                  <dd>{detail.orderingDoctor ?? '—'}</dd>
                 </div>
                 <div>
                   <dt>检查项目</dt>

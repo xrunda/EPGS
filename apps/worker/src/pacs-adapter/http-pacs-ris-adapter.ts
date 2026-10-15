@@ -93,7 +93,12 @@ function nullableString(value: unknown, field: string): string | null {
   if (typeof value !== 'string') {
     throw new PacsHttpContractError(`PacsReport.${field} must be a string or null`);
   }
-  return value;
+  // `''` means "the source has no value for this field", not "the value is the
+  // empty string" - the workbench renders `null` as "—" and `''` as a blank
+  // cell. The SOAP and CSV adapters already normalize it before calling this
+  // mapper (see emptyAsNull in both), so normalizing here too is what makes the
+  // three adapter modes produce byte-identical DTOs.
+  return value === '' ? null : value;
 }
 
 /**
@@ -166,6 +171,13 @@ export function mapWireReportToDto(raw: unknown): PacsReportDto {
     sourceRecordId,
     patientRegistrationNo: nullableString(r.patientRegistrationNo, 'patientRegistrationNo'),
     patientName: nullableString(r.patientName, 'patientName'),
+    // Issue #137: optional snapshot columns. Absent/empty -> null, never an
+    // error: the frozen replay dataset's CSV has no such columns and the
+    // gateway may omit them, and a missing display field must not fail a
+    // sync batch (see mapSoapWireRecordToDto / parseCsvReports).
+    patientSex: nullableString(r.patientSex, 'patientSex'),
+    patientPhone: nullableString(r.patientPhone, 'patientPhone'),
+    orderingDoctor: nullableString(r.orderingDoctor, 'orderingDoctor'),
     department: nullableString(r.department, 'department'),
     bedNo: nullableString(r.bedNo, 'bedNo'),
     patientTypeCode: nullableString(r.patientTypeCode, 'patientTypeCode'),

@@ -9,7 +9,13 @@ import {
   SemanticConfidenceDto,
   SemanticStatusDto,
 } from '@epgs/shared-types';
-import { buildDepartmentScopeWhere, maskExamDetail, maskExamRow, maskName } from './data-scope';
+import {
+  buildDepartmentScopeWhere,
+  maskExamDetail,
+  maskExamRow,
+  maskName,
+  maskPhone,
+} from './data-scope';
 
 describe('data-scope helpers (issue #13)', () => {
   describe('buildDepartmentScopeWhere', () => {
@@ -125,6 +131,12 @@ describe('data-scope helpers (issue #13)', () => {
     };
     const detail: MonitorExamWorkbenchDetailDto = {
       ...baseRow,
+      // Issue #137: the two unmasked MEDIUM fields plus the HIGH-sensitivity
+      // phone, so the assertions below distinguish "passed through" from
+      // "masked" rather than testing a fixture that had nothing to mask.
+      patientSex: '男',
+      orderingDoctor: '王医生',
+      patientPhone: '13800000000',
       reportContent: '胃窦见一处隆起性病变，病理提示黏膜内腺癌。',
       diagnosis: '胃腺癌（早期）。',
       hits: [hit],
@@ -181,7 +193,49 @@ describe('data-scope helpers (issue #13)', () => {
     expect(masked.levelConflicts[0].semanticName).toBe(masked.aiSemantics[1].name);
     expect(masked.levelConflicts[0].semanticLevel).toBe(masked.aiSemantics[1].attentionLevel);
 
+    // Issue #137: the phone is HIGH sensitivity, so it is masked while the two
+    // MEDIUM fields beside it pass through untouched. Masking all three would be
+    // wrong in the other direction - hiding the ordering doctor would take away
+    // the one piece of the row that says who to ask about this study.
+    expect(masked.patientPhone).toBe('138****0000');
+    expect(masked.patientSex).toBe('男');
+    expect(masked.orderingDoctor).toBe('王医生');
+
     expect(masked.dataAccess).toEqual({ masked: true });
+  });
+
+  describe('maskPhone (issue #137)', () => {
+    it('keeps the first three and last four of a mobile number', () => {
+      // Synthetic literals only (…000000/…000001). Never copy a value out of a
+      // real export into this repo - it is public.
+      expect(maskPhone('13800000000')).toBe('138****0000');
+      expect(maskPhone('13900000001')).toBe('139****0001');
+    });
+
+    it('trims before masking, so a padded number is not treated as longer', () => {
+      expect(maskPhone('  13800000000  ')).toBe('138****0000');
+    });
+
+    it('keeps only the tail for values too short to keep both ends', () => {
+      // A 9-character landline still keeps the area code and the four digits a
+      // reader needs to recognise it, and stars everything between: the restored
+      // string is not a number anyone can dial.
+      expect(maskPhone('0531-1234')).toBe('053**1234');
+      expect(maskPhone('1234567')).toBe('***4567');
+    });
+
+    it('masks short values whole rather than revealing them', () => {
+      expect(maskPhone('1234')).toBe('****');
+      expect(maskPhone('12')).toBe('**');
+    });
+
+    it('maps null/blank to null, matching maskName', () => {
+      // null, not '****' - the drawer's "—" fallback must mean "the source had
+      // no value", not "we redacted a value we actually hold".
+      expect(maskPhone(null)).toBeNull();
+      expect(maskPhone('')).toBeNull();
+      expect(maskPhone('   ')).toBeNull();
+    });
   });
 
   it('maskExamDetail keeps the failure notice for a caller who cannot see the report (issue #102)', () => {
@@ -191,6 +245,9 @@ describe('data-scope helpers (issue #13)', () => {
     // it here would leave the caveat off the one reader who needs it most.
     const failed: MonitorExamWorkbenchDetailDto = {
       ...baseRow,
+      patientSex: '男',
+      orderingDoctor: '王医生',
+      patientPhone: '13800000000',
       reportContent: null,
       diagnosis: null,
       attentionSource: 'RULE',
@@ -210,6 +267,9 @@ describe('data-scope helpers (issue #13)', () => {
   it('maskExamDetail keeps an unjudged hit unjudged (no invented verdict)', () => {
     const unjudged: MonitorExamWorkbenchDetailDto = {
       ...baseRow,
+      patientSex: '男',
+      orderingDoctor: '王医生',
+      patientPhone: '13800000000',
       reportContent: null,
       diagnosis: null,
       attentionSource: 'RULE',

@@ -32,6 +32,27 @@ export function maskName(name: string | null): string | null {
 }
 
 /**
+ * Masks a phone number keeping the first three and last four characters:
+ * 13800000000 -> 138****0000. Short values that cannot keep both ends keep only
+ * the tail (7 chars -> ***1234); four characters or fewer are masked whole.
+ * null/blank -> null, matching maskName's rule so the drawer's "—" fallback is
+ * driven by a real absence rather than by masking.
+ *
+ * Issue #137. HIGH sensitivity (docs/data-dictionary.md): a phone number is the
+ * most directly identifying value EPGS stores, so it is masked by default and
+ * only a caller holding the `patientDetail` grant sees it in full.
+ */
+export function maskPhone(phone: string | null): string | null {
+  if (!phone) return null;
+  const trimmed = phone.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.length <= 4) return '*'.repeat(trimmed.length);
+  const head = trimmed.length >= 8 ? trimmed.slice(0, 3) : '';
+  const tail = trimmed.slice(-4);
+  return `${head}${'*'.repeat(trimmed.length - head.length - tail.length)}${tail}`;
+}
+
+/**
  * Masks a list row for a user without patientDetail rights.
  *
  * Generic over the row shape so a caller holding a WIDER row (issue #88's
@@ -39,6 +60,10 @@ export function maskName(name: string | null): string | null {
  * fields: masking is about patient identity, not about narrowing the DTO to the
  * base type. The alert-link surface's own masking is a separate function on
  * purpose - it keeps bed/department and the report body.
+ *
+ * Issue #137's `patientPhone` is deliberately NOT handled here: it is not on the
+ * base `MonitorExamDto`, so no list row can carry it. The only read path that
+ * can emit it is the workbench DETAIL, and `maskExamDetail` below masks it.
  */
 export function maskExamRow<T extends MonitorExamDto>(dto: T): T {
   return {
@@ -56,11 +81,14 @@ export function maskExamRow<T extends MonitorExamDto>(dto: T): T {
  * nulled. The dataAccess.masked flag lets the client distinguish redaction from
  * a report that genuinely has no body.
  */
-export function maskExamDetail(
-  dto: MonitorExamWorkbenchDetailDto,
-): MonitorExamWorkbenchDetailDto {
+export function maskExamDetail(dto: MonitorExamWorkbenchDetailDto): MonitorExamWorkbenchDetailDto {
   return {
     ...maskExamRow(dto),
+    // Issue #137: overrides the value maskExamRow spread through - phone is not
+    // on the base DTO, so the generic row masker neither knows about it nor
+    // claims to. Setting it here, after the spread, is what makes the ordering
+    // irrelevant to a reader.
+    patientPhone: maskPhone(dto.patientPhone),
     reportContent: null,
     diagnosis: null,
     hits: dto.hits.map((hit) => ({

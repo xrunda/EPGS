@@ -481,6 +481,27 @@ model MonitorRecord {
   /// Patient display name snapshot. HIGH sensitivity - see data dictionary.
   patientName String? @map("patient_name") @db.VarChar(100)
 
+  /// Issue #137: patient sex as the source states it (gateway key `性别`).
+  /// Stored verbatim - the source has no code dictionary for this column, so
+  /// it is never normalized into an enum. MEDIUM sensitivity: it does not
+  /// identify a patient on its own, so it is not masked (unlike patientName).
+  /// NULL for records synced before the gateway exposed the column.
+  patientSex String? @map("patient_sex") @db.VarChar(10)
+
+  /// Issue #137: patient contact phone (gateway key `手机号`). HIGH
+  /// sensitivity - the most directly identifying value this schema stores.
+  /// Never logged, never audited, never pushed, never sent to a model, and
+  /// never served in a list response; the API read path masks it unless the
+  /// caller holds the `patientDetail` grant. NULL for records synced before
+  /// the gateway exposed the column.
+  patientPhone String? @map("patient_phone") @db.VarChar(30)
+
+  /// Issue #137: name of the clinician who ordered the exam (gateway key
+  /// `开单医生`). A member of staff, not a patient. MEDIUM sensitivity; not
+  /// masked - the workbench shows it so a reader can tell who requested the
+  /// study. NULL for records synced before the gateway exposed the column.
+  orderingDoctor String? @map("ordering_doctor") @db.VarChar(100)
+
   /// Ordering/performing department at time of sync. Used for workbench
   /// filtering.
   department String? @db.VarChar(100)

@@ -9,6 +9,9 @@ const examRow: MonitorExamWorkbenchDto = {
   recordId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   monitorLevel: 'RED',
   patientName: '测试患者甲',
+  // Issue #137: required on the workbench row, so a fixture cannot omit them.
+  patientSex: '女',
+  orderingDoctor: '测试医生甲',
   department: '内镜中心',
   bedNo: '12床',
   patientType: { code: 'I', name: '住院' },

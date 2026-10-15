@@ -514,6 +514,10 @@ function makeReport(overrides: Partial<PacsReportDto> = {}): PacsReportDto {
     examDate: '2026-08-20',
     examTimeText: '00:00:00',
     patientName: '测试患者',
+    // Issue #137: synthetic values, never real patient data (AGENTS.md).
+    patientSex: '女',
+    patientPhone: '13800000000',
+    orderingDoctor: '测试医生',
     department: '消化内科',
     bedNo: '1',
     patientTypeCode: 'I',

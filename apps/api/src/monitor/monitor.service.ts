@@ -61,6 +61,13 @@ export class MonitorService {
   private static readonly LIST_SELECT = {
     id: true,
     patientName: true,
+    // Issue #137: rendered as list columns. Selected here (rather than in a
+    // second, workbench-only select) because ONE definition of "what a row
+    // carries" is what keeps the workbench and the alert-link list from
+    // drifting; the alert-link surface is protected by the MAPPER instead -
+    // `toExamDto` does not copy these, and listByIds uses it.
+    patientSex: true,
+    orderingDoctor: true,
     department: true,
     bedNo: true,
     patientTypeCode: true,

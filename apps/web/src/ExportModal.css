@@ -1,0 +1,190 @@
+/* 数据导出弹层 chrome（issue #139）。
+   共享原语（.button / .icon-button / .feedback--*）定义于 RulesModal.css，
+   经 App.tsx 引入 RulesModal 模块副作用全局生效——本文件只定义 .export-* 命名空间。 */
+
+.export-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 31, 34, 0.58);
+  backdrop-filter: blur(3px);
+  animation: export-backdrop-in var(--dur-base) var(--ease-out);
+}
+
+/* 窄弹层：内容只有「一个日期 + 四个等级 + 两个按钮」，拉宽只会让日期输入框孤零零地
+   飘在左边（同 .level-conflict-modal 那次目视验证的教训，只是反过来）。 */
+.export-modal {
+  width: min(520px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  outline: none;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-lg);
+  animation: export-modal-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes export-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes export-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+/* issue #133：吸附在弹层顶部，滚动时标题与 × 不跟着正文滚走。
+   背景必须与 .export-modal 同色（原本透明，靠弹层底色透出来），否则正文会从标题栏
+   下面透出来。z-index 高于底部吸附条 .panel-actions--sticky 的 1。 */
+.export-modal__header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 28px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-panel);
+}
+.export-modal__header h2 {
+  margin: 2px 0 0;
+  color: var(--ink-800);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.export-modal__eyebrow {
+  margin: 0;
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/* 说明块沿用配置页那块的样子：先说清楚这是什么、文件里有什么、拿走后要注意什么。 */
+.export-modal__notice {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: start;
+  gap: 0 10px;
+  margin: 18px 28px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--teal-600);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: #eaf4f5;
+  color: #315b62;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.export-modal__notice > span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  place-items: center;
+  border: 1px solid #70a7b1;
+  border-radius: 50%;
+  font-weight: 700;
+  grid-row: span 2;
+}
+.export-modal__notice p {
+  margin: 0;
+}
+.export-modal__notice p + p {
+  margin-top: 6px;
+}
+
+.export-form {
+  display: grid;
+  gap: 18px;
+  padding: 20px 28px 24px;
+}
+.export-form__date {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-600);
+}
+.export-form__date input {
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-input);
+  color: var(--ink-800);
+  font: inherit;
+  font-weight: 500;
+}
+
+/* 四个等级并排一行（窄弹层里 2×2 会空出半行）。等级色只做左侧一条细边 +
+   文字，不靠颜色单独表意：色卡里每项都有文字，色盲用户读到的是等级名。 */
+.export-form__levels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.export-form__levels legend {
+  padding: 0 0 6px;
+  color: var(--ink-600);
+  font-size: 13px;
+  font-weight: 700;
+}
+.export-level {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px;
+  border: 1px solid var(--border-subtle);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-input);
+  font-size: 13px;
+  cursor: pointer;
+}
+.export-level--red {
+  border-left-color: var(--level-red, #d64545);
+}
+.export-level--yellow {
+  border-left-color: var(--level-yellow, #d99b1c);
+}
+.export-level--green {
+  border-left-color: var(--level-green, #2f9e6e);
+}
+.export-level--unclassified {
+  border-left-color: var(--border-strong);
+}
+/* 选中态：整块加实边，不只在圆点上示意。 */
+.export-level:has(input:checked) {
+  border-color: var(--teal-600);
+  background: #eaf4f5;
+}
+.export-level input {
+  margin: 0;
+}
+.export-level span {
+  white-space: nowrap;
+}
+
+.export-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* 极窄屏（手机/小窗）等级改 2×2，四项横排会被压到读不出字。 */
+@media (max-width: 520px) {
+  .export-form__levels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -26,6 +26,13 @@ interface WorkbenchProps {
   onOpenUsers?: () => void;
   /** Opens the level-conflict list (owned by App, issue #103). undefined when the current user lacks RULE_ADMIN. */
   onOpenLevelConflicts?: () => void;
+  /**
+   * Opens the CSV export modal (owned by App, issue #139). undefined when the
+   * current user lacks the `patientDetail` grant - the entry is then not
+   * rendered at all (server still enforces it: a hand-made request gets 403
+   * PATIENT_DETAIL_REQUIRED).
+   */
+  onOpenExport?: () => void;
 }
 
 interface WorkbenchFilters {
@@ -185,6 +192,7 @@ export function Workbench({
   onOpenNotifications,
   onOpenUsers,
   onOpenLevelConflicts,
+  onOpenExport,
 }: WorkbenchProps): JSX.Element {
   const [items, setItems] = useState<MonitorExamWorkbenchDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -386,14 +394,14 @@ export function Workbench({
             只改字：目标弹窗、权限、行为一律不变。
           */}
           {/*
-            两个入口都不实心（issue #125）。原来是「关键词监控」带 .button--primary、
-            「AI 语义监控」不带，从 #9 带过来的：那时工具栏只有这一个入口，实心是在
-            强调主操作。#88 加了平级的 AI 入口、#116 又把其余入口收进「⋯」之后，
-            这个强调就成了没来由的偏袒 —— 两个按钮都只是「点开某个配置弹层」，谁也不
+            这一排入口都不实心（issue #125，#139 加第三个时照旧）。原来是「关键词监控」
+            带 .button--primary、「AI 语义监控」不带，从 #9 带过来的：那时工具栏只有这
+            一个入口，实心是在强调主操作。#88 加了平级的 AI 入口、#116 又把其余入口收进
+            「⋯」之后，这个强调就成了没来由的偏袒 —— 按钮都只是「点开某个弹层」，谁也不
             比谁更当前，实心那个看起来却像已选中的标签页。
             更深一层的理由是 .button--primary 在产品里只该有一个含义：**表单里的确认
-            动作**（查询、新建、确认载入）。借用它来表示「入口」是同一套视觉语言指两
-            件事。入口不表示任何状态，弹层开了关了外观都不变，所以它不该有状态外观。
+            动作**（查询、新建、确认载入、导出）。借用它来表示「入口」是同一套视觉语言
+            指两件事。入口不表示任何状态，弹层开了关了外观都不变，所以它不该有状态外观。
           */}
           <button className="button" type="button" onClick={onOpenRules}>
             关键词监控
@@ -404,8 +412,20 @@ export function Workbench({
             </button>
           )}
           {/*
+            数据导出（issue #139）是工具栏里唯一**带数据出去**的入口，所以它和上面两个
+            配置入口并列可见，而不是收进「⋯」：它是一次真的取数动作，不是一个设置项。
+            授权不够时（App.tsx 按 /me 的 patientDetail 决定传不传）整个按钮不渲染 ——
+            这是「不出现点了没反应的入口」，服务端照样拦（403 PATIENT_DETAIL_REQUIRED）。
+            它是入口不是确认动作，所以同样不带 .button--primary（#125 那段）。
+          */}
+          {onOpenExport && (
+            <button className="button" type="button" onClick={onOpenExport}>
+              数据导出
+            </button>
+          )}
+          {/*
             消息推送 / 等级分歧 / 用户管理 收进「⋯」（issue #116）。这三个是配置与
-            管理侧的低频入口，和上面两个价值点并排只会把主功能稀释掉。文案、目标
+            管理侧的低频入口，和上面那几个价值点并排只会把主功能稀释掉。文案、目标
             弹窗、角色判定一律不变，只是换了入口位置。
             三项都没得显示时整个「⋯」不渲染 —— 一个展开后空无一物的按钮比没有按钮
             更糟。
@@ -416,7 +436,7 @@ export function Workbench({
             <ActionMenu
               label="更多配置"
               items={toolbarMenuItems}
-              /* 浅底外观复用现成的 .button，跟旁边两个按钮同一个形状 */
+              /* 浅底外观复用现成的 .button，跟旁边几个按钮同一个形状 */
               triggerClassName="button workbench__menu-trigger"
             />
           )}

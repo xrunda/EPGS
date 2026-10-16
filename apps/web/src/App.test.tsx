@@ -3,7 +3,16 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { MonitorExamWorkbenchDto, SyncStatusDto } from '@epgs/shared-types';
 import App from './App';
 
-const authUser = { id: 'user-1', username: 'doctor', displayName: '测试医生', roles: ['VIEWER'] };
+// Issue #139: /me carries the caller's own patientDetail grant; the default
+// fixture is a plain doctor WITHOUT it, so every existing case here keeps
+// running against the tighter reality (no 数据导出 entry).
+const authUser = {
+  id: 'user-1',
+  username: 'doctor',
+  displayName: '测试医生',
+  roles: ['VIEWER'],
+  patientDetail: false,
+};
 
 const examRow: MonitorExamWorkbenchDto = {
   recordId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -176,6 +185,44 @@ describe('App', () => {
 
     expect(screen.getByRole('dialog', { name: '用户管理' })).toBeInTheDocument();
     expect(await screen.findByText('没有符合条件的账号')).toBeInTheDocument();
+  });
+
+  /*
+    Issue #139: 数据导出 is gated on the patientDetail grant, not on a role, so
+    it is the one entry whose gate is a property of the access row rather than
+    of `roles`. Both directions matter: the entry appears and opens its modal
+    for a granted account, and it is simply not there for an ungranted one -
+    the button must not offer a click that the server answers with 403.
+  */
+  it('hides the export entry for an account without the patientDetail grant (issue #139)', async () => {
+    render(<App />);
+    await screen.findByText('测试患者甲');
+
+    // The toolbar really rendered (the rule entry is in it), so the absence
+    // below is not an empty assertion.
+    expect(screen.getByRole('button', { name: '关键词监控' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '数据导出' })).not.toBeInTheDocument();
+  });
+
+  it('shows and opens the export modal for a patientDetail account (issue #139)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(jsonResponse({ user: { ...authUser, patientDetail: true } }));
+        }
+        return defaultResponse(url);
+      }),
+    );
+    render(<App />);
+    await screen.findByText('测试患者甲');
+
+    // Issue #114's rule: the entry reads exactly like the modal it opens.
+    fireEvent.click(screen.getByRole('button', { name: '数据导出' }));
+
+    expect(screen.getByRole('dialog', { name: '数据导出' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '内镜中心' })).toBeInTheDocument();
   });
 
   it('hides the level-conflict entry for a user without RULE_ADMIN', async () => {

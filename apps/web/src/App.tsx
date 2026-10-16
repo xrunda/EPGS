@@ -55,6 +55,23 @@ function AuthenticatedApp({
           <nav aria-label="主导航" className="app-header__nav">
             <strong>内镜中心</strong>
           </nav>
+          {/*
+            使用手册（issue #147）。它链的是同源静态页 /manual.html，不是 GitHub：
+            堡垒机在网闸后面，医生的浏览器打不开 github.com，仓库链接对真实用户是死链。
+            静态文件放在 apps/web/public/，Vite 会原样拷进 dist/，nginx 的 try_files
+            先看磁盘因而直接命中 —— 不需要改 nginx 模板或 start.sh。
+            必须写**确切文件名**：不带扩展名的 /manual 会被 SPA 回落吞掉，
+            返回一个 200 的空应用页而不是 404（这条由 manual-page.test.ts 钉住）。
+
+            用 <a href> 而不是 <button onClick={window.open}>：它就是一个链接，
+            中键、右键"复制链接地址"都该正常工作，也不吃弹窗拦截。
+            放顶栏而不是工作台工具栏：工具栏那排入口全是按权限传 prop 门控的，
+            而手册对**没有任何权限的只读医生**同样必须可读；这里无条件渲染。
+            target=_blank 让医生在第二个标签页里边看边做，不丢工作台的筛选状态。
+          */}
+          <a className="app-header__help" href="/manual.html" target="_blank" rel="noopener">
+            使用手册
+          </a>
           <span className="app-user" aria-label="当前用户">
             {user.displayName}
           </span>

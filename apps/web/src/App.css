@@ -81,7 +81,8 @@ body {
   是为了让菜单项完全不受顶栏配色影响（面板两处共用，配色归 ActionMenu.css）。
 */
 .app-header__actions > button,
-.app-header__actions .action-menu__trigger {
+.app-header__actions .action-menu__trigger,
+.app-header__actions .app-header__help {
   border: 0;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
@@ -96,10 +97,29 @@ body {
 .app-header__actions > button:hover,
 .app-header__actions > button:focus-visible,
 .app-header__actions .action-menu__trigger:hover,
-.app-header__actions .action-menu__trigger:focus-visible {
+.app-header__actions .action-menu__trigger:focus-visible,
+.app-header__actions .app-header__help:hover,
+.app-header__actions .app-header__help:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.35);
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
+}
+
+/*
+  使用手册（issue #147）是顶栏里唯一的 `<a>`。上面那组深底配色只覆盖了它，
+  这两条是 `<a>` 特有的、必须补的：`.button` 基类没有 `display` 也没有
+  `text-decoration`，不补的话默认下划线会留在深色渐变底上（几乎看不见），
+  而且 inline 元素吃不到 `padding` 的纵向效果，基线会歪。
+  单测测不出来（jsdom 没有布局引擎），所以这是目视验证的必查项。
+*/
+.app-header__help {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  /* 明确写字号：不写就继承根字号 16px，而顶栏的排版尺度是「导航 14 / 用户名 13 /
+     ⋯ 字形 17」。16px 会让这一条成为顶栏最抢眼的字 —— 实测截图里确实比左边的
+     「内镜中心」大一号。取左边的导航值，因为它与本条同属分隔线左侧那一组。 */
+  font-size: 14px;
 }
 
 /* 「⋯」触发按钮：字形比汉字窄，给个最小宽度让它和旁边的按钮一样好点。 */

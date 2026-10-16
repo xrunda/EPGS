@@ -139,6 +139,17 @@ button {
 .login-panel input,
 .auth-modal input {
   width: 100%;
+  /* 显式钉死高度（issue #143）。这一条以前是从 RulesModal.css 那组裸元素选择器
+     （`input, select { height: 38px }`）泄漏过来的：本文件的规则把 width/padding/
+     border/圆角/焦点环都写全了，唯独没写 height，于是靠那条谁都没注意的全局规则撑着。
+     issue #143 把那组规则收进作用域后，这两个输入框变成 420×50（padding 13px + 16px
+     字号自然撑开），登录页肉眼可见地变高。**38px 是既有的、不该在这次重构里改掉的观感**，
+     所以在这里显式写出来，保持逐像素不变。
+     副作用值得记一笔：38px 的 border-box 减去 13px 上下内边距与 1px 边框，内容盒只剩
+     10px，比 16px 的字还矮 —— 文字是溢出着居中显示的（浏览器会居中，所以看起来正常）。
+     让 padding 真正生效（即去掉这条 height，输入框自然高 50px）是观感调整，
+     属于另一个 Issue，不在本次范围。 */
+  height: 38px;
   box-sizing: border-box;
   padding: 13px 14px;
   border: 1px solid var(--border-default);

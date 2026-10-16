@@ -169,11 +169,59 @@
   border-color: var(--teal-600);
   background: #eaf4f5;
 }
+/* 原生勾选框必须显式钉死尺寸（issue #141，多选改造见 #145）。
+   #141 时这是为了对抗 RulesModal.css 里那组**裸元素选择器**（Vite 把全仓 CSS 打进同一张
+   表、组件级 CSS 文件不构成作用域，那组规则会泄漏到页面上每一个 `input`）：圆点被
+   `width: 100%; height: 38px` 撑成 47.5×38 的框，聚焦时 3px 焦点环套在那个框上，看起来
+   就是一个大灰方块。想量到就能量到（浏览器里读计算样式即可）。
+   issue #143 已把那组规则收进**弹层容器作用域**，而 `.export-modal` 正是被收进去的容器
+   之一 —— 底座里的 `width: 100%; height: 38px` 照样落在本弹层每个 input 上（含这个
+   勾选框）。所以下面这几条**仍然承重**，不是历史遗留：删掉它，灰方块立刻回来
+   （#143 实测：改成 `:is()` 让底座与它打平时，这个控件就从 16×16 变成 92.5×38）。
+   同 .semantic-level-picker__option input —— 全仓唯一的原生 radio，同样靠钉死才行。
+   #145 把这里从 radio 改成 checkbox（一次可选多个等级），钉尺寸的理由不变。 */
 .export-level input {
+  /* 不被 flex 拉伸：border-box 下 16px 就是最终尺寸 */
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  /* 下面两条不是为了这 16px（#143 实测：Chrome 对 native appearance 的控件不套用 author
+     的 padding/border/background —— 裸 checkbox 是 400×38 但 padding 0、border 0），
+     写出来只是不去依赖那条实测行为，同时也让 flex 容器里的外边距归零。 */
   margin: 0;
+  padding: 0;
+  /* 全仓的单选框/勾选框都是品牌青，不跟随 Chrome 默认蓝 */
+  accent-color: var(--teal-700);
 }
 .export-level span {
   white-space: nowrap;
+}
+
+/* 焦点环落在**整行**上，而不是落在那个 16px 的方块上（issue #145）。
+   底座给的焦点环是 `box-shadow: 0 0 0 3px`（tokens.css 的 --shadow-focus），
+   而 Chrome 对 native appearance 的勾选框**强制** `border-radius` 为 0
+   —— 与它强制 padding/border/background 是同一类行为（#143 已实测，本次复测：
+   给 `input[type=checkbox]` 写 `border-radius: 8px`，计算值仍是 `0px`；
+   加上 `appearance: none` 才变成 8px）。于是那条方角阴影套在勾选框上就是**一块
+   灰色的方底**，看起来不像焦点环，倒像控件背后垫了个灰方块（所有者附的截图）。
+   两条出路：把控件换成自绘（`appearance: none` + 手写勾），或者把环挪到一个
+   **圆角真实存在**的元素上。选后者：`.export-level` 是普通 label，圆角是真的，
+   环也就是圆的，而且「焦点＝整行加框」更贴合这个控件的意思（整行才是可点的选择）。
+   自绘控件会丢掉原生勾选框的键盘与无障碍行为，为一个焦点环不值得（#143 的非目标：
+   不做视觉重做）。 */
+.export-level input:focus {
+  /* 压掉底座那条方角环。特异性 (0,2,1) > 底座的 `.export-modal :where(...):focus` (0,2,0) */
+  box-shadow: none;
+}
+.export-level:focus-within {
+  box-shadow: var(--shadow-focus);
+}
+
+/* 一个等级都没勾时的那句提示（issue #145）：禁用按钮必须有个原因看得见。 */
+.export-form__hint {
+  margin: -6px 0 0;
+  color: var(--ink-300);
+  font-size: 13px;
 }
 
 .export-form__actions {

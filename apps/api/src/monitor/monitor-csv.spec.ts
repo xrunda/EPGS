@@ -5,6 +5,7 @@ import {
   buildExamsCsv,
   contentDispositionFor,
   csvFileName,
+  orderExportLevels,
 } from './monitor-csv';
 
 const HEADER =
@@ -208,38 +209,95 @@ describe('buildExamsCsv (issue #139)', () => {
   });
 });
 
+describe('orderExportLevels (issue #145)', () => {
+  it('puts the selection in the red-to-unclassified order, whatever came in', () => {
+    expect(orderExportLevels(['UNCLASSIFIED', 'GREEN', 'RED'])).toEqual([
+      'RED',
+      'GREEN',
+      'UNCLASSIFIED',
+    ]);
+    expect(orderExportLevels(['YELLOW'])).toEqual(['YELLOW']);
+  });
+
+  it('de-duplicates, so a level ticked twice is one level', () => {
+    // The same level cannot be selected twice through the checkbox UI, but the
+    // query string is a public surface: `?levels=RED,RED,RED` must not turn into
+    // a filename with 红色关注 three times, nor into a `in (RED,RED,RED)` clause.
+    expect(orderExportLevels(['RED', 'YELLOW', 'RED'])).toEqual(['RED', 'YELLOW']);
+    expect(orderExportLevels(['RED', 'RED', 'RED', 'RED'])).toEqual(['RED']);
+  });
+
+  it('is idempotent, so the DTO can normalize what the client already normalized', () => {
+    const once = orderExportLevels(['YELLOW', 'RED']);
+    expect(orderExportLevels(once)).toEqual(once);
+  });
+
+  it('KEEPS an unrecognised value at the end instead of dropping it', () => {
+    // Dropping it here would turn `?levels=RED,PURPLE` into a 200 that quietly
+    // exports only red - the caller gets a file and never learns half the
+    // request was ignored. It must reach @IsEnum and become a 400.
+    expect(orderExportLevels(['PURPLE', 'RED'])).toEqual(['RED', 'PURPLE']);
+    expect(orderExportLevels(['RED', 'PURPLE', 'PURPLE'])).toEqual(['RED', 'PURPLE']);
+  });
+});
+
 describe('csvFileName', () => {
   it('names the file in the operator’s language, per day and level', () => {
-    expect(csvFileName('2026-08-20', 'RED' as MonitorLevel)).toBe(
-      '数据导出-2026-08-20-红色关注.csv',
+    expect(csvFileName('2026-08-20', ['RED'])).toBe('数据导出-2026-08-20-红色关注.csv');
+    expect(csvFileName('2026-08-20', ['UNCLASSIFIED'])).toBe('数据导出-2026-08-20-未分级.csv');
+  });
+
+  it('joins several levels with `+`, always in the red-to-unclassified order (#145)', () => {
+    expect(csvFileName('2026-08-20', ['RED', 'YELLOW'])).toBe(
+      '数据导出-2026-08-20-红色关注+黄色关注.csv',
     );
-    expect(csvFileName('2026-08-20', 'UNCLASSIFIED' as MonitorLevel)).toBe(
-      '数据导出-2026-08-20-未分级.csv',
+    expect(csvFileName('2026-08-20', ['UNCLASSIFIED', 'RED', 'GREEN'])).toBe(
+      '数据导出-2026-08-20-红色关注+绿色关注+未分级.csv',
     );
+  });
+
+  it('is a function of the SELECTION, not of the caller’s order or repetitions', () => {
+    // The modal sends whatever the operator ticked; the same choice must not be
+    // able to download under two different names (and pile up `…(1).csv`).
+    const canonical = csvFileName('2026-08-20', ['RED', 'YELLOW']);
+    expect(csvFileName('2026-08-20', ['YELLOW', 'RED'])).toBe(canonical);
+    expect(csvFileName('2026-08-20', ['YELLOW', 'RED', 'RED', 'YELLOW'])).toBe(canonical);
   });
 });
 
 describe('contentDispositionFor', () => {
   it('sends an ASCII filename and the RFC 5987 UTF-8 form, in that order', () => {
-    expect(contentDispositionFor('2026-08-20', 'RED' as MonitorLevel)).toBe(
+    expect(contentDispositionFor('2026-08-20', ['RED'])).toBe(
       `attachment; filename="monitor-2026-08-20-RED.csv"; ` +
         `filename*=UTF-8''%E6%95%B0%E6%8D%AE%E5%AF%BC%E5%87%BA-2026-08-20-%E7%BA%A2%E8%89%B2%E5%85%B3%E6%B3%A8.csv`,
+    );
+  });
+
+  it('joins the ASCII leg with `-`, so no download manager reads it as a space', () => {
+    expect(contentDispositionFor('2026-08-20', ['RED', 'YELLOW'])).toContain(
+      'filename="monitor-2026-08-20-RED-YELLOW.csv"',
+    );
+    // …and the Chinese leg keeps the `+` a human would write.
+    expect(contentDispositionFor('2026-08-20', ['RED', 'YELLOW'])).toContain(
+      `${encodeURIComponent('红色关注+黄色关注')}.csv`,
     );
   });
 
   it('keeps the plain filename leg free of non-ASCII bytes', () => {
     // A client that ignores filename* must still get a usable name, and an
     // intermediary that assumes Latin-1 must still see a valid header.
-    const header = contentDispositionFor('2026-08-20', 'YELLOW' as MonitorLevel);
+    const header = contentDispositionFor('2026-08-20', ['YELLOW']);
     const plain = /filename="([^"]*)"/.exec(header)?.[1] ?? '';
     expect(plain).toBe('monitor-2026-08-20-YELLOW.csv');
     expect(/^[\x20-\x7e]*$/.test(plain)).toBe(true);
   });
 
-  it('percent-encodes the apostrophes RFC 5987 excludes from attr-char', () => {
-    // Not reachable from the current level labels - but the encoder is the
-    // reason a future label with a quote cannot break out of the header.
-    const header = contentDispositionFor('2026-08-20', 'RED' as MonitorLevel);
-    expect(header).not.toMatch(/filename\*=UTF-8''[^;]*['()*!]/);
+  it('reads the same for a two-level selection as csvFileName does', () => {
+    // The header and the modal's `anchor.download` name must agree - the twin
+    // contract in the module comment. Boundary: '+' in the Chinese leg would be
+    // percent-encoded by a naive encoder, so assert on the decoded value.
+    const header = contentDispositionFor('2026-08-20', ['RED', 'YELLOW']);
+    const utf8 = /filename\*=UTF-8''([^;]*)$/.exec(header)?.[1] ?? '';
+    expect(decodeURIComponent(utf8)).toBe(csvFileName('2026-08-20', ['RED', 'YELLOW']));
   });
 });

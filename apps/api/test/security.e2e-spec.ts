@@ -437,7 +437,10 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       const plain = request(app.getHttpServer());
       await plain.get('/api/monitor/exams').expect(401);
       await plain.get('/api/monitor/summary').expect(401);
-      await plain.get('/api/monitor/export').query({ examDate: '2026-08-20', level: 'RED' }).expect(401);
+      await plain
+        .get('/api/monitor/export')
+        .query({ examDate: '2026-08-20', levels: 'RED' })
+        .expect(401);
       await plain.get('/api/rules').expect(401);
       await plain.get('/api/audit').expect(401);
       await plain.get('/api/system/sync-status').expect(401);
@@ -577,7 +580,10 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
   itWithDb(
     'the list read also writes an EXAM_LIST audit row without the raw patientName value',
     async () => {
-      await agents.viewer.get('/api/monitor/exams').query({ patientName: '测试患者甲' }).expect(200);
+      await agents.viewer
+        .get('/api/monitor/exams')
+        .query({ patientName: '测试患者甲' })
+        .expect(200);
 
       const rows = await prisma.auditLog.findMany({
         where: { action: 'EXAM_LIST', actorUsername: USERS.viewer },
@@ -608,7 +614,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     for (const key of ['viewer', 'sysAdmin', 'ruleAdmin'] as const) {
       const res = await agents[key]
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', level: 'RED' })
+        .query({ examDate: '2026-08-20', levels: 'RED' })
         .expect(403);
       // NOT plain FORBIDDEN: the role gate passed, the grant gate refused.
       expect(res.body.error.code).toBe('PATIENT_DETAIL_REQUIRED');
@@ -624,7 +630,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     await expectForbidden(
       await agents.auditor
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', level: 'RED' }),
+        .query({ examDate: '2026-08-20', levels: 'RED' }),
     );
   });
 
@@ -633,7 +639,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     async () => {
       const res = await agents.viewerFull
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', level: 'RED' })
+        .query({ examDate: '2026-08-20', levels: 'RED' })
         .expect(200);
 
       expect(res.headers['content-type']).toContain('text/csv');
@@ -664,16 +670,47 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
         take: 1,
       });
       expect(rows).toHaveLength(1);
-      // The row answers "who took a copy of which day and level, how many rows" -
-      // and holds nothing else. No patient field, and not the file.
+      // The row answers "who took a copy of which day and levels, how many
+      // rows" - and holds nothing else. No patient field, and not the file.
+      // An array since #145: one export of "red+yellow" is one row here, and
+      // that row is the only thing that tells an auditor how wide the copy was.
       expect(rows[0].meta).toEqual({
         scope: ['消化内科'],
         examDate: '2026-08-20',
-        level: 'RED',
+        levels: ['RED'],
         rowCount: 1,
       });
       expect(rows[0].resourceId).toBeNull();
       expect(JSON.stringify(rows[0].meta)).not.toMatch(/测试患者|13800000000|王医生/);
+    },
+  );
+
+  itWithDb(
+    'a multi-level export is scoped and audited as ONE row with the whole selection',
+    async () => {
+      // #145's second-order effect: "the whole day" is now a reachable request, so
+      // the audit row has to record the WIDTH of the selection - not just "the
+      // export happened". Two levels, one row, the levels in canonical order.
+      const res = await agents.viewerFull
+        .get('/api/monitor/export')
+        .query({ examDate: '2026-08-20', levels: 'YELLOW,RED' })
+        .expect(200);
+
+      expect(res.headers['content-type']).toContain('text/csv');
+      // A1 is RED and in scope; the yellow rows of this day are other departments,
+      // so the scope - not the level filter - is what keeps this file small.
+      expect(res.text).toContain('测试患者甲');
+
+      const rows = await prisma.auditLog.findMany({
+        where: { action: 'EXAM_EXPORT', actorUsername: USERS.viewerFull },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      });
+      expect(rows).toHaveLength(1);
+      // Canonical order in the trail too, so two spellings of one selection do not
+      // read as two different exports.
+      expect((rows[0].meta as { levels: string[] }).levels).toEqual(['RED', 'YELLOW']);
+      expect(JSON.stringify(rows[0].meta)).not.toMatch(/测试患者|13800000000/);
     },
   );
 
@@ -683,7 +720,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     // file, not a filtered one.
     const res = await agents.viewerFull
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-20', level: 'GREEN' })
+      .query({ examDate: '2026-08-20', levels: 'GREEN' })
       .expect(200);
     expect(res.headers['x-row-count']).toBe('0');
     expect(res.text).not.toContain('测试患者丙');

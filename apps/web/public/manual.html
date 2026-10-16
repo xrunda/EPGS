@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      内网系统的一份静态说明页，不该被外部检索到。整个应用都没写 robots，
+      这一条是这一页自己的（它无需登录即可访问，见下面 <style> 上方的注释）。
+    -->
+    <meta name="robots" content="noindex" />
+    <title>使用手册 · 内镜中心重点患者监测系统</title>
+    <!--
+      为什么是一个**自带样式、零外部依赖**的静态页，而不是 React 页面：
+      1. 它必须能在不登录、不打开发包产物的情况下被打开（顶栏入口指向 /manual.html）；
+      2. 它必须与系统**同源**发布 —— 堡垒机在网闸后面，医生的浏览器打不开 github.com，
+         所以手册不能只做成仓库链接。
+      Vite 会把 apps/web/public/ 原样拷进 dist/，nginx 的 try_files 先看磁盘，
+      于是 /manual.html 被直接命中。（注意：不带扩展名的 /manual 会被 SPA 回落吞掉，
+      所以入口与下面的链接都必须写确切文件名。）
+      3. 不引 tokens.css：它在打包后是**带哈希的文件名**，静态页链不上。
+         因此下面的颜色按 tokens.css 的值抄了一份，改主题时这里要一起改。
+    -->
+    <style>
+      :root {
+        --ink-900: #0f2e33;
+        --ink-800: #143f45;
+        --ink-600: #29484d;
+        --ink-500: #3c5559;
+        --ink-300: #63777a;
+        --ink-200: #8aa0a3;
+        --teal-900: #0d3a3f;
+        --teal-700: #176b78;
+        --teal-600: #1c7d8a;
+        --surface-app: #eef4f3;
+        --surface-panel: #f8fbfa;
+        --surface-raised: #ffffff;
+        --border-subtle: #e5eceb;
+        --border-strong: #c2d0ce;
+        --red-ink: #a73732;
+        --red-accent: #d84a43;
+        --yellow-ink: #7b5a00;
+        --yellow-accent: #d7a20d;
+        --green-ink: #287044;
+        --green-accent: #3c9560;
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+        --shadow-sm:
+          0 1px 2px rgba(15, 46, 51, 0.04), 0 4px 10px rgba(15, 46, 51, 0.05);
+        --font-sans:
+          'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--surface-app);
+        color: #19383d;
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.75;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--teal-700);
+      }
+
+      /* 顶栏与系统同款深色渐变，让这一页看起来仍属于同一个系统。 */
+      .masthead {
+        background: linear-gradient(155deg, var(--ink-800) 0%, var(--teal-900) 100%);
+        color: #fff;
+      }
+      .masthead__inner {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 22px 24px 26px;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .masthead__eyebrow {
+        margin: 0;
+        color: #9fd0d6;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+      }
+      .masthead h1 {
+        margin: 4px 0 0;
+        font-size: 27px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+      .masthead__back {
+        color: #d6eeea;
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: var(--radius-sm);
+        padding: 7px 14px;
+        white-space: nowrap;
+      }
+      .masthead__back:hover,
+      .masthead__back:focus-visible {
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+        outline: 2px solid rgba(255, 255, 255, 0.35);
+      }
+
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 28px 24px 72px;
+      }
+
+      .updated {
+        margin: 0 0 26px;
+        padding: 9px 13px;
+        border-left: 3px solid var(--teal-600);
+        border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+        background: #eaf4f5;
+        color: #315b62;
+        font-size: 13.5px;
+      }
+
+      section {
+        margin-top: 34px;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border-subtle);
+        color: var(--ink-800);
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+      h3 {
+        margin: 24px 0 8px;
+        color: var(--ink-600);
+        font-size: 16px;
+        font-weight: 750;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul,
+      ol {
+        margin: 0 0 12px;
+        padding-left: 22px;
+      }
+      li {
+        margin-bottom: 6px;
+      }
+      li > ul,
+      li > ol {
+        margin-top: 6px;
+      }
+
+      strong {
+        color: var(--ink-900);
+        font-weight: 750;
+      }
+
+      /* 卡片：正文里需要"单独看一眼"的块（重要提示、等级图例、入口清单）。 */
+      .note {
+        margin: 14px 0;
+        padding: 13px 15px;
+        border: 1px solid var(--border-subtle);
+        border-left: 4px solid var(--teal-600);
+        border-radius: var(--radius-sm);
+        background: var(--surface-raised);
+        box-shadow: var(--shadow-sm);
+      }
+      .note--warn {
+        border-left-color: var(--red-accent);
+        background: #fff7f6;
+      }
+      .note p:last-child,
+      .note ul:last-child {
+        margin-bottom: 0;
+      }
+      .note__title {
+        margin: 0 0 6px;
+        color: var(--ink-800);
+        font-weight: 750;
+      }
+
+      /* 等级图例：色块 + 文字。不靠颜色单独表意 —— 每一项都写了等级名。 */
+      .levels {
+        display: grid;
+        gap: 10px;
+        margin: 14px 0;
+        padding: 0;
+        list-style: none;
+      }
+      .levels li {
+        display: grid;
+        grid-template-columns: 4px 1fr;
+        gap: 12px;
+        margin: 0;
+        padding: 11px 14px 11px 0;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        background: var(--surface-raised);
+        overflow: hidden;
+      }
+      .levels__bar {
+        border-radius: 0 3px 3px 0;
+      }
+      .levels--red .levels__bar {
+        background: var(--red-accent);
+      }
+      .levels--yellow .levels__bar {
+        background: var(--yellow-accent);
+      }
+      .levels--green .levels__bar {
+        background: var(--green-accent);
+      }
+      .levels--unclassified .levels__bar {
+        background: var(--border-strong);
+      }
+      .levels__name {
+        font-weight: 750;
+      }
+      .levels--red .levels__name {
+        color: var(--red-ink);
+      }
+      .levels--yellow .levels__name {
+        color: var(--yellow-ink);
+      }
+      .levels--green .levels__name {
+        color: var(--green-ink);
+      }
+      .levels--unclassified .levels__name {
+        color: var(--ink-500);
+      }
+      .levels__desc {
+        color: var(--ink-600);
+        font-size: 14px;
+      }
+
+      /* 界面文字用等宽感的边框包起来，和正文区分开，读到时知道"屏幕上就是这个字"。 */
+      .ui {
+        padding: 1px 6px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: var(--surface-panel);
+        color: var(--ink-800);
+        font-size: 0.94em;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+
+      table {
+        width: 100%;
+        margin: 12px 0 16px;
+        border-collapse: collapse;
+        background: var(--surface-raised);
+        font-size: 14.5px;
+      }
+      th,
+      td {
+        padding: 9px 12px;
+        border: 1px solid var(--border-subtle);
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: var(--surface-panel);
+        color: var(--ink-600);
+        font-weight: 750;
+      }
+      /* 第一列是"位置/筛选项"这类短标签。有 rowspan 的表格里浏览器会把这一列压窄，
+         "工作台工具栏"会被挤成一列一个字 —— 钉住不换行，让它按内容取宽。
+         排除带 colspan 的单元格：那一条是整行说明文字，nowrap 会让它溢出。
+         窄屏不钉（见下面的媒体查询），否则表格会横向溢出。 */
+      tbody td:first-child:not([colspan]) {
+        white-space: nowrap;
+      }
+
+      /* 目录：文首的快速跳转，方便"我就想知道导出在哪"这类问法。 */
+      .toc {
+        padding: 14px 18px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--surface-raised);
+      }
+      .toc ol {
+        margin: 0;
+        padding-left: 20px;
+        columns: 2;
+        column-gap: 28px;
+      }
+      .toc li {
+        margin-bottom: 4px;
+      }
+      @media (max-width: 620px) {
+        .toc ol {
+          columns: 1;
+        }
+      }
+
+      .footnote {
+        margin-top: 44px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border-subtle);
+        color: var(--ink-300);
+        font-size: 13px;
+      }
+
+      /* 打印：医生可能想把它打出来贴在工位上。去掉底色与阴影，省墨且更清楚。 */
+      @media print {
+        body {
+          background: #fff;
+          font-size: 11.5pt;
+        }
+        .masthead {
+          color: #000;
+          background: none;
+          border-bottom: 2px solid #000;
+        }
+        .masthead__eyebrow,
+        .masthead__back {
+          color: #444;
+        }
+        .masthead__back {
+          display: none;
+        }
+        main {
+          max-width: none;
+          padding: 0;
+        }
+        .note,
+        .levels li,
+        table,
+        .toc {
+          box-shadow: none;
+        }
+        section {
+          break-inside: avoid;
+        }
+        h2 {
+          break-after: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead__inner">
+        <div>
+          <p class="masthead__eyebrow">内镜中心</p>
+          <h1>重点患者监测系统 · 使用手册</h1>
+        </div>
+        <a class="masthead__back" href="/">返回系统</a>
+      </div>
+    </header>
+
+    <main>
+      <p class="updated">
+        本手册与系统当前版本一致，最近更新 <strong>2026 年 10 月</strong>。系统功能调整后本页会一起更新。
+      </p>
+
+      <nav class="toc" aria-label="目录">
+        <ol>
+          <li><a href="#what">这个系统是做什么的</a></li>
+          <li><a href="#level">关注等级：是什么，不是什么</a></li>
+          <li><a href="#levels">四个等级分别是什么意思</a></li>
+          <li><a href="#how">等级是怎么定出来的</a></li>
+          <li><a href="#daily">每天怎么用</a></li>
+          <li><a href="#entries">页面上还有哪些入口</a></li>
+          <li><a href="#faq">常见问题</a></li>
+          <li><a href="#keyboard">键盘操作</a></li>
+        </ol>
+      </nav>
+
+      <section id="what">
+        <h2>1. 这个系统是做什么的</h2>
+        <p>
+          它把内镜中心这段时间内的<strong>重点患者</strong>挑出来，按关注等级排在列表前面，
+          让你先看到最需要先看的人，而不用一份份翻报告。
+        </p>
+        <p>它是<strong>只读</strong>的 —— 只把医院系统里已经有的检查与报告取过来展示：</p>
+        <ul>
+          <li>不改动、不写入医院的任何系统；</li>
+          <li>不在系统里做任何诊断结论；</li>
+          <li>不代替你读报告 —— 它只是把"可能要看一眼的人"排到前面。</li>
+        </ul>
+        <div class="note note--warn">
+          <p class="note__title">请始终以报告原文与审核结论为准</p>
+          <p>
+            系统展示的关注等级只用于监测提示，<strong>不作为正式诊断或病情严重程度判断</strong>；
+            未经审核的报告仅供参考。
+          </p>
+        </div>
+      </section>
+
+      <section id="level">
+        <h2>2. 关注等级：是什么，不是什么</h2>
+        <p>这一条最容易被误解，请先看完再用：</p>
+        <ul>
+          <li>
+            <strong>它是管理上的关注等级</strong> —— 表示"这个人需要多快被看到"，
+            用来决定你的查看顺序。
+          </li>
+          <li><strong>它不是病情严重程度</strong> —— 红色关注不等于病情危重。</li>
+          <li><strong>它不是诊断结论</strong> —— 系统不做诊断。</li>
+        </ul>
+        <p>
+          换句话说：等级回答的是"先看谁"，不是"谁更重"。同一位患者的实际意义，
+          仍然要回到报告与临床判断。
+        </p>
+      </section>
+
+      <section id="levels">
+        <h2>3. 四个等级分别是什么意思</h2>
+        <ul class="levels">
+          <li class="levels--red">
+            <span class="levels__bar" aria-hidden="true"></span>
+            <span>
+              <span class="levels__name">红色关注</span>
+              <span class="levels__desc"> —— 最需要尽快查看。</span>
+            </span>
+          </li>
+          <li class="levels--yellow">
+            <span class="levels__bar" aria-hidden="true"></span>
+            <span>
+              <span class="levels__name">黄色关注</span>
+              <span class="levels__desc"> —— 需要留意，建议当天内看到。</span>
+            </span>
+          </li>
+          <li class="levels--green">
+            <span class="levels__bar" aria-hidden="true"></span>
+            <span>
+              <span class="levels__name">绿色关注</span>
+              <span class="levels__desc"> —— 有需要关注的内容，按常规顺序查看即可。</span>
+            </span>
+          </li>
+          <li class="levels--unclassified">
+            <span class="levels__bar" aria-hidden="true"></span>
+            <span>
+              <span class="levels__name">未分级</span>
+              <span class="levels__desc"> —— 没有命中需要关注的内容。</span>
+            </span>
+          </li>
+        </ul>
+        <p>
+          四个等级按 <strong>红 → 黄 → 绿 → 未分级</strong> 的顺序排列，
+          列表、统计卡片、导出文件都遵循这个顺序。
+        </p>
+        <div class="note">
+          <p>
+            哪个词算哪个等级，由医院在 <span class="ui">关键词监控</span> 里维护，
+            可以按科室要求调整。也就是说，<strong>等级口径是医院可以改的</strong>，
+            不是写死的。
+          </p>
+        </div>
+      </section>
+
+      <section id="how">
+        <h2>4. 等级是怎么定出来的</h2>
+        <p>等级来自两个来源，最终取其中<strong>最高</strong>的一个：</p>
+        <ol>
+          <li>
+            <strong>关键词命中</strong> —— 系统按医院维护的关键词库读报告正文，
+            出现某个词就按该词设定的等级给这份报告定级。
+          </li>
+          <li>
+            <strong>AI 语义命中</strong>（仅在医院开启时）—— 把整份报告通读一遍，
+            命中的关注语义会把等级<strong>往上调</strong>。
+            <ul>
+              <li>它<strong>只会上调，不会下调</strong>：关键词已经给出的等级不会被它调低。</li>
+              <li>它<strong>不产生任何诊断结论</strong>，只是"这条也需要关注"。</li>
+              <li>该功能默认关闭。医院没有开启时，等级完全由关键词决定。</li>
+            </ul>
+          </li>
+        </ol>
+        <div class="note">
+          <p class="note__title">等级会变，这是正常的</p>
+          <p>
+            关键词库或关注语义调整之后，历史记录的等级会按新规则<strong>重新计算</strong>。
+            所以同一份报告上周是黄色、这周显示红色，通常不是数据出错，而是规则变了
+            （也可能是后来被 AI 语义命中了）。
+          </p>
+        </div>
+      </section>
+
+      <section id="daily">
+        <h2>5. 每天怎么用</h2>
+        <p>打开系统后就是<strong>工作台</strong>，从上到下依次是筛选、统计、列表。</p>
+
+        <h3>5.1 先筛选出你要看的那一批</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>筛选项</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>检查日期范围</td>
+              <td>
+                开始与结束日期；右边还有 <span class="ui">近一日</span>
+                <span class="ui">近三日</span> <span class="ui">近一周</span>
+                <span class="ui">近一月</span> 四个快捷按钮。默认是近一日。
+              </td>
+            </tr>
+            <tr>
+              <td>科室</td>
+              <td>按科室名称筛选。</td>
+            </tr>
+            <tr>
+              <td>患者类型</td>
+              <td>全部类型 / 住院 / 门诊。</td>
+            </tr>
+            <tr>
+              <td>关注等级</td>
+              <td>全部等级 / 红色 / 黄色 / 绿色 / 未分级。</td>
+            </tr>
+            <tr>
+              <td>检查项目</td>
+              <td>如胃镜、肠镜。</td>
+            </tr>
+            <tr>
+              <td>姓名</td>
+              <td>
+                <strong>只搜索患者姓名，不搜索报告正文</strong>。想按内容找请用"命中关键词"。
+              </td>
+            </tr>
+            <tr>
+              <td>命中关键词</td>
+              <td>按关键词筛选，同样不搜索报告正文。</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>填好后点 <span class="ui">查询</span> 生效；点 <span class="ui">重置</span> 回到默认条件。</p>
+
+        <h3>5.2 看一眼数据新不新</h3>
+        <p>
+          工具栏右上角显示同步情况，例如"正常 · 最后同步时间 …"。显示
+          <span class="ui">暂无同步记录</span> 表示系统还没有成功同步过一次 ——
+          这时列表可能是空的，属于数据还没到，不是你的筛选有问题。
+        </p>
+
+        <h3>5.3 用统计卡片快速切换</h3>
+        <p>
+          列表上方有五张卡片：<span class="ui">全部</span> <span class="ui">红色</span>
+          <span class="ui">黄色</span> <span class="ui">绿色</span>
+          <span class="ui">未分级</span>。点其中一张即按该等级筛选，再点
+          <span class="ui">全部</span> 看回全量。
+        </p>
+
+        <h3>5.4 读列表</h3>
+        <p>
+          每一行是一位患者，包含等级标签、姓名、性别、开单医生、科室、床号、患者类型、
+          检查项目、检查时间，以及<strong>他为什么在这个列表上</strong>
+          （例如"命中「…」"）—— 不用点开就知道原因。
+        </p>
+        <p>列表底部可以翻页。</p>
+
+        <h3>5.5 看某一位的详情</h3>
+        <p>
+          点行末的 <span class="ui">查看详情</span>，打开
+          <span class="ui">检查详情</span>。里面是：
+        </p>
+        <ul>
+          <li>
+            顶部是<strong>等级标签 + 一句话说明为什么是这个等级</strong>，
+            先给结论再给材料；
+          </li>
+          <li>各字段（姓名、性别、科室、床号、患者类型、检查项目、检查时间等）；</li>
+          <li>报告内容与诊断；</li>
+          <li>
+            <strong>关注依据</strong> —— 把"命中了哪个词"和"读出了哪条发现"放在一个列表里，
+            每条都带着命中处的上下文，方便你快速定位到报告原文的那一句。
+          </li>
+        </ul>
+        <p>
+          详情是只读的，也没有任何"提交/确认"按钮。关掉它就回到原来的列表，
+          之前设好的筛选条件不会丢。
+        </p>
+      </section>
+
+      <section id="entries">
+        <h2>6. 页面上还有哪些入口</h2>
+        <p>
+          <strong>能看到哪些入口取决于你的账号权限</strong> —— 看不到就是没有这项权限，
+          不是坏了。
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>位置</th>
+              <th>入口</th>
+              <th>作用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td rowspan="3">顶栏</td>
+              <td><span class="ui">使用手册</span></td>
+              <td>就是本页，在新标签页打开，不影响你正在看的工作台。</td>
+            </tr>
+            <tr>
+              <td><span class="ui">账号操作</span></td>
+              <td>展开后是「修改密码」与「退出登录」。</td>
+            </tr>
+            <tr>
+              <td colspan="2" style="color: var(--ink-300)">
+                顶栏左侧是医院标识与"内镜中心"，中间偏右显示当前登录人。
+              </td>
+            </tr>
+            <tr>
+              <td rowspan="7">工作台<br />工具栏</td>
+              <td><span class="ui">关键词监控</span></td>
+              <td>
+                维护关键词库与每个词对应的关注等级，也可以批量导入。
+                <strong>这直接决定谁能被挑出来</strong>，需要相应权限。
+              </td>
+            </tr>
+            <tr>
+              <td><span class="ui">AI 语义监控</span></td>
+              <td>
+                配置"关注语义"（哪些整份报告层面的发现需要往上调等级）。
+                需要相应权限；未开启时对结果没有影响。
+              </td>
+            </tr>
+            <tr>
+              <td><span class="ui">数据导出</span></td>
+              <td>
+                选<strong>一天</strong>加一个或多个关注等级，把明细导成 CSV 文件。
+                属于取数据出去的操作，需要<strong>患者明细</strong>权限；
+                没有这个权限时入口不显示。导出的文件请按医院规定保管。
+              </td>
+            </tr>
+            <tr>
+              <td><span class="ui">更多配置</span></td>
+              <td>展开后是下面三项。</td>
+            </tr>
+            <tr>
+              <td>&nbsp;&nbsp;└ <span class="ui">消息推送</span></td>
+              <td>配置企业微信推送渠道与推送内容模板，也可以发送测试消息。</td>
+            </tr>
+            <tr>
+              <td>&nbsp;&nbsp;└ <span class="ui">等级分歧</span></td>
+              <td>
+                汇总"关键词给出的等级与 AI 判断不一致"的情况，供人工复核。
+              </td>
+            </tr>
+            <tr>
+              <td>&nbsp;&nbsp;└ <span class="ui">用户管理</span></td>
+              <td>维护账号、角色与权限。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="faq">
+        <h2>7. 常见问题</h2>
+
+        <h3>为什么有些人的姓名、手机号看不到？</h3>
+        <p>
+          取决于你的账号是否被授予<strong>患者明细</strong>权限。没有这个权限时只显示脱敏字段。
+          这是有意设计的，不是显示错误，也不能在本页面自行调整 —— 需要请联系管理员。
+        </p>
+
+        <h3>数据是什么时候的？</h3>
+        <p>
+          系统按固定间隔自动同步（约每 15 分钟一次）。看工具栏右侧的"最后同步时间"即可。
+          刚做完的检查可能需要等下一次同步才会出现。
+        </p>
+
+        <h3>导出的 CSV 怎么打开？</h3>
+        <p>
+          用 Excel <strong>直接双击打开即可</strong>：文件已按 Excel 的习惯编码，
+          中文不会出问题。请勿用文本编辑器打开后另存，那会破坏编码。
+        </p>
+        <p>
+          导出的内容与你在系统里看到的一致：未经审核的报告同样只用于监测，
+          不作为正式诊断依据。
+        </p>
+
+        <h3>为什么同一份报告的等级和前几天不一样？</h3>
+        <p>
+          等级会随规则变化<strong>重新计算</strong>：关键词库调整、关注语义调整，
+          或者后来被 AI 语义命中，都可能让等级升高。这是预期行为。
+        </p>
+
+        <h3>为什么系统里没有记录"谁看过了""接下来怎么跟进"？</h3>
+        <p>
+          这个系统<strong>只做展示</strong>。它不提供任何跟进状态的登记功能，
+          也不给出结论性状态字段 —— 后续怎么跟进由科室自己的流程决定，
+          系统只负责把需要关注的人排到前面。
+        </p>
+
+        <h3>列表是空的，是不是坏了？</h3>
+        <p>按这个顺序看：</p>
+        <ol>
+          <li>先看工具栏右侧的同步状态，<span class="ui">暂无同步记录</span> 说明数据还没到；</li>
+          <li>再看日期范围是不是太窄（默认只查近一日）；</li>
+          <li>再看是不是选了某个等级或某个科室而当天确实没有；</li>
+          <li>排除以上情况后再联系管理员。</li>
+        </ol>
+      </section>
+
+      <section id="keyboard">
+        <h2>8. 键盘操作</h2>
+        <ul>
+          <li><strong>Tab</strong> 在筛选项、按钮之间移动焦点，焦点位置有清晰的外框。</li>
+          <li>
+            <strong>Esc</strong> 关闭当前打开的弹层或检查详情，并回到打开它的那个按钮上。
+          </li>
+          <li>列表与卡片都可以用键盘操作，不必用鼠标。</li>
+        </ul>
+      </section>
+
+      <p class="footnote">
+        内镜中心重点患者监测系统 · 使用手册。本页为静态说明，随系统一起发布；
+        系统功能调整后本页会同步更新。关注等级仅用于监测提示，不作为正式诊断。
+      </p>
+    </main>
+  </body>
+</html>

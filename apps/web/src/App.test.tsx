@@ -289,6 +289,30 @@ describe('App', () => {
     expect(screen.queryByRole('menuitem', { name: '退出登录' })).not.toBeInTheDocument();
   });
 
+  /*
+    issue #147：使用手册放在顶栏（用户名左边），不放工作台工具栏。
+    理由是它必须对**没有任何权限的只读医生**同样可读 —— 工具栏那排入口全部按角色/
+    授权传 prop 门控，顶栏是无条件渲染的。所以这条用例刻意跑在默认 fixture 上：
+    roles 只有 VIEWER、patientDetail 为 false，即权限最小的账号。
+  */
+  it('shows the manual link in the header even for a permission-less viewer (issue #147)', async () => {
+    render(<App />);
+    await screen.findByText('测试患者甲');
+
+    // 先证明这个账号确实没有权限 —— 否则下面那条"手册仍然在"就是空断言。
+    expect(screen.queryByRole('button', { name: '数据导出' })).not.toBeInTheDocument();
+
+    const link = screen.getByRole('link', { name: '使用手册' });
+    // 同源静态页的确切文件名：不带扩展名的 /manual 会被 nginx 的 SPA 回落吞掉。
+    expect(link).toHaveAttribute('href', '/manual.html');
+    // 新标签页打开，不丢工作台的筛选状态；noopener 是它的标准搭配。
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener');
+    // 位置：顶栏里、用户名左边（和 #116 那条用同一套写法比位置）
+    expect(link.closest('.app-header__actions')).not.toBeNull();
+    expect(link.nextElementSibling).toBe(screen.getByLabelText('当前用户'));
+  });
+
   it('opens the read-only detail drawer and preserves the workbench behind it', async () => {
     vi.stubGlobal(
       'fetch',

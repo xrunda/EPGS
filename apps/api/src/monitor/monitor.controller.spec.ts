@@ -1,11 +1,11 @@
 import { StreamableFile } from '@nestjs/common';
-import { AuditAction, AppRole } from '@prisma/client';
+import { AuditAction, AppRole, MonitorLevel } from '@prisma/client';
 import { MonitorController } from './monitor.controller';
 import { MonitorExportForbiddenException } from './errors/monitor-export-forbidden.exception';
 
 /**
- * Controller-layer tests for the CSV export (issue #139): the patientDetail
- * gate, the headers, and the audit-trail discipline. Services are mocked, and
+ * Controller-layer tests for the CSV export (issue #139, multi-level since
+ * #145): the patientDetail gate, the headers, and the audit-trail discipline. Services are mocked, and
  * the class-level @RequireRoles metadata is not exercised here - the security
  * e2e suite covers the real role matrix against real guards.
  */
@@ -18,7 +18,9 @@ describe('MonitorController.exportDay', () => {
   let response: { setHeader: jest.Mock };
 
   const request: any = { ip: '10.0.0.9', correlationId: 'corr-139' };
-  const query = { examDate: '2026-08-20', level: 'RED' as const };
+  const query = { examDate: '2026-08-20', levels: ['RED'] as MonitorLevel[] };
+  /** A two-level selection, the shape #145 made the common case. */
+  const multiQuery = { examDate: '2026-08-20', levels: ['RED', 'YELLOW'] as MonitorLevel[] };
 
   function user(overrides: Record<string, unknown> = {}) {
     return {
@@ -73,11 +75,14 @@ describe('MonitorController.exportDay', () => {
   });
 
   describe('the successful file', () => {
-    it('passes one day, one level and the caller scope to the service', async () => {
-      await controller.exportDay(query as any, user() as any, request, response as any);
+    it('passes one day, the WHOLE selection and the caller scope to the service', async () => {
+      await controller.exportDay(multiQuery as any, user() as any, request, response as any);
 
+      // The controller must not narrow or re-shape the selection: everything
+      // the operator ticked reaches the query. (Normalisation lives in the DTO,
+      // so what arrives here is already de-duplicated and ordered.)
       expect(monitorService.exportDay).toHaveBeenCalledWith(
-        { examDate: '2026-08-20', level: 'RED' },
+        { examDate: '2026-08-20', levels: ['RED', 'YELLOW'] },
         { scope: ['消化内科'] },
       );
     });
@@ -152,13 +157,21 @@ describe('MonitorController.exportDay', () => {
       expect(recorded.meta).toEqual({
         scope: ['消化内科'],
         examDate: '2026-08-20',
-        level: 'RED',
+        // An array since #145: one export of "red+yellow" is ONE row here, and
+        // that row is what tells an auditor how wide the file was.
+        levels: ['RED'],
         rowCount: 2,
       });
       // The row must be readable without holding patient data, and it must not
       // carry the file: it is the only record that a copy left the system.
       expect(recorded.resourceId).toBeUndefined();
       expect(JSON.stringify(recorded.meta)).not.toContain('张三');
+    });
+
+    it('records the exact multi-level selection, so the audit says how wide the file was', async () => {
+      await controller.exportDay(multiQuery as any, user() as any, request, response as any);
+
+      expect(audit.record.mock.calls[0][0].meta.levels).toEqual(['RED', 'YELLOW']);
     });
 
     it('records EXAM_EXPORT and not EXAM_LIST (the export is not a list read)', async () => {

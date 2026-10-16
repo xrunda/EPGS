@@ -709,10 +709,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // mentions 腺癌 yet has no rule hit at all) - proving keyword does not
     // scan reportContent/diagnosis, and matches the exact keyword rather
     // than a substring like the old '癌' substring search would.
-    const byKeyword = await agent
-      .get('/api/monitor/exams')
-      .query({ keyword: '腺癌' })
-      .expect(200);
+    const byKeyword = await agent.get('/api/monitor/exams').query({ keyword: '腺癌' }).expect(200);
     expect(byKeyword.body.total).toBe(2);
     expect(
       byKeyword.body.items.every(
@@ -862,12 +859,16 @@ describe('Monitor API (e2e, real Postgres)', () => {
    * reordering, an added column or a stray space fails here rather than being
    * discovered by whoever opens the file in Excel.
    */
-  const CSV_HEADER = '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号';
+  const CSV_HEADER =
+    '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号';
 
   /** Data lines only (drops the BOM-prefixed header and the trailing blank). */
   function csvDataLines(text: string): string[] {
     const withoutBom = text.startsWith('﻿') ? text.slice(1) : text;
-    return withoutBom.split('\r\n').slice(1).filter((line) => line !== '');
+    return withoutBom
+      .split('\r\n')
+      .slice(1)
+      .filter((line) => line !== '');
   }
 
   itWithDb(
@@ -875,7 +876,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     async () => {
       const res = await agent
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', level: 'RED' })
+        .query({ examDate: '2026-08-20', levels: 'RED' })
         .expect(200);
 
       expect(res.headers['content-type']).toContain('text/csv');
@@ -922,7 +923,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // R3 (Shanghai 08-20 00:30) is IN 08-20; R6 (08-19 20:00) is not.
     const day = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-20', level: 'GREEN' })
+      .query({ examDate: '2026-08-20', levels: 'GREEN' })
       .expect(200);
     expect(day.text).toContain('测试患者丙');
     expect(day.text).not.toContain('测试患者己');
@@ -930,7 +931,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // R11 is exactly 2026-08-18T00:00+08: the lower bound is inclusive...
     const midnight = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-18', level: 'GREEN' })
+      .query({ examDate: '2026-08-18', levels: 'GREEN' })
       .expect(200);
     expect(midnight.text).toContain('测试患者癸');
     expect(midnight.text).toContain(',2026-08-18,00:00:00,');
@@ -941,7 +942,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // examDateTo = D+1 anywhere would make this day return R11 and R12.
     const previousDay = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-17', level: 'GREEN' })
+      .query({ examDate: '2026-08-17', levels: 'GREEN' })
       .expect(200);
     expect(previousDay.headers['x-row-count']).toBe('0');
     expect(csvDataLines(previousDay.text)).toHaveLength(0);
@@ -949,7 +950,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // R12 (08-17 23:59) belongs to 08-17, not to 08-18.
     const lastMinute = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-17', level: 'UNCLASSIFIED' })
+      .query({ examDate: '2026-08-17', levels: 'UNCLASSIFIED' })
       .expect(200);
     expect(lastMinute.text).toContain('测试患者子');
     expect(lastMinute.text).toContain(',2026-08-17,23:59:00,');
@@ -961,29 +962,120 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // never a 404 and never an error.
     const res = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-20', level: 'UNCLASSIFIED' })
+      .query({ examDate: '2026-08-20', levels: 'UNCLASSIFIED' })
       .expect(200);
 
     expect(res.headers['x-row-count']).toBe('0');
     expect(res.text).toBe(`\uFEFF${CSV_HEADER}\r\n`);
   });
 
-  itWithDb('export rejects anything that is not one day and one known level', async () => {
+  itWithDb('export rejects anything that is not one day and a known level selection', async () => {
     const cases = [
       {}, // both missing
-      { examDate: '2026-08-20' }, // no level
-      { level: 'RED' }, // no day
-      { examDate: '2026-08-20', level: 'BLUE' }, // unknown level
-      { examDate: '2026/08/20', level: 'RED' }, // wrong date shape
+      { examDate: '2026-08-20' }, // no levels
+      { levels: 'RED' }, // no day
+      { examDate: '2026-08-20', levels: 'BLUE' }, // unknown level
+      { examDate: '2026-08-20', levels: 'RED,BLUE' }, // one good, one unknown
+      { examDate: '2026-08-20', levels: 'red' }, // codes are upper-case
+      { examDate: '2026-08-20', levels: '红色关注' }, // the label is not the code
+      { examDate: '2026-08-20', levels: '' }, // asked for, but nothing in it
+      { examDate: '2026-08-20', levels: ', ,' }, // only separators
+      { examDate: '2026/08/20', levels: 'RED' }, // wrong date shape
+      // The pre-#145 contract is deliberately gone rather than aliased: keeping
+      // the singular name would leave the single-level API in place forever.
+      { examDate: '2026-08-20', level: 'RED' },
       // forbidNonWhitelisted: the workbench's filter surface cannot be smuggled
-      // in through this route, so "one day, one level" stays a server rule.
-      { examDate: '2026-08-20', level: 'RED', page: '1' },
-      { examDate: '2026-08-20', level: 'RED', department: '消化内科' },
+      // in through this route, so "one day, the ticks the modal showed" stays a
+      // server rule - a hand-written URL cannot ask for a wider file.
+      { examDate: '2026-08-20', levels: 'RED', page: '1' },
+      { examDate: '2026-08-20', levels: 'RED', department: '消化内科' },
     ];
     for (const query of cases) {
       await agent.get('/api/monitor/export').query(query).expect(400);
     }
   });
+
+  itWithDb('export carries EVERY ticked level in one file (issue #145)', async () => {
+    // Shanghai 08-20: R1/R8/R9 RED, R2/R4/R5/R10 YELLOW, R3 GREEN. Two levels
+    // must mean seven rows - the file has to be as wide as the modal showed, and
+    // it must not quietly fall back to the first (or the last) level ticked.
+    const res = await agent
+      .get('/api/monitor/export')
+      .query({ examDate: '2026-08-20', levels: 'RED,YELLOW' })
+      .expect(200);
+
+    expect(res.headers['x-row-count']).toBe('7');
+    const lines = csvDataLines(res.text);
+    expect(lines).toHaveLength(7);
+    // Both legs present...
+    expect(lines.filter((line) => line.startsWith('红色关注,'))).toHaveLength(3);
+    expect(lines.filter((line) => line.startsWith('黄色关注,'))).toHaveLength(4);
+    // ...and the levels that were NOT ticked are absent, including the one whose
+    // label sorts between them.
+    expect(lines.filter((line) => line.startsWith('绿色关注,'))).toHaveLength(0);
+    expect(res.text).not.toContain('测试患者丙');
+
+    // The name says what is in the file. The ASCII leg joins with `-` (a `,`
+    // would read as a header-list separator), the Chinese leg keeps the `+`.
+    expect(res.headers['content-disposition']).toBe(
+      `attachment; filename="monitor-2026-08-20-RED-YELLOW.csv"; ` +
+        `filename*=UTF-8''${encodeURIComponent('数据导出-2026-08-20-红色关注+黄色关注.csv')}`,
+    );
+  });
+
+  itWithDb('export is a function of the SELECTION, not of the order it was sent in', async () => {
+    // The checkbox UI sends the canonical order, but the query string is public.
+    // `YELLOW,RED,RED` must yield the same bytes AND the same file name as
+    // `RED,YELLOW` - otherwise the same choice piles up `…(1).csv` in Downloads.
+    const [canonical, shuffled, repeated] = await Promise.all([
+      agent.get('/api/monitor/export').query({ examDate: '2026-08-20', levels: 'RED,YELLOW' }),
+      agent.get('/api/monitor/export').query({ examDate: '2026-08-20', levels: 'YELLOW,RED' }),
+      agent
+        .get('/api/monitor/export')
+        .query({ examDate: '2026-08-20', levels: 'YELLOW,RED,RED,YELLOW,RED' }),
+    ]);
+
+    for (const res of [canonical, shuffled, repeated]) {
+      expect(res.status).toBe(200);
+      expect(res.headers['content-disposition']).toBe(canonical.headers['content-disposition']);
+      expect(res.headers['x-row-count']).toBe('7');
+      expect(res.text).toBe(canonical.text);
+    }
+  });
+
+  itWithDb(
+    'export of all four levels is the whole day, and equals the four single-level files',
+    async () => {
+      // #145 made "the whole day in one file" reachable for the first time. The
+      // strongest statement of correctness is a partition: the four-level file
+      // holds exactly the rows the four one-level files hold, no more and no
+      // fewer. (R7 has a NULL examTime and belongs to no day - it is in none of
+      // the five files, which is why this day totals 8 and not 9.)
+      const all = await agent
+        .get('/api/monitor/export')
+        .query({ examDate: '2026-08-20', levels: 'RED,YELLOW,GREEN,UNCLASSIFIED' })
+        .expect(200);
+
+      expect(all.headers['x-row-count']).toBe('8');
+      const allLines = csvDataLines(all.text);
+
+      const singles = await Promise.all(
+        ['RED', 'YELLOW', 'GREEN', 'UNCLASSIFIED'].map((level) =>
+          agent
+            .get('/api/monitor/export')
+            .query({ examDate: '2026-08-20', levels: level })
+            .expect(200),
+        ),
+      );
+      const singleLines = singles.flatMap((res) => csvDataLines(res.text));
+
+      expect(allLines).toHaveLength(singleLines.length);
+      expect([...allLines].sort()).toEqual([...singleLines].sort());
+      // A level with no rows on this day is not an error - it contributes nothing
+      // (UNCLASSIFIED here: R7 has no exam time at all).
+      expect(singles[3].headers['x-row-count']).toBe('0');
+    },
+  );
 
   // --- Summary ---------------------------------------------------------
 
@@ -1147,9 +1239,15 @@ describe('Monitor API (e2e, real Postgres)', () => {
       expect(list.body.total).toBe(0);
       const clean = await agent.get('/api/monitor/exams').query({ keyword: 'AI-E2E' });
       expect(clean.body.total).toBe(0);
-      const byId = await agent.get('/api/monitor/exams').query({ examDateFrom: '2026-08-22', examDateTo: '2026-08-22' });
-      expect(byId.body.items.map((item: { recordId: string }) => item.recordId)).toContain(record.id);
-      const listed = byId.body.items.find((item: { recordId: string }) => item.recordId === record.id);
+      const byId = await agent
+        .get('/api/monitor/exams')
+        .query({ examDateFrom: '2026-08-22', examDateTo: '2026-08-22' });
+      expect(byId.body.items.map((item: { recordId: string }) => item.recordId)).toContain(
+        record.id,
+      );
+      const listed = byId.body.items.find(
+        (item: { recordId: string }) => item.recordId === record.id,
+      );
       expect(listed.matchedKeywords).toEqual([]);
 
       // The detail: everything the engine recorded, plus the verdict.

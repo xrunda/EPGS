@@ -305,6 +305,13 @@ enum AuditAction {
   /// ever part of it.
   MONITOR_LEVEL_CONFLICT_READ
   MONITOR_LEVEL_CONFLICT_UNREAD
+  /// Issue #139: one CSV export of the workbench list (GET /api/monitor/export).
+  /// The only action whose payload leaves the system as a file, so the row
+  /// records who exported which day and level and how many rows - the filter
+  /// values and the count, never a patient field and never the file itself.
+  /// Not a closed-loop action (issue #26): nothing here records that anyone
+  /// handled, acknowledged or reported a report.
+  EXAM_EXPORT
 }
 
 /// Message shape for a notification_template. Deliberately mirrors what the

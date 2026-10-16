@@ -5,6 +5,8 @@ import { ListExamsQueryDto } from './dto/list-exams.query.dto';
 import { SummaryQueryDto } from './dto/summary.query.dto';
 import { MonitorFiltersDto } from './dto/monitor-filters.query.dto';
 import { MonitorRecordNotFoundException } from './errors/monitor-record-not-found.exception';
+import { MonitorExportTooLargeException } from './errors/monitor-export-too-large.exception';
+import { buildExamsCsv } from './monitor-csv';
 import { resolveDateRange } from './monitor-time';
 import { toExamDetailDto, toExamDto, toWorkbenchExamDto } from './monitor.mapper';
 import {
@@ -46,12 +48,52 @@ function buildDepartmentWhere(
 }
 
 /**
+ * The default row order: examTime desc (nulls last), ties broken by
+ * currentLevel ASC - the PG enum order RED < YELLOW < GREEN < UNCLASSIFIED
+ * makes ASC render RED-first, which is the issue #7 tie-break - and id as the
+ * final stable tie-break so pagination never skips or repeats rows.
+ *
+ * Module-level (issue #139) so the CSV file carries the rows in exactly the
+ * order the same day shows them on screen; a second, slightly different order
+ * in the export would make the file and the workbench disagree about "the
+ * first record of the day" for no reason.
+ */
+const DEFAULT_EXAM_ORDER_BY: Prisma.MonitorRecordOrderByWithRelationInput[] = [
+  { examTime: { sort: 'desc', nulls: 'last' } },
+  { currentLevel: 'asc' },
+  { id: 'asc' },
+];
+
+/**
+ * Hard ceiling on one export (issue #139). See
+ * MonitorExportTooLargeException: this is a corruption guard rather than a
+ * usable user path, because "one day + one level" leaves the caller nothing to
+ * narrow. An endoscopy centre's day at one level is tens to low hundreds of
+ * rows, so this is ~50x the expected worst case and roughly 1.5 MB of UTF-8.
+ */
+export const MONITOR_EXPORT_MAX_ROWS = 10_000;
+
+/** Issue #139 export input: one Shanghai day + one attention level. */
+export interface MonitorExportQuery {
+  /** The single Asia/Shanghai calendar day, inclusive of both ends. */
+  examDate: string;
+  level: MonitorLevel;
+}
+
+export interface MonitorExportResult {
+  /** Data rows in the file, excluding the header. */
+  rowCount: number;
+  /** The complete file as UTF-8 bytes (BOM + header + rows). */
+  body: Buffer;
+}
+
+/**
  * Read-only monitor workbench queries (issue #7): the list, the detail
- * snapshot, and the level summary. No writes - the only mutation these
- * endpoints could ever perform is none. reportContent/diagnosis are never
- * selected in list queries (see LIST_SELECT), so they cannot leak into the
- * list response even by accident; they are served only by the detail
- * endpoint.
+ * snapshot, the level summary, and (issue #139) the CSV export. No writes - the
+ * only mutation these endpoints could ever perform is none.
+ * reportContent/diagnosis are never selected in list queries (see LIST_SELECT),
+ * so they cannot leak into the list response even by accident; they are served
+ * only by the detail endpoint - and by neither of the export's selects.
  */
 @Injectable()
 export class MonitorService {
@@ -92,6 +134,31 @@ export class MonitorService {
       // Ascending so distinctKeywords (first-appearance order) == earliest-match order.
       orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
     },
+  } as const satisfies Prisma.MonitorRecordSelect;
+
+  /**
+   * Export fields (issue #139) = everything a list row carries, PLUS the
+   * patient phone.
+   *
+   * It MUST be its own select rather than a widened LIST_SELECT: LIST_SELECT is
+   * shared with the alert-link list (listByIds), whose whole contract is that
+   * it never carries the phone, and its row type is what that surface reads.
+   * Adding `patientPhone` there would put the field one mapper change away from
+   * the H5 page.
+   *
+   * Naming the phone here is allowed because the export is a DETAIL-CLASS read,
+   * not a list read: the endpoint is gated on the `patientDetail` grant (see
+   * MonitorExportForbiddenException), so every caller who can reach this select
+   * could already read the same value in the drawer. If a future change adds
+   * masking to this path, the file silently stops being what the ward asked for
+   * - the owner decided on 2026-10-16 that the CSV always carries it raw.
+   *
+   * Still absent, deliberately: reportContent, diagnosis, and every AI/audit
+   * column - this is a copy of the workbench list, not of the report.
+   */
+  private static readonly EXPORT_SELECT = {
+    ...MonitorService.LIST_SELECT,
+    patientPhone: true,
   } as const satisfies Prisma.MonitorRecordSelect;
 
   private static readonly LEVEL_KEYS: Record<MonitorLevel, keyof Omit<MonitorSummaryDto, 'total'>> =
@@ -253,11 +320,7 @@ export class MonitorService {
     if (ids.length === 0) return [];
     const rows = await this.prisma.monitorRecord.findMany({
       where: { id: { in: ids } },
-      orderBy: [
-        { examTime: { sort: 'desc', nulls: 'last' } },
-        { currentLevel: 'asc' },
-        { id: 'asc' },
-      ],
+      orderBy: DEFAULT_EXAM_ORDER_BY,
       select: MonitorService.LIST_SELECT,
     });
     return rows.map((row) => toExamDto(row));
@@ -309,6 +372,46 @@ export class MonitorService {
       result.total += count;
     }
     return result;
+  }
+
+  /**
+   * One Shanghai day at one attention level, as a finished CSV file (issue
+   * #139).
+   *
+   * `examDateTo` is passed as the SAME day as `examDateFrom`, never +1:
+   * resolveDateRange already advances the upper bound to the start of the NEXT
+   * Shanghai day, so `D..D` is exactly one day and `D..D+1` would silently
+   * export two. The web's "近一日" preset sends the same single day for the
+   * same reason.
+   *
+   * No `skip` and no `count`: the row count is rows.length, and the +1 on
+   * `take` is an overflow PROBE - exceeding the ceiling throws rather than
+   * truncating, so a caller never receives a file that looks complete and is
+   * not.
+   *
+   * Deliberately parameterless apart from the day, the level and the caller's
+   * scope: this is not a second, unbounded filter surface (see
+   * ExportExamsQueryDto), and it takes no maskPatient option because a masked
+   * export is a mode that must not exist - see EXPORT_SELECT.
+   */
+  async exportDay(
+    query: MonitorExportQuery,
+    opts?: MonitorQueryOptions,
+  ): Promise<MonitorExportResult> {
+    const where = this.buildWhere(
+      { examDateFrom: query.examDate, examDateTo: query.examDate, level: query.level },
+      opts?.scope,
+    );
+    const rows = await this.prisma.monitorRecord.findMany({
+      where,
+      orderBy: DEFAULT_EXAM_ORDER_BY,
+      take: MONITOR_EXPORT_MAX_ROWS + 1,
+      select: MonitorService.EXPORT_SELECT,
+    });
+    if (rows.length > MONITOR_EXPORT_MAX_ROWS) {
+      throw new MonitorExportTooLargeException(MONITOR_EXPORT_MAX_ROWS);
+    }
+    return { rowCount: rows.length, body: buildExamsCsv(rows) };
   }
 
   private buildWhere(query: MonitorFiltersDto, scope?: string[]): Prisma.MonitorRecordWhereInput {
@@ -371,7 +474,11 @@ export class MonitorService {
         return [{ lastMatchedAt: dir }, { id: 'asc' }];
       case 'examTime':
       default:
-        return [{ examTime: { sort: dir, nulls: 'last' } }, { currentLevel: 'asc' }, { id: 'asc' }];
+        // The descending case IS DEFAULT_EXAM_ORDER_BY - one definition, shared
+        // with listByIds and exportDay.
+        return dir === 'desc'
+          ? DEFAULT_EXAM_ORDER_BY
+          : [{ examTime: { sort: dir, nulls: 'last' } }, { currentLevel: 'asc' }, { id: 'asc' }];
     }
   }
 }

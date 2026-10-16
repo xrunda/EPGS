@@ -46,7 +46,8 @@
 > **凡 PRD 与 [acceptance.md](./acceptance.md) 冲突之处，一律以 acceptance.md 为准。**
 >
 > **「导出日报」仍取消，但别把它和 issue #139 的「数据导出」混为一谈**：#139 新增的是
-> **只读明细导出**——按需选一天 + 一个关注等级，把用户本来就能读到的明细存成 CSV。
+> **只读明细导出**——按需选一天 + 关注等级（issue #145 起可多选，勾满四个即当天全部），
+> 把用户本来就能读到的明细存成 CSV。
 > 没有聚合、没有定时、没有推送、没有任何闭环状态字段，因此与上面的取消条款不冲突
 > （对照表见 [product/read-only-display-spec.md](./product/read-only-display-spec.md) §8）。
 > §13.1 第 10/11/14 项里的「待上报队列」与「误报处理」**不受影响，继续取消**。
@@ -85,25 +86,25 @@
 
 ### 接口契约
 
-| 文档                                                     | 内容                                                        |
-| -------------------------------------------------------- | ----------------------------------------------------------- |
-| [api/monitor-api.md](./api/monitor-api.md)               | 只读工作台 API：列表、筛选、汇总、详情与命中证据            |
-| [api/pacs-ris-data-api.md](./api/pacs-ris-data-api.md)   | 医院只读数据网关向 EPGS 提供的 REST 契约（附 OpenAPI YAML） |
-| [rules-api.md](./rules-api.md)                           | `monitor_rule` 关键词规则 CRUD 与 CSV 批量导入              |
+| 文档                                                             | 内容                                                                |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------- |
+| [api/monitor-api.md](./api/monitor-api.md)                       | 只读工作台 API：列表、筛选、汇总、详情与命中证据                    |
+| [api/pacs-ris-data-api.md](./api/pacs-ris-data-api.md)           | 医院只读数据网关向 EPGS 提供的 REST 契约（附 OpenAPI YAML）         |
+| [rules-api.md](./rules-api.md)                                   | `monitor_rule` 关键词规则 CRUD 与 CSV 批量导入                      |
 | [monitor-level-conflict-api.md](./monitor-level-conflict-api.md) | 关注等级分歧待办（issue #103）：判定规则、已读/未读、为什么不是闭环 |
-| [notification-api.md](./notification-api.md)             | 企微渠道与推送模板的管理 API、发送测试                      |
-| [notification-rules-api.md](./notification-rules-api.md) | 定时推送规则 CRUD、手动补推、推送日志查询                   |
-| [user-admin-api.md](./user-admin-api.md)                 | 账号 CRUD、启停、重置密码、授权查看与整表替换               |
-| [sync-job.md](./sync-job.md)                             | 增量同步任务：读取、匹配、幂等入库与游标推进                |
+| [notification-api.md](./notification-api.md)                     | 企微渠道与推送模板的管理 API、发送测试                              |
+| [notification-rules-api.md](./notification-rules-api.md)         | 定时推送规则 CRUD、手动补推、推送日志查询                           |
+| [user-admin-api.md](./user-admin-api.md)                         | 账号 CRUD、启停、重置密码、授权查看与整表替换                       |
+| [sync-job.md](./sync-job.md)                                     | 增量同步任务：读取、匹配、幂等入库与游标推进                        |
 
 ### 设计与配置界面
 
-| 文档                                                   | 内容                                                                            |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| [user-admin-design.md](./user-admin-design.md)         | 用户管理模块的设计草案（背景、目标、职责分离）                                  |
-| [notification-design.md](./notification-design.md)     | 消息推送模块设计，含 Webhook URL 加密方案                                       |
-| [rules-config-ui.md](./rules-config-ui.md)             | 关键词监控（原"监测规则配置"）弹窗的功能与交互                                  |
-| [semantic-judge-design.md](./semantic-judge-design.md) | AI 语义判读（issue #87）：分层、决策矩阵、fail-open、审计与隐私、上线前手工验证 |
+| 文档                                                             | 内容                                                                                     |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [user-admin-design.md](./user-admin-design.md)                   | 用户管理模块的设计草案（背景、目标、职责分离）                                           |
+| [notification-design.md](./notification-design.md)               | 消息推送模块设计，含 Webhook URL 加密方案                                                |
+| [rules-config-ui.md](./rules-config-ui.md)                       | 关键词监控（原"监测规则配置"）弹窗的功能与交互                                           |
+| [semantic-judge-design.md](./semantic-judge-design.md)           | AI 语义判读（issue #87）：分层、决策矩阵、fail-open、审计与隐私、上线前手工验证          |
 | [ai-semantic-monitor-design.md](./ai-semantic-monitor-design.md) | AI 语义监控（issue #88）：关注语义配置、等级唯一重算入口、证据校验、fail-safe 与上线门禁 |
 
 ### 数据源与适配

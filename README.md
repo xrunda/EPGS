@@ -52,7 +52,8 @@ Documentation index: [docs/README.md](./docs/README.md).
   evidence from `apps/api`'s `/api/monitor` endpoints (see "Monitor API" below and
   `docs/product/read-only-display-spec.md`). The 监测规则 button opens the rule
   configuration modal (issue #11); the 数据导出 button (issue #139, rendered only
-  for accounts holding the `patientDetail` grant) opens the export modal.
+  for accounts holding the `patientDetail` grant) opens the export modal, which
+  exports one day at one or more attention levels (#145).
 - **packages/shared-types** — TypeScript types/interfaces shared across api/worker/web
   (e.g. `HealthStatus`, `ApiErrorBody`), proving the workspace linking works end to end.
 
@@ -380,7 +381,7 @@ Key semantics (full contract in [`docs/api/monitor-api.md`](docs/api/monitor-api
   level, no "all levels" — and answers `text/csv; charset=utf-8` with a BOM, a
   `Content-Disposition` attachment, `Cache-Control: no-store`, and an `X-Row-Count`
   header. Note `examDateTo` equals `examDateFrom` here: the Shanghai-day upper bound
-  is already the *next* day's 00:00, so passing `D..D+1` would export two days.
+  is already the _next_ day's 00:00, so passing `D..D+1` would export two days.
 
 ## Commit message convention
 

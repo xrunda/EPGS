@@ -32,7 +32,7 @@
 - **导出不是「日报」**：issue #26 取消的是**导出日报**（定时、按等级聚合、推送的
   上报产物），该取消条款至今有效，见
   [product/read-only-display-spec.md](../product/read-only-display-spec.md) §8。
-  issue #139 新增的是**只读明细导出**：按需、单日、单等级、无聚合、无定时、无推送、
+  issue #139 新增的是**只读明细导出**：按需、单日、按关注的等级（#145 起可多选）、无聚合、无定时、无推送、
   无任何闭环状态字段。两者不是同一件事，不要因为「都能导出 CSV」把它们合并讨论。
 - **无规则命中 = `UNCLASSIFIED`**：永不自动标注为 `GREEN`。无命中记录同样进入
   列表与汇总，供人工关注。
@@ -398,33 +398,33 @@ DIAGNOSIS)`，实现沿用 issue #5/#26 收敛后的 `MatchField` 枚举，二�
 判的是"这份报告整体表达了医院配置的哪些关注语义"——**关键词一条都没命中，这里也
 可能有发现**，这正是该功能存在的理由。
 
-| 字段                    | 取值                              | 说明                                                                       |
-| ----------------------- | --------------------------------- | -------------------------------------------------------------------------- |
-| `attentionSource`       | `RULE`/`AI_REPORT`/`BOTH`/`NONE`  | 这条记录为什么在关注列表里（真值表见下）                                   |
-| `aiJudged`              | boolean                           | AI 是否判读过**当前版本**的报告。只回答"看没看过"，不含时间、模型、耗时。恒等于 `aiStatus === 'JUDGED'`，为兼容保留 |
-| `aiStatus`              | `JUDGED`/`FAILED`/`NOT_JUDGED`    | AI 有没有结论、以及结论还会不会来（三态见下）                              |
-| `aiSemantics`           | array                             | 报告级发现，按关注等级优先级（RED → YELLOW → GREEN）再按模型输出顺序排列    |
-| `aiSemantics[].semanticId` / `.semanticVersion` | uuid / number        | 依据的是医院哪一版关注语义（`attention_semantic` 永不物理删除，引用可解析） |
-| `aiSemantics[].name`    | string                            | 该版关注语义的名称（命中时刻的快照）                                       |
-| `aiSemantics[].attentionLevel` | `RED`/`YELLOW`/`GREEN`     | 该关注语义**配置**的颜色。最终关注等级是这些颜色与关键词等级取最大值        |
-| `aiSemantics[].confidence` | `HIGH`/`MEDIUM`/`LOW`          | 把握程度，**仅描述性**：issue #88 不过滤低把握的发现                        |
-| `aiSemantics[].reason`  | string \| null                   | 给医生看的解释句。无 `patientDetail` 权限时置 `null`                        |
-| `aiSemantics[].evidence` | array                            | 证据引用；无 `patientDetail` 权限时整体置 `[]`                              |
-| `evidence[].field`      | `EXAM_ITEM`/`FINDINGS`/`IMPRESSION` | 片段出自哪一列：检查项目 / 报告内容 / 诊断                                |
-| `evidence[].text`       | string                            | **服务端按偏移从报告原文重算出的片段**，与库中正文逐字节相同                |
-| `levelConflicts`        | array                             | 同一处两边等级不同的位置（issue #103，见下）。无分歧时为 `[]`               |
-| `levelConflicts[].keyword` / `.keywordLevel` | string / `RED`/`YELLOW`/`GREEN`/`UNCLASSIFIED` | 关键词那一侧（与 `hits[].keyword`/`.level` 同源）        |
-| `levelConflicts[].semanticName` / `.semanticLevel` | string / `RED`/`YELLOW`/`GREEN` | 报告级判读那一侧（与 `aiSemantics[].name`/`.attentionLevel` 同源） |
-| `levelConflicts[].field` | `FINDINGS`/`IMPRESSION`          | 两边落在**同一列**才配对：报告内容 / 诊断                                  |
+| 字段                                               | 取值                                           | 说明                                                                                                                |
+| -------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `attentionSource`                                  | `RULE`/`AI_REPORT`/`BOTH`/`NONE`               | 这条记录为什么在关注列表里（真值表见下）                                                                            |
+| `aiJudged`                                         | boolean                                        | AI 是否判读过**当前版本**的报告。只回答"看没看过"，不含时间、模型、耗时。恒等于 `aiStatus === 'JUDGED'`，为兼容保留 |
+| `aiStatus`                                         | `JUDGED`/`FAILED`/`NOT_JUDGED`                 | AI 有没有结论、以及结论还会不会来（三态见下）                                                                       |
+| `aiSemantics`                                      | array                                          | 报告级发现，按关注等级优先级（RED → YELLOW → GREEN）再按模型输出顺序排列                                            |
+| `aiSemantics[].semanticId` / `.semanticVersion`    | uuid / number                                  | 依据的是医院哪一版关注语义（`attention_semantic` 永不物理删除，引用可解析）                                         |
+| `aiSemantics[].name`                               | string                                         | 该版关注语义的名称（命中时刻的快照）                                                                                |
+| `aiSemantics[].attentionLevel`                     | `RED`/`YELLOW`/`GREEN`                         | 该关注语义**配置**的颜色。最终关注等级是这些颜色与关键词等级取最大值                                                |
+| `aiSemantics[].confidence`                         | `HIGH`/`MEDIUM`/`LOW`                          | 把握程度，**仅描述性**：issue #88 不过滤低把握的发现                                                                |
+| `aiSemantics[].reason`                             | string \| null                                 | 给医生看的解释句。无 `patientDetail` 权限时置 `null`                                                                |
+| `aiSemantics[].evidence`                           | array                                          | 证据引用；无 `patientDetail` 权限时整体置 `[]`                                                                      |
+| `evidence[].field`                                 | `EXAM_ITEM`/`FINDINGS`/`IMPRESSION`            | 片段出自哪一列：检查项目 / 报告内容 / 诊断                                                                          |
+| `evidence[].text`                                  | string                                         | **服务端按偏移从报告原文重算出的片段**，与库中正文逐字节相同                                                        |
+| `levelConflicts`                                   | array                                          | 同一处两边等级不同的位置（issue #103，见下）。无分歧时为 `[]`                                                       |
+| `levelConflicts[].keyword` / `.keywordLevel`       | string / `RED`/`YELLOW`/`GREEN`/`UNCLASSIFIED` | 关键词那一侧（与 `hits[].keyword`/`.level` 同源）                                                                   |
+| `levelConflicts[].semanticName` / `.semanticLevel` | string / `RED`/`YELLOW`/`GREEN`                | 报告级判读那一侧（与 `aiSemantics[].name`/`.attentionLevel` 同源）                                                  |
+| `levelConflicts[].field`                           | `FINDINGS`/`IMPRESSION`                        | 两边落在**同一列**才配对：报告内容 / 诊断                                                                           |
 
 **`attentionSource` 真值表**（只由记录上已有的两个输入决定，不看谁高谁低）：
 
-| 值          | 有效关键词命中 | `aiAttentionLevel` | 含义                       |
-| ----------- | -------------- | ------------------ | -------------------------- |
-| `RULE`      | 有             | 空                 | 只有关键词路径发现了内容   |
-| `AI_REPORT` | 无             | 非空               | 只有报告级判读发现了内容   |
-| `BOTH`      | 有             | 非空               | 两条路径都发现了内容       |
-| `NONE`      | 无             | 空                 | 两条路径都没发现           |
+| 值          | 有效关键词命中 | `aiAttentionLevel` | 含义                     |
+| ----------- | -------------- | ------------------ | ------------------------ |
+| `RULE`      | 有             | 空                 | 只有关键词路径发现了内容 |
+| `AI_REPORT` | 无             | 非空               | 只有报告级判读发现了内容 |
+| `BOTH`      | 有             | 非空               | 两条路径都发现了内容     |
+| `NONE`      | 无             | 空                 | 两条路径都没发现         |
 
 issue #94 之前，调用方用这个字段渲染一个中性灰的「来源徽标」（关键词 / AI 语义 /
 关键词 + AI 语义）。**该徽标已从临床视图移除**（取舍理由见
@@ -441,11 +441,11 @@ issue #94 之前，调用方用这个字段渲染一个中性灰的「来源徽�
 **`aiStatus` 三态（issue #102）。** 它回答的是"这条记录的关注等级背后有没有 AI 结论"，
 以及"结论还会不会来"：
 
-| 值           | 条件                                                        | 调用方要求                                                     |
-| ------------ | ----------------------------------------------------------- | -------------------------------------------------------------- |
-| `JUDGED`     | 当前报告版本有一条 `outcome = 'OK'` 的尝试                   | 正常展示结论（含"看了但没发现"，即 `aiSemantics: []`）          |
-| `FAILED`     | 有 `ERROR` 尝试、当前版本没有 `OK` 尝试，**且记录已出队**     | **必须显式告知结论不完整**，见下                                |
-| `NOT_JUDGED` | 其余（没问过、正文已换、还在队列里）                          | 无需额外说明                                                   |
+| 值           | 条件                                                      | 调用方要求                                             |
+| ------------ | --------------------------------------------------------- | ------------------------------------------------------ |
+| `JUDGED`     | 当前报告版本有一条 `outcome = 'OK'` 的尝试                | 正常展示结论（含"看了但没发现"，即 `aiSemantics: []`） |
+| `FAILED`     | 有 `ERROR` 尝试、当前版本没有 `OK` 尝试，**且记录已出队** | **必须显式告知结论不完整**，见下                       |
+| `NOT_JUDGED` | 其余（没问过、正文已换、还在队列里）                      | 无需额外说明                                           |
 
 - **`FAILED` 必须让医生看见。** 此时关注等级只由关键词路径产生，AI 那一半**永久缺席**
   （记录已出队，不会再有尝试）。渲染成与普通关键词记录无异的界面，等于让医生把"没判"
@@ -537,20 +537,34 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
   桶里，**恒有 `total == red + yellow + green + unclassified`**（空筛时 5 桶默认 0）。
 - 内部用一条 `GROUP BY current_level` 聚合，而不是 5 次 COUNT。
 
-### `GET /api/monitor/export`（issue #139）
+### `GET /api/monitor/export`（issue #139，多等级见 #145）
 
-把**一个自然日 + 一个关注等级**的患者明细导出成 CSV 文件。
+把**一个自然日 + 选定的关注等级（一个或多个）**的患者明细导出成 CSV 文件。
 
 ```
-GET /api/monitor/export?examDate=2026-08-20&level=RED
+GET /api/monitor/export?examDate=2026-08-20&levels=RED,YELLOW
 ```
 
 **查询参数（两个都必填，没有别的）**
 
-| 参数 | 类型 | 说明 |
-| --- | --- | --- |
-| `examDate` | `^YYYY-MM-DD$` | 检查日期，**单日**（Asia/Shanghai 自然日） |
-| `level` | `RED\|YELLOW\|GREEN\|UNCLASSIFIED` | 关注等级，**单个**，不接受「全部等级」 |
+| 参数       | 类型                                                  | 说明                                                      |
+| ---------- | ----------------------------------------------------- | --------------------------------------------------------- |
+| `examDate` | `^YYYY-MM-DD$`                                        | 检查日期，**单日**（Asia/Shanghai 自然日）                |
+| `levels`   | `RED\|YELLOW\|GREEN\|UNCLASSIFIED` 的**逗号分隔列表** | 关注等级，**至少一个**；去重并归一化到「红→黄→绿→未分级」 |
+
+- `levels` 是**一个**逗号分隔的参数（`?levels=RED,YELLOW`），不是重复参数；重复
+  参数形式（`?levels=RED&levels=YELLOW`）也接受，因为 Nest 交给 DTO 的就是数组。
+- **归一化**：去重 + 按红→黄→绿→未分级排序。`YELLOW,RED,RED` 与 `RED,YELLOW`
+  得到**同一个文件名和同一份内容**（否则同一个选择会在下载目录里堆出 `…(1).csv`）。
+  归一化在 `orderExportLevels()`（`apps/api/src/monitor/monitor-csv.ts`）。
+- **`?levels=` 空、只写分隔符、缺参、未知等级值（含小写 `red`、中文 `红色关注`）
+  一律 400。** 未知值**不**被静默丢掉：丢掉会让 `?levels=RED,PURPLE` 变成「200 但
+  只导了红色」，调用方拿到文件却永远不知道另一半请求被无视。
+- **旧的 `?level=RED`（单数）现在返回 400，这是有意的**：保留别名会把「单等级」这份
+  契约永远留在 API 里，而它已经不是这个接口的意思了。
+- **#145 把「一天的全部患者打成一个文件」变成可达成**（勾满四个等级），所以下面的
+  10000 行上限从「永不触发的护栏」变成可能真的挡住一次请求——它仍然是 400，
+  **不截断**。
 
 - **「单日」的语义就是 `examDateFrom = examDateTo = examDate`，绝对不要写成
   `examDate` 到「次日」。** `resolveDateRange`（`apps/api/src/monitor/monitor-time.ts`）
@@ -558,7 +572,7 @@ GET /api/monitor/export?examDate=2026-08-20&level=RED
   预设同样是 `from = to = today`。
 - DTO 是新写的两字段必填 DTO，**不复用** `MonitorFiltersQueryDto`：
   class-validator 会继承 `@IsOptional()` 的元数据，子类无法把字段改回必填；
-  且复用等于把「单日 + 单等级」这条业务规则只留在前端。`main.ts` 已开
+  且复用等于把「单日 + 选定的等级」这条业务规则只留在前端。`main.ts` 已开
   `forbidNonWhitelisted`，所以 `?department=`、`?page=1`、`?examDateFrom=` 之类
   一律 **400**——既有的筛选面挤不进这个口子。
 - `examTime` 为 `NULL` 的记录**永不出现**（日范围是 `exam_time` 上的
@@ -584,19 +598,22 @@ GET /api/monitor/export?examDate=2026-08-20&level=RED
 
 **响应头**
 
-| 头 | 值 |
-| --- | --- |
-| `Content-Type` | `text/csv; charset=utf-8` |
-| `Content-Disposition` | `attachment; filename="monitor-2026-08-20-RED.csv"; filename*=UTF-8''<percent-encoded 数据导出-2026-08-20-红色关注.csv>` |
-| `Content-Length` | 字节数 |
-| `Cache-Control` | `no-store` |
-| `X-Content-Type-Options` | `nosniff` |
-| `X-Row-Count` | 数据行数（不含表头） |
+| 头                       | 值                                                                                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `Content-Type`           | `text/csv; charset=utf-8`                                                                                                                |
+| `Content-Disposition`    | `attachment; filename="monitor-2026-08-20-RED-YELLOW.csv"; filename*=UTF-8''<percent-encoded 数据导出-2026-08-20-红色关注+黄色关注.csv>` |
+| `Content-Length`         | 字节数                                                                                                                                   |
+| `Cache-Control`          | `no-store`                                                                                                                               |
+| `X-Content-Type-Options` | `nosniff`                                                                                                                                |
+| `X-Row-Count`            | 数据行数（不含表头）                                                                                                                     |
 
 - ASCII 的 `filename=` 在前、RFC 5987 的 `filename*=UTF-8''` 在后，两个都留着：
   前者给忽略后者的客户端兜底。浏览器 fetch + blob 下载会**忽略**
   `Content-Disposition` 而用 `a[download]` 的名字，所以服务端
-  `csvFileName()` 与前端 `csvFileName()` 是**必须逐字一致的一对双胞胎**。
+  `csvFileName()` 与前端 `exportFileName()` 是**必须逐字一致的一对双胞胎**。
+- 多等级时的文件名：中文那截用 `+` 连接（`数据导出-2026-08-20-红色关注+黄色关注.csv`），
+  ASCII 那截用 `-` 连接（`monitor-2026-08-20-RED-YELLOW.csv`）——ASCII 段里放 `,`
+  会被读成 header 列表分隔符。文件名只由**选择**决定，与调用方传参顺序无关。
 - `Cache-Control: no-store` 不是可选项：一份患者名单不得被任何中间层留存。
 - `X-Row-Count` 只带行数、不带任何患者信息，是给界面区分「没有符合条件的记录」与
   「这就是你的文件」用的。它叫这个泛名是为了避开 `log-sanitization.spec.ts` 的
@@ -638,16 +655,17 @@ GET /api/monitor/export?examDate=2026-08-20&level=RED
 `MONITOR_EXPORT_MAX_ROWS = 10000`。查询用 `take = MAX + 1` 作溢出探针，超过则
 `400 MONITOR_EXPORT_TOO_LARGE`（「当日该等级记录过多（超过 10000 条），导出已取消，
 请联系管理员。」），**绝不静默截断**——静默截断会交出一份看起来完整、实际不完整的
-文件。这是**数据损坏护栏**，不是用户路径：单日单等级下用户已无可再缩小的维度，
-拒绝等于死路，正常永远不该触发。
+文件。这是**数据损坏护栏**，不是用户路径：单日一天 10000 条已属异常，超过就说明数据
+有问题（#145 之后「勾满四个等级」使这条路径可达，届时用户可缩小等级选择重试）。
 
 **审计**
 
-落一条 `EXAM_EXPORT`，`meta = { scope, examDate, level, rowCount }`——只有筛选值与
-行数，**绝不含任何患者字段，也绝不含文件内容**。纪律同 `EXAM_LIST` 用
-`hadPatientName` 布尔量而非搜索串：审计轨迹必须能在不持有患者数据的前提下被阅读。
-注意 `AuditService.record` 是 **fail-open**，所以文档不声称「每次导出必有审计行」。
-复核用 `GET /api/audit?action=EXAM_EXPORT`。
+落一条 `EXAM_EXPORT`，`meta = { scope, examDate, levels, rowCount }`——只有筛选值与
+行数，**绝不含任何患者字段，也绝不含文件内容**。`levels` 是**数组**（#145）：一次
+「红+黄」的导出是**一行**，这一行正是事后告诉审计者「离开系统的那份文件有多宽」的
+唯一记录。纪律同 `EXAM_LIST` 用 `hadPatientName` 布尔量而非搜索串：审计轨迹必须能在
+不持有患者数据的前提下被阅读。注意 `AuditService.record` 是 **fail-open**，所以文档
+不声称「每次导出必有审计行」。复核用 `GET /api/audit?action=EXAM_EXPORT`。
 
 ## 测试
 

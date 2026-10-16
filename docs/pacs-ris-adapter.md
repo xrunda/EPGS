@@ -34,6 +34,10 @@ patientTypeCode,patientTypeName,examItem,examDate,examTime,
 reportContent,diagnosis
 ```
 
+issue #137 起，文件**可以额外**携带三个可选列 `patientSex,patientPhone,
+orderingDoctor`（医院网关的新增列，见 §3.1）；它们是可选的，所以上面这份 12 列
+表头依然是合格输入，缺列即为 `null`。
+
 适配器支持 BOM、引号内逗号/换行、中文和空值。每行都使用 HTTP 适配器相同的
 `mapWireReportToDto` 校验；缺列、重复 `sourceRecordId`、非法日期/时间会直接失败。
 错误只记录行号和字段契约，不记录姓名、报告正文或诊断。
@@ -97,6 +101,9 @@ Worker 按现有 1–5 分钟周期调用 `GET /reports`，使用 Bearer Token�
 | `sourceRecordId`                      | 检查号、稳定去重键    | 否   |
 | `patientRegistrationNo`               | 登记号                | 是   |
 | `patientName`                         | 姓名展示              | 是   |
+| `patientSex`                          | 性别展示（#137）      | 是   |
+| `patientPhone`                        | 联系电话（#137，HIGH）| 是   |
+| `orderingDoctor`                      | 开单医生展示（#137）  | 是   |
 | `department`                          | 科室展示/筛选         | 是   |
 | `bedNo`                               | 床号                  | 是   |
 | `patientTypeCode` / `patientTypeName` | 患者类型              | 是   |
@@ -107,6 +114,28 @@ Worker 按现有 1–5 分钟周期调用 `GET /reports`，使用 Bearer Token�
 
 上述字段的源库取数语句（医院提供，含 `->` 关系取值语法与 `RISR_SysCode` 过滤条件）
 见 [pacs-ris-source-sql.md](./pacs-ris-source-sql.md)。
+
+### 3.1 issue #137 的三列（性别 / 手机号 / 开单医生）
+
+网关在同一个查询里追加了 `性别`、`手机号`、`开单医生` 三列。三个适配器的处理
+完全一致：
+
+- **可选**。缺列、缺键、空串一律映射为 `null`，**绝不**让整批记录失败——这三列
+  只是展示快照，一个缺手机号的报告不该连带自己一起丢失。
+- **逐字透传，不做归一化**。来源没有代码字典，`性别` 就是"男/女"这类原文；转成
+  枚举等于替来源猜值。
+- **CSV 本地模式**：三列是 `MOCK_CSV_OPTIONAL_COLUMNS`，**不属于**必填表头，所以
+  只有 12 列的老文件（含 `replay-acceptance/` 里冻结的回放数据集）照样解析，缺的
+  列映射为 `null`；列的位置任意，按表头名匹配。
+- **`手机号` 是 HIGH 敏感**：不写日志、不进审计 `meta`、不进推送正文、不送模型、
+  不出现在任何列表响应；详情接口在调用方无 `patientDetail` 授权时脱敏为
+  `138****0000`（见 [data-dictionary.md](./data-dictionary.md)）。因此它也**不**
+  出现在 `MonitorExamDto`/`MonitorExamDetailDto`（告警链接 H5 的 wire 类型）上，
+  只存在于工作台详情扩展类型。
+
+> **与 issue #26 的 `sex` 无关**：老契约里的 `sex`/`age` 是随 `patientId`、
+> `inpatientNo` 一起被删除的遗留字段；这里是医院网关新确认提供的 `性别` 列，
+> 键名和来源都不同，不是把删掉的字段又加回来。
 
 `reportId` 在 EPGS 内部由 `sourceRecordId` 派生；在尚无可靠修改时间时，
 `sourceUpdatedAt` 由检查日期时间派生，Worker 重复读取日期窗口并幂等 upsert。

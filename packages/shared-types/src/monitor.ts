@@ -33,12 +33,24 @@
  * agreeing on WHERE something is but disagreeing on how much attention it needs.
  * It names both sides, and both names are already on this same response - so it
  * opens no new report-text exit. It carries no offsets and no excerpt.
+ *
+ * Issue #137 adds the three snapshot columns the hospital's gateway now returns
+ * (`patientSex` / `patientPhone` / `orderingDoctor`). All three ride the
+ * WORKBENCH extension interfaces, for the same reason #88 and #102 did: the
+ * alert-link H5 surface must not change shape, and `patientPhone` in particular
+ * must never reach a surface a link can travel to. See each field below.
  */
 
 import { AttentionLevelDto } from './attention-semantics';
 import { MatchFieldDto, MonitorLevelDto, SemanticConfidenceDto, SemanticStatusDto } from './rules';
 
-export type { AttentionLevelDto, MatchFieldDto, MonitorLevelDto, SemanticConfidenceDto, SemanticStatusDto };
+export type {
+  AttentionLevelDto,
+  MatchFieldDto,
+  MonitorLevelDto,
+  SemanticConfidenceDto,
+  SemanticStatusDto,
+};
 
 /**
  * Patient type as shown in the workbench: the source code (PAADM_Type raw
@@ -415,6 +427,20 @@ export const LEVEL_CONFLICT_DAY_PRESETS = [7, 30, 90, 180, 365] as const;
  */
 export interface MonitorExamWorkbenchDto extends MonitorExamDto {
   attentionSource: MonitorAttentionSourceDto;
+  /**
+   * Issue #137: patient sex as the source states it (gateway key `性别`).
+   * MEDIUM sensitivity, so it is NOT masked and is safe on a list row - unlike
+   * `patientPhone` below, which is why that one lives on the DETAIL extension
+   * only and never reaches a list response at all.
+   */
+  patientSex: string | null;
+  /**
+   * Issue #137: the clinician who ordered the exam (gateway key `开单医生`).
+   * A member of staff, not a patient; MEDIUM sensitivity, not masked. On the
+   * workbench so a reader can tell who requested the study. Null for records
+   * whose report has not been re-synced since the gateway exposed the column.
+   */
+  orderingDoctor: string | null;
 }
 
 /**
@@ -423,6 +449,25 @@ export interface MonitorExamWorkbenchDto extends MonitorExamDto {
  */
 export interface MonitorExamWorkbenchDetailDto extends MonitorExamDetailDto {
   attentionSource: MonitorAttentionSourceDto;
+  /** Issue #137: same field as on the list extension above. */
+  patientSex: string | null;
+  /** Issue #137: same field as on the list extension above. */
+  orderingDoctor: string | null;
+  /**
+   * Issue #137: the patient's contact phone (gateway key `手机号`). HIGH
+   * sensitivity - the most directly identifying value EPGS stores, which is
+   * exactly why it is here and nowhere else:
+   *
+   * - NOT on the list DTO: a list response is the widest-exposure surface and
+   *   a phone number on every row of it buys nothing a reader needs at a glance.
+   * - NOT on the base `MonitorExamDetailDto`: that is what the alert H5 serves
+   *   through a link that travels further than a workbench session.
+   *
+   * Masked (`138****0000`) unless the caller holds the `patientDetail` grant,
+   * with `dataAccess.masked` set - the same gate that covers reportContent and
+   * diagnosis. Never logged, audited, pushed or sent to a model.
+   */
+  patientPhone: string | null;
   /**
    * True when the AI has judged THIS report version - an OK attempt whose
    * `reportVersion` matches the record's. Carries no timestamp, model or

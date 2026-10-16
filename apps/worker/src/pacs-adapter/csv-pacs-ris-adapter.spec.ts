@@ -70,6 +70,60 @@ describe('CsvPacsRisAdapter', () => {
     );
   });
 
+  // --- issue #137: the three optional gateway columns -----------------------
+
+  it('reads the three #137 columns when the file carries them', () => {
+    const [record] = parseCsvReports(
+      `${HEADER},patientSex,patientPhone,orderingDoctor\n` +
+        'ES-137,REG-137,测试患者丙,内镜中心,7,I,住院,电子胃镜,2026-08-21,09:00:00,合成报告,合成诊断,女,13800000000,测试医生甲',
+    );
+
+    expect(record.patientSex).toBe('女');
+    expect(record.patientPhone).toBe('13800000000');
+    expect(record.orderingDoctor).toBe('测试医生甲');
+  });
+
+  it('maps empty #137 cells to null, matching every other optional field', () => {
+    const [record] = parseCsvReports(
+      `${HEADER},patientSex,patientPhone,orderingDoctor\n` +
+        'ES-138,REG-138,测试患者丁,内镜中心,,O,,电子胃镜,2026-08-21,09:00:00,合成报告,合成诊断,,,',
+    );
+
+    expect(record.patientSex).toBeNull();
+    expect(record.patientPhone).toBeNull();
+    expect(record.orderingDoctor).toBeNull();
+  });
+
+  it('still parses a 12-column file, which is the frozen replay dataset shape', () => {
+    // The regression that matters most for #137. replay-acceptance v1 is frozen
+    // with its own sha256 and its reports.replay.csv has exactly these 12
+    // columns in this order; making the new columns REQUIRED would break it, and
+    // breaking it would mean re-freezing a dataset that exists precisely so it
+    // cannot be adjusted afterwards.
+    const [record] = parseCsvReports(
+      csv(
+        'ES-139,REG-139,测试患者戊,内镜中心,3,I,住院,电子胃镜,2026-08-21,09:00:00,合成报告,合成诊断',
+      ),
+    );
+
+    expect(record.sourceRecordId).toBe('ES-139');
+    expect(record.patientSex).toBeNull();
+    expect(record.patientPhone).toBeNull();
+    expect(record.orderingDoctor).toBeNull();
+  });
+
+  it('accepts the three columns in any position (csv-parse maps by name)', () => {
+    const [record] = parseCsvReports(
+      'sourceRecordId,patientSex,patientRegistrationNo,patientName,patientPhone,department,bedNo,patientTypeCode,patientTypeName,examItem,examDate,examTime,reportContent,diagnosis,orderingDoctor\n' +
+        'ES-140,男,REG-140,测试患者己,13800000001,内镜中心,5,I,住院,电子胃镜,2026-08-21,09:00:00,合成报告,合成诊断,测试医生乙',
+    );
+
+    expect(record.patientSex).toBe('男');
+    expect(record.patientPhone).toBe('13800000001');
+    expect(record.orderingDoctor).toBe('测试医生乙');
+    expect(record.patientName).toBe('测试患者己');
+  });
+
   it('rejects duplicate sourceRecordId values', () => {
     const duplicate = csv(
       'ES-004,,,,,,,,2026-08-21,09:00:00,,',

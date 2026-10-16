@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { MonitorService } from './monitor.service';
+import { MonitorService, MONITOR_EXPORT_MAX_ROWS } from './monitor.service';
+import { MonitorExportTooLargeException } from './errors/monitor-export-too-large.exception';
 
 /**
  * Unit tests against a mocked PrismaService - no real database. These
@@ -334,6 +335,163 @@ describe('MonitorService', () => {
         where: { currentLevel: 'RED' },
         _count: { _all: true },
       });
+    });
+  });
+
+  describe('exportDay (issue #139)', () => {
+    /** Two rows is enough to prove the day/level filters and the count. */
+    function twoRows() {
+      return [
+        makeRow({
+          patientSex: '男',
+          patientPhone: '13800000000',
+          orderingDoctor: '王医生',
+        }),
+        makeRow({
+          id: '00000000-0000-0000-0000-000000000002',
+          patientName: '测试患者乙',
+          patientPhone: null,
+        }),
+      ];
+    }
+
+    it('resolves ONE day: examDateFrom === examDateTo, upper bound is the next Shanghai 00:00', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+
+      const where = prisma.monitorRecord.findMany.mock.calls[0][0].where;
+      // Regression guard for the trap: resolveDateRange already advances the
+      // upper bound by a day, so passing examDateTo = D+1 would export TWO days.
+      expect(where.examTime).toEqual({
+        gte: new Date('2026-08-19T16:00:00Z'), // 2026-08-20T00:00:00+08:00
+        lt: new Date('2026-08-20T16:00:00Z'), // 2026-08-21T00:00:00+08:00 (exclusive)
+      });
+      expect(where.currentLevel).toBe('RED');
+    });
+
+    it('carries the level through and nothing else from the filter surface', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportDay({ examDate: '2026-08-20', level: 'UNCLASSIFIED' });
+
+      expect(prisma.monitorRecord.findMany.mock.calls[0][0].where).toEqual({
+        examTime: {
+          gte: new Date('2026-08-19T16:00:00Z'),
+          lt: new Date('2026-08-20T16:00:00Z'),
+        },
+        currentLevel: 'UNCLASSIFIED',
+      });
+    });
+
+    it('applies the caller department scope', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportDay({ examDate: '2026-08-20', level: 'RED' }, { scope: ['消化内科'] });
+
+      expect(prisma.monitorRecord.findMany.mock.calls[0][0].where.department).toEqual({
+        in: ['消化内科'],
+      });
+    });
+
+    it('reads at most MAX+1 rows, with no pagination and no count round-trip', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+
+      const args = prisma.monitorRecord.findMany.mock.calls[0][0];
+      // +1 is the overflow probe: it distinguishes "exactly MAX" from "more
+      // than MAX" without a second query, and nothing is skipped because the
+      // file is the whole day, not a page of it.
+      expect(args.take).toBe(MONITOR_EXPORT_MAX_ROWS + 1);
+      expect(args).not.toHaveProperty('skip');
+      expect(args).not.toHaveProperty('cursor');
+      expect(prisma.monitorRecord.count).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('orders the file like the workbench list', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+
+      expect(prisma.monitorRecord.findMany.mock.calls[0][0].orderBy).toEqual([
+        { examTime: { sort: 'desc', nulls: 'last' } },
+        { currentLevel: 'asc' },
+        { id: 'asc' },
+      ]);
+    });
+
+    it('selects the patient phone - the one place LIST_SELECT is not enough', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+
+      const select = prisma.monitorRecord.findMany.mock.calls[0][0].select;
+      expect(select.patientPhone).toBe(true);
+      // Every other column the CSV writes must be selected too.
+      for (const field of [
+        'patientName',
+        'patientSex',
+        'department',
+        'bedNo',
+        'patientTypeCode',
+        'patientTypeName',
+        'examItem',
+        'orderingDoctor',
+        'examTime',
+        'currentLevel',
+      ]) {
+        expect(select[field]).toBe(true);
+      }
+      // The export must never carry report content or the diagnosis.
+      expect(select).not.toHaveProperty('reportContent');
+      expect(select).not.toHaveProperty('diagnosis');
+    });
+
+    it('keeps the effective hit set: matches exclude AI-semantic-filtered keywords', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+
+      const select = prisma.monitorRecord.findMany.mock.calls[0][0].select;
+      expect(select.matches.select.keyword).toBe(true);
+      expect(select.matches.where).toEqual({ semanticFiltered: false });
+    });
+
+    it('returns the CSV bytes with the row count', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue(twoRows());
+
+      const result = await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+
+      expect(result.rowCount).toBe(2);
+      const text = result.body.toString('utf8');
+      expect(text).toContain('测试患者甲');
+      expect(text).toContain('13800000000');
+      expect(text).toContain('王医生');
+      // Two data rows + the header.
+      expect(text.split('\r\n').filter((line) => line !== '')).toHaveLength(3);
+    });
+
+    it('refuses an oversized day instead of silently truncating', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue(
+        Array.from({ length: MONITOR_EXPORT_MAX_ROWS + 1 }, () => makeRow()),
+      );
+
+      await expect(
+        service.exportDay({ examDate: '2026-08-20', level: 'RED' }),
+      ).rejects.toBeInstanceOf(MonitorExportTooLargeException);
+    });
+
+    it('exports a header-only file for a day with no matching rows', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      const result = await service.exportDay({ examDate: '2026-08-20', level: 'GREEN' });
+
+      expect(result.rowCount).toBe(0);
+      expect(result.body.toString('utf8')).toBe(
+        '﻿关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号\r\n',
+      );
     });
   });
 

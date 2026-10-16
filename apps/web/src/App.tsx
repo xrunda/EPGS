@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ActionMenu } from './ActionMenu';
 import { AuthGate } from './AuthGate';
 import type { AuthUser } from './authApi';
+import { ExportModal } from './ExportModal';
 import { LevelConflictsModal } from './LevelConflictsModal';
 import { NotificationModal } from './NotificationModal';
 import { RulesModal } from './RulesModal';
@@ -32,6 +33,7 @@ function AuthenticatedApp({
   const [usersOpen, setUsersOpen] = useState(false);
   const [levelConflictsOpen, setLevelConflictsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   // The push-assistant「推送日志」link opens the notification modal straight on
   // its 日志 tab; a normal open lands on 渠道.
   const [notificationsTab, setNotificationsTab] = useState<'channels' | 'logs'>('channels');
@@ -79,6 +81,12 @@ function AuthenticatedApp({
         onOpenLevelConflicts={
           user.roles.includes('RULE_ADMIN') ? () => setLevelConflictsOpen(true) : undefined
         }
+        /*
+          #139 与上面几条不同：它判的不是角色，而是患者明细授权。没有被授予
+          patientDetail 的账号（例如只看得到脱敏字段的医生）不该看到一个点下去必然
+          403 的入口 —— 传 undefined，按钮就不渲染。服务端仍然独立判定一次。
+        */
+        onOpenExport={user.patientDetail ? () => setExportOpen(true) : undefined}
       />
       <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} actorId={user.username} />
       <SemanticMonitorModal
@@ -93,6 +101,7 @@ function AuthenticatedApp({
         onClose={() => setLevelConflictsOpen(false)}
         canMarkRead={user.roles.includes('RULE_ADMIN')}
       />
+      <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
       <NotificationModal
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}

@@ -1,10 +1,22 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  Req,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { AuditAction, AppRole } from '@prisma/client';
 import { MonitorService } from './monitor.service';
 import { ListExamsQueryDto } from './dto/list-exams.query.dto';
 import { SummaryQueryDto } from './dto/summary.query.dto';
+import { ExportExamsQueryDto } from './dto/export-exams.query.dto';
+import { MonitorExportForbiddenException } from './errors/monitor-export-forbidden.exception';
+import { contentDispositionFor } from './monitor-csv';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, RequireRoles } from '../access/access.decorators';
 import { AccessUser, pickPrimaryRole } from '../access/access-user';
@@ -23,6 +35,14 @@ import { MonitorExamDetailDto, MonitorSummaryDto, PaginatedMonitorExams } from '
  * caller without patientDetail rights gets HIGH-sensitivity fields masked.
  * Each read is recorded as an EXAM_LIST / EXAM_DETAIL audit row (meta never
  * carries the raw `patientName` filter value).
+ *
+ * Issue #139 adds the one endpoint here that hands data back as a FILE rather
+ * than as JSON: GET /api/monitor/export. It stays read-only - nothing is
+ * written except its own audit row - but because a file leaves the system
+ * intact, it is gated one step tighter than the list (the `patientDetail`
+ * grant) and every call is recorded as EXAM_EXPORT. It is not a reintroduction
+ * of the "导出日报" that issue #26 cancelled: no aggregation, no schedule, no
+ * push, no closed-loop state.
  */
 @ApiTags('monitor')
 @Controller('api/monitor')
@@ -122,5 +142,93 @@ export class MonitorController {
     // but not masked and not separately audited (the list page it accompanies
     // already wrote an EXAM_LIST row).
     return this.monitorService.summary(query, this.scopeOptions(user));
+  }
+
+  /**
+   * Issue #139: one Shanghai day at one attention level, as a CSV file.
+   *
+   * The second gate below is the whole point of this endpoint's design. The
+   * class-level @RequireRoles already covers "may read the workbench"; the
+   * export additionally requires the `patientDetail` grant, because the file
+   * carries the patient phone IN THE CLEAR (owner decision, 2026-10-16) and
+   * `patientDetail` is exactly the grant that already lets its holder read that
+   * same phone in the detail drawer. So this is not a new privilege - it is the
+   * export refusing to be a way around the one that exists.
+   *
+   * A caller without it gets 403 PATIENT_DETAIL_REQUIRED, a code distinct from
+   * RolesGuard's FORBIDDEN so the modal can say which of the two they hit.
+   *
+   * Delivery notes:
+   *  - StreamableFile, NOT a non-passthrough @Res. If this handler took over
+   *    the response and then threw (the row-cap probe, a Prisma error), the
+   *    global exception filter would write its JSON error body into a response
+   *    already labelled text/csv, and the browser would save it as a .csv.
+   *    Returning a value keeps Nest in charge, so every failure stays a clean
+   *    JSON envelope.
+   *  - @Res({ passthrough: true }) is used ONLY to add the dynamic headers, and
+   *    only after every step that can throw - including the audit write.
+   *  - Cache-Control: no-store is not optional. A patient list must not be
+   *    retained by any intermediary between here and the operator's machine.
+   */
+  @Get('export')
+  @ApiOperation({
+    summary:
+      'Export one Shanghai day at one attention level as a CSV file (issue #139). ' +
+      'Requires the patientDetail grant: the file carries the raw patient phone. ' +
+      'Never contains reportContent/diagnosis.',
+  })
+  async exportDay(
+    @Query() query: ExportExamsQueryDto,
+    @CurrentUser() user: AccessUser | null,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    // `user?.` rather than `user.`: @CurrentUser() yields null for an account
+    // with no access row, so both "no grant" and "no access row" fail closed.
+    if (!user?.patientDetail) throw new MonitorExportForbiddenException();
+
+    // Scope only, deliberately not `this.scopeOptions(user)`: that helper also
+    // carries the maskPatient flag, and an export has no masked mode. Passing
+    // the flag here would suggest one exists and invite someone to "fix" the
+    // omitted branch - the grant checked above already decided this call is a
+    // detail-level read.
+    const { rowCount, body } = await this.monitorService.exportDay(
+      { examDate: query.examDate, level: query.level },
+      { scope: user.departmentScope },
+    );
+
+    await this.audit.record({
+      action: AuditAction.EXAM_EXPORT,
+      actorUsername: user.username,
+      actorRole: pickPrimaryRole(user.roles),
+      resourceType: 'monitor_record',
+      // The filter values and the count - never a patient field, and never the
+      // file. Same discipline as EXAM_LIST's hadPatientName flag: the audit
+      // trail must be readable without holding patient data, and this row is
+      // the ONLY record that a copy left the system.
+      meta: {
+        scope: user.departmentScope,
+        examDate: query.examDate,
+        level: query.level,
+        rowCount,
+      },
+      ip: request.ip,
+      correlationId: request.correlationId,
+    });
+
+    // Custom headers only; type/disposition/length ride on the StreamableFile.
+    // X-Row-Count is what lets the modal tell "nothing matched" from "here is
+    // your file" without parsing the CSV. The name is deliberately generic: it
+    // carries no verb, so it cannot be mistaken for an action-header and cannot
+    // collide with the identifiers log-sanitization.spec.ts bans (a hyphen is a
+    // word boundary there, so the obvious longer name would have tripped it).
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('X-Row-Count', String(rowCount));
+    return new StreamableFile(body, {
+      type: 'text/csv; charset=utf-8',
+      disposition: contentDispositionFor(query.examDate, query.level),
+      length: body.length,
+    });
   }
 }

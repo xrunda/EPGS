@@ -118,6 +118,9 @@
 | 横向越权：越科室读他人记录返回 404 而非 403                     | 同文件 → `'horizontal escalation: a scoped user fetching an out-of-scope record gets 404'`                                                                 |
 | 脱敏：无 patientDetail 时姓名/床号/正文/诊断掩码                | 同文件 → `'VIEWER (scoped, no detail) reads scoped masked data...'`                                                                                        |
 | 读取审计：每次读都落 audit_log，meta 不含患者数据/搜索词原文    | 同文件 → `'every read is audited and audit meta never carries patient data'`、`'the list read also writes an EXAM_LIST audit row without the raw q value'` |
+| **明细导出（issue #139）**：读角色之外还要 `patientDetail`；系统管理员也不例外；AUDITOR 403；文件含原文手机号且不含脱敏串；只含授权科室；审计 meta 只有筛选值 | 同文件 → `'the export requires the patientDetail grant even for a system admin'`、`'AUDITOR cannot reach the export at all (role gate)'`、`'the export writes the raw phone, stays inside the caller scope, and audits only the filter'`、`'the export is department-scoped, so an out-of-scope day is empty'` |
+| **明细导出**：单日边界、列序与空单元格、0 行、非法参数 400、不含报告正文 | `apps/api/test/monitor.e2e-spec.ts`（#139 新增 4 用例）+ `apps/api/src/monitor/monitor-csv.spec.ts`（纯函数）+ `apps/api/src/monitor/monitor.controller.spec.ts` |
+| **明细导出**：预警链接令牌不是工作台凭据（普通链接不得变成一份患者名单） | `apps/api/test/alert-links.e2e-spec.ts` → `'a link token is NOT a workbench credential: cookie-guarded routes still answer 401'` |
 | 敏感日志/凭据全库静态扫描                                       | `apps/api/src/security/log-sanitization.spec.ts`（3 用例）                                                                                                 |
 | 权限模型文档                                                    | [docs/auth.md](./auth.md)                                                                                                                                  |
 
@@ -130,6 +133,12 @@
 > 该门禁是"不存在闭环"的**回归防线**：任何未来开发者往页面/API 加"上报/知晓/处理/
 > 误报/日报"能力，CI 会立刻红。它排除 `reportContent`/`reportId` 等合法属性名（只扫
 > 路由装饰器内的路径字面量）与自身 spec 文件，避免误报。
+
+> **issue #139 的只读明细导出不在本场景的禁令内**：它是按需、单日、单等级地把用户
+> 本来就能在读到的明细存成一个 CSV，没有聚合、没有定时、没有推送、也没有任何闭环
+> 状态字段——与「导出日报」是两件事（对照表见
+> [product/read-only-display-spec.md](./product/read-only-display-spec.md) §8）。
+> 本场景的禁令与门禁**均不变**。
 
 ## 二、6 条验收标准 → 证据与状态
 

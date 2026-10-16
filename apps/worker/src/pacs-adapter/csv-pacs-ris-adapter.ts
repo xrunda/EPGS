@@ -7,6 +7,12 @@ import { PacsRisAdapter } from './pacs-ris-adapter.interface';
 
 const MAX_PAGE_SIZE = 500;
 
+/**
+ * The columns every mock CSV MUST carry: the read-only display contract
+ * converged by issue #26. Kept exactly as-is by issue #137 - the frozen
+ * replay dataset (replay-acceptance/reports.replay.csv, v1) is built from
+ * this exact list and must keep parsing.
+ */
 export const MOCK_CSV_COLUMNS = [
   'sourceRecordId',
   'patientRegistrationNo',
@@ -21,6 +27,15 @@ export const MOCK_CSV_COLUMNS = [
   'reportContent',
   'diagnosis',
 ] as const;
+
+/**
+ * Issue #137: columns a mock CSV MAY carry. They are deliberately NOT part
+ * of MOCK_CSV_COLUMNS, so a 12-column file - the frozen replay dataset
+ * included - still validates; a missing column simply yields `null`, the
+ * same "no value" the workbench already renders as "—". Order-independent:
+ * csv-parse maps by header name.
+ */
+export const MOCK_CSV_OPTIONAL_COLUMNS = ['patientSex', 'patientPhone', 'orderingDoctor'] as const;
 
 interface CsvPacsRisAdapterOptions {
   filePath?: string;
@@ -54,6 +69,10 @@ export function parseCsvReports(csvText: string): PacsReportDto[] {
       sourceRecordId: row.sourceRecordId,
       patientRegistrationNo: emptyAsNull(row.patientRegistrationNo),
       patientName: emptyAsNull(row.patientName),
+      // Issue #137: optional columns - absent key -> undefined -> null.
+      patientSex: emptyAsNull(row.patientSex),
+      patientPhone: emptyAsNull(row.patientPhone),
+      orderingDoctor: emptyAsNull(row.orderingDoctor),
       department: emptyAsNull(row.department),
       bedNo: emptyAsNull(row.bedNo),
       patientTypeCode: emptyAsNull(row.patientTypeCode),

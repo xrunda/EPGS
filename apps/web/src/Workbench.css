@@ -357,7 +357,9 @@
 }
 .workbench__table {
   width: 100%;
-  min-width: 980px;
+  /* Issue #137 把列数从 11 加到 13（性别、开单医生），表格的窄屏下限跟着抬一档，
+     否则「关注理由」那一列会被挤成很窄的一条频繁折行。 */
+  min-width: 1080px;
   border-collapse: collapse;
   font-size: 13px;
 }

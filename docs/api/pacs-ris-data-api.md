@@ -114,6 +114,9 @@ GET /api/v1/endoscopy/health
 | `sourceRecordId`        | string      | `RISR_ExamID` 检查号                       |
 | `patientRegistrationNo` | string/null | `PAPMI_No` 登记号                          |
 | `patientName`           | string/null | `PAPMI_Name`                               |
+| `patientSex`            | string/null | 网关「性别」列（#137），可选、逐字透传     |
+| `patientPhone`          | string/null | 网关「手机号」列（#137），可选、**HIGH**   |
+| `orderingDoctor`        | string/null | 网关「开单医生」列（#137），可选           |
 | `department`            | string/null | `PAADM_DepCode_DR->CTLOC_Desc`             |
 | `bedNo`                 | string/null | `PAADM_CurrentBed_DR->BED_Code`            |
 | `patientTypeCode`       | string/null | `PAADM_Type` 原值                          |
@@ -125,6 +128,14 @@ GET /api/v1/endoscopy/health
 | `diagnosis`             | string/null | `RISR_DiagDesc` 原文                       |
 
 患者类型截图中出现的 `I`、`O` 不能仅凭经验认定，必须以医院字典核验结果为准。
+
+> **`patientSex` / `patientPhone` / `orderingDoctor`（issue #137）**：医院网关在
+> 同一查询里追加了「性别」「手机号」「开单医生」三列，因此本契约把它们登记为
+> **可选**属性——老网关不返回、CSV 文件不带这些列，都映射为 `null`，不构成契约
+> 违规，**也不会让整批同步失败**。三列只用于展示，不参与匹配、分级或去重。
+> `patientPhone` 是 HIGH 敏感：接收与落库是允许的，但永不写日志/审计/推送/模型，
+> 也永不出现在列表响应，详情按 `patientDetail` 授权决定原文或 `138****0000`。
+> 注意这与下面 §9 被移除的遗留 `sex` 不是同一个字段。
 
 ## 8. 错误码
 
@@ -144,6 +155,8 @@ GET /api/v1/endoscopy/health
 以下字段不再出现在本接口：
 
 - `patientId`、`inpatientNo`、`sex`、`age`。
+  （issue #137 新增的是网关「性别」列 `patientSex`，与被移除的遗留 `sex` 既非同一
+  键名也非同一来源，不是把删掉的字段又加回来。）
 - `studyAccessionNo`、`deviceId`。
 - `reportStatus`、`rawStatusCode`。
 - `reportSavedAt`、`reportSubmittedAt`、`reportReviewedAt`、`sourceUpdatedAt`。

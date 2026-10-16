@@ -1,0 +1,21 @@
+-- AlterEnum
+-- EXAM_EXPORT is a NON-REVERSIBLE enum addition (PostgreSQL has no
+-- ALTER TYPE ... DROP VALUE). IF NOT EXISTS keeps `migrate deploy` idempotent
+-- when re-applied to an env that already has the value. Same pattern as the
+-- add_user_admin_role_and_audit_actions migration.
+--
+-- Recorded once per read-only CSV export (GET /api/monitor/export, issue
+-- #139): meta carries the filter values (examDate, level), the department
+-- scope and the row count. It stores NO patient data and never names or
+-- contains the file - the same discipline as EXAM_LIST, which records a
+-- hadPatientName FLAG rather than the raw search string. That matters more
+-- here than anywhere else in this enum: the export is the one action whose
+-- payload leaves the system as a file, so the audit row is the only record
+-- that a copy was taken.
+--
+-- NOT a closed-loop action (issue #26): nothing here records that anyone
+-- handled, acknowledged or reported anything. This is a READ of rows the
+-- caller is already authorized to read, scoped by their app_user_access
+-- grant, and gated on the patientDetail grant because the CSV carries the
+-- patient phone in the clear.
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'EXAM_EXPORT';

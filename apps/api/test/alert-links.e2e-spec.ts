@@ -416,6 +416,9 @@ describe('Alert links (e2e): token credential, snapshot boundary, masking', () =
         '/api/monitor/exams',
         `/api/monitor/exams/${ids.inSnapshot}`,
         '/api/monitor/summary',
+        // Issue #139: the export is the sharpest case of all - a card holder
+        // must not be able to turn a shared link into a CSV of patient detail.
+        '/api/monitor/export?examDate=2026-08-20&level=RED',
         '/api/auth/me',
       ]) {
         const res = await plain.get(path).set(bearer(LIVE_TOKEN)).expect(401);

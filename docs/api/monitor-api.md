@@ -1,11 +1,12 @@
 # EPGS 内镜监测工作台 API（issue #7、#8）
 
 本文档描述 `apps/api/src/monitor/` 实现的**只读**内镜监测工作台 API：列表、筛选、
-汇总与详情。供工作台页面（issue #9+）与关注等级汇总卡片使用。issue #8 的
+汇总、详情与明细导出。供工作台页面（issue #9+）与关注等级汇总卡片使用。issue #8 的
 **详情与命中证据**契约在本文档的「详情接口」小节：每条命中的 `ruleId`/`ruleVersion`
 规则来源与 `matchedField` 命中位置定位。
 
-这三个接口全部是只读的——它们不写入、不修改任何数据。字段级含义参见
+这四个接口全部是只读的——它们不写入、不修改任何数据（issue #139 的导出也只读取，
+它把调用者本来就能在详情接口读到的字段写进文件，不产生任何写入）。字段级含义参见
 `apps/api/prisma/schema.prisma` 与 `docs/data-dictionary.md` 的
 `monitor_record`/`monitor_match` 章节；本文档只补充 HTTP 层的请求/响应约定与
 查询语义。wire DTO 定义见 `packages/shared-types/src/monitor.ts`。
@@ -20,13 +21,19 @@
 
 ## 只读约定（产品决策，必须遵守）
 
-产品已收敛为**只读展示**（issue #26 移除了闭环处置模型），以下约束贯穿全部三个接口：
+产品已收敛为**只读展示**（issue #26 移除了闭环处置模型），以下约束贯穿全部四个接口：
 
 - **响应中永不出现任何处置/上报状态字段**：`reportStatus`、`handlingStatus`、
   首报/处置字段在 issue #26 已从 schema 移除，wire DTO 中也刻意不存在。
 - **列表永不返回报告正文**：`reportContent`/`diagnosis` 只在
   `GET /api/monitor/exams/:id` 详情接口按需返回（高敏感，不应随列表批量暴露）。
   列表查询的 Prisma `select` 就没有选择这两列，即使出错也不可能泄漏进列表响应。
+  导出（issue #139）同样不包含这两列——它是**批量出口**，比列表更需要克制。
+- **导出不是「日报」**：issue #26 取消的是**导出日报**（定时、按等级聚合、推送的
+  上报产物），该取消条款至今有效，见
+  [product/read-only-display-spec.md](../product/read-only-display-spec.md) §8。
+  issue #139 新增的是**只读明细导出**：按需、单日、单等级、无聚合、无定时、无推送、
+  无任何闭环状态字段。两者不是同一件事，不要因为「都能导出 CSV」把它们合并讨论。
 - **无规则命中 = `UNCLASSIFIED`**：永不自动标注为 `GREEN`。无命中记录同样进入
   列表与汇总，供人工关注。
 - **`patientType` 保留源编码 + 已确认的中文名**：源编码（如 `I`/`O`）原样返回；
@@ -51,16 +58,28 @@
 
 - **科室范围**：非空 `departmentScope` 时，列表/汇总/详情只返回授权科室的记录。
 - **患者脱敏**：`patientDetail=false` 时，姓名保留姓氏、床号 → `***`、
-  `reportContent`/`diagnosis`/命中 `contextSnippet` → `null`，响应附加
+  `reportContent`/`diagnosis`/命中 `contextSnippet` → `null`，**手机号 →
+  `138****0000`**（保留前 3 位与后 4 位；短于手机号的号码丢掉前导段、隐藏位补足
+  4 位，如 `0531-1234` → `*****1234`，不足 8 位整体打码；见 `maskPhone`），响应附加
   `dataAccess: { masked: true }`；未脱敏响应不带 `dataAccess`。
+  性别和开单医生属 MEDIUM，两种情况都原样返回。
 - **越权即 404**：请求范围外详情返回 `404 MONITOR_RECORD_NOT_FOUND`。
+- **导出另有一道 `patientDetail` 授权闸门**（issue #139）：读角色只是第一道；没有
+  `patientDetail` 授权时导出返回 `403 PATIENT_DETAIL_REQUIRED`（与 `FORBIDDEN`
+  区分开，界面才能说清是「没有患者明细授权」而不是「没有权限」）。原因见
+  [导出接口](#get-apimonitorexport)：它**故意不脱敏手机号**。
 
 ### 审计（Issue #13）
 
 每次 `GET /api/monitor/exams` 与 `GET /api/monitor/exams/:id` 都会在 `audit_log`
 落一条 `EXAM_LIST`/`EXAM_DETAIL` 记录（含 `masked` 标记；`patientName` 只记
 `hadPatientName` 布尔，不落原文；`keyword` 是规则库里的非敏感值，原样记录）。
+`GET /api/monitor/export` 落一条 `EXAM_EXPORT`（issue #139）。
 `GET /api/monitor/summary` 只做科室范围限制，不审计。
+
+审计是**尽力而为**的：`AuditService.record` 写失败不会让请求失败（fail-open），
+所以「导出成功」不等于「必有审计行」。复核导出请查
+`GET /api/audit?action=EXAM_EXPORT`。
 
 ## 统一错误格式
 
@@ -176,9 +195,11 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "recordId": "11111111-1111-4111-8111-000000000008",
       "monitorLevel": "RED",
       "patientName": "测试患者庚",
+      "patientSex": "女",
       "department": "消化内科",
       "bedNo": "12-8",
       "patientType": { "code": "I", "name": "住院" },
+      "orderingDoctor": "测试医生甲",
       "examItem": "电子胃镜检查",
       "examDate": "2026-08-20",
       "examTime": "18:00:00",
@@ -189,9 +210,11 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
       "recordId": "11111111-1111-4111-8111-000000000001",
       "monitorLevel": "RED",
       "patientName": "测试患者甲",
+      "patientSex": "男",
       "department": "消化内科",
       "bedNo": "12-1",
       "patientType": { "code": "I", "name": "住院" },
+      "orderingDoctor": "测试医生乙",
       "examItem": "电子胃镜检查",
       "examDate": "2026-08-20",
       "examTime": "16:15:00",
@@ -205,11 +228,14 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
 }
 ```
 
-**列表行字段固定为**：`recordId`、`monitorLevel`、`patientName`、`department`、
-`bedNo`、`patientType`、`examItem`、`examDate`、`examTime`、`matchedKeywords`、
-`attentionSource`（issue #88）。
+**列表行字段固定为**：`recordId`、`monitorLevel`、`patientName`、`patientSex`、
+`department`、`bedNo`、`patientType`、`orderingDoctor`、`examItem`、`examDate`、
+`examTime`、`matchedKeywords`、`attentionSource`（issue #88）。
 **绝不含** `reportContent`/`diagnosis`，也绝不含任何 `reportStatus`/
 `handlingStatus` 类字段——这是 wire 类型 `MonitorExamWorkbenchDto` 的硬约束。
+**也绝不含** `patientPhone`：手机号是本系统最直接的可识别字段，只在详情接口、
+且调用方持有 `patientDetail` 授权时才以原文返回（否则 `138****0000`），
+列表任何情况下都不带它（issue #137）。
 **也绝不含** `aiSemantics`/`aiJudged`/`aiStatus`：AI 文本与审计字段只出现在详情接口，
 列表行上的 `aiAttentionLevel` 标量只用于推导 `attentionSource`，本身不外发。
 （"这一行的 AI 判读失败了"是详情页要讲清的事，列表不承担这个信息；列表要的是
@@ -222,9 +248,11 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
   "recordId": "11111111-1111-4111-8111-000000000012",
   "monitorLevel": "UNCLASSIFIED",
   "patientName": "测试患者子",
+  "patientSex": null,
   "department": null,
   "bedNo": null,
   "patientType": { "code": "X", "name": null },
+  "orderingDoctor": null,
   "examItem": null,
   "examDate": "2026-08-17",
   "examTime": "23:59:00",
@@ -232,6 +260,10 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
   "attentionSource": "NONE"
 }
 ```
+
+> **#137 的三个新字段**：`patientSex`（性别）、`patientPhone`（手机号，仅详情）、
+> `orderingDoctor`（开单医生）。三者都是**来源快照**、逐字透传，不参与筛选、排序或
+> 分级；没有值时为 `null`，前端渲染"—"。老记录在重新同步覆盖前一直是 `null`。
 
 ### `GET /api/monitor/exams/{id}`
 
@@ -244,9 +276,12 @@ GET /api/monitor/exams?examDateFrom=2026-08-20&examDateTo=2026-08-20&department=
   "recordId": "11111111-1111-4111-8111-000000000001",
   "monitorLevel": "RED",
   "patientName": "测试患者甲",
+  "patientSex": "男",
+  "patientPhone": "13800000000",
   "department": "消化内科",
   "bedNo": "12-1",
   "patientType": { "code": "I", "name": "住院" },
+  "orderingDoctor": "测试医生乙",
   "examItem": "电子胃镜检查",
   "examDate": "2026-08-20",
   "examTime": "16:15:00",
@@ -502,6 +537,118 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
   桶里，**恒有 `total == red + yellow + green + unclassified`**（空筛时 5 桶默认 0）。
 - 内部用一条 `GROUP BY current_level` 聚合，而不是 5 次 COUNT。
 
+### `GET /api/monitor/export`（issue #139）
+
+把**一个自然日 + 一个关注等级**的患者明细导出成 CSV 文件。
+
+```
+GET /api/monitor/export?examDate=2026-08-20&level=RED
+```
+
+**查询参数（两个都必填，没有别的）**
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `examDate` | `^YYYY-MM-DD$` | 检查日期，**单日**（Asia/Shanghai 自然日） |
+| `level` | `RED\|YELLOW\|GREEN\|UNCLASSIFIED` | 关注等级，**单个**，不接受「全部等级」 |
+
+- **「单日」的语义就是 `examDateFrom = examDateTo = examDate`，绝对不要写成
+  `examDate` 到「次日」。** `resolveDateRange`（`apps/api/src/monitor/monitor-time.ts`）
+  已经把上界推到次日 `00:00+08`，再传 `D..D+1` 会导出**两天**。工作台的「近一日」
+  预设同样是 `from = to = today`。
+- DTO 是新写的两字段必填 DTO，**不复用** `MonitorFiltersQueryDto`：
+  class-validator 会继承 `@IsOptional()` 的元数据，子类无法把字段改回必填；
+  且复用等于把「单日 + 单等级」这条业务规则只留在前端。`main.ts` 已开
+  `forbidNonWhitelisted`，所以 `?department=`、`?page=1`、`?examDateFrom=` 之类
+  一律 **400**——既有的筛选面挤不进这个口子。
+- `examTime` 为 `NULL` 的记录**永不出现**（日范围是 `exam_time` 上的
+  `gte`/`lt`，`NULL` 不满足任何区间比较）。
+- 科室范围（`departmentScope`）照旧生效。
+
+**授权：两道闸门**
+
+1. 类级 `@RequireRoles(VIEWER | RULE_ADMIN | SYSTEM_ADMIN)`——`AUDITOR` 等无读
+   角色 → `403 FORBIDDEN`。
+2. 处理函数首行再查 `patientDetail` 授权——有读角色但无该授权 →
+   **`403 PATIENT_DETAIL_REQUIRED`**（消息「没有导出患者明细的权限，请联系管理员开通。」）。
+
+第 2 道是**本接口设计的核心**，理由只有一个：**这个文件里的手机号是原文，不脱敏**
+（所有者决定，2026-10-16）。`patientDetail` 恰好就是「已经能在详情抽屉里看到同一个
+手机号」的那份授权，所以导出没有新增特权——它只是拒绝成为绕过既有授权的一条路。
+因此**没有「脱敏导出」这种模式**，代码里也不存在那条分支：如果您正想「顺手修好、
+给脱敏用户也放行」，那是把 HIGH 级字段的批量出口开给了没有该授权的人。
+
+未登录 → `401 AUTH_REQUIRED`。**预警链接令牌不是工作台凭据**，用它调这个接口同样
+401（普通链接不应变成一份患者名单，这一条在 `alert-links.e2e-spec.ts` 里有专门
+用例）。
+
+**响应头**
+
+| 头 | 值 |
+| --- | --- |
+| `Content-Type` | `text/csv; charset=utf-8` |
+| `Content-Disposition` | `attachment; filename="monitor-2026-08-20-RED.csv"; filename*=UTF-8''<percent-encoded 数据导出-2026-08-20-红色关注.csv>` |
+| `Content-Length` | 字节数 |
+| `Cache-Control` | `no-store` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Row-Count` | 数据行数（不含表头） |
+
+- ASCII 的 `filename=` 在前、RFC 5987 的 `filename*=UTF-8''` 在后，两个都留着：
+  前者给忽略后者的客户端兜底。浏览器 fetch + blob 下载会**忽略**
+  `Content-Disposition` 而用 `a[download]` 的名字，所以服务端
+  `csvFileName()` 与前端 `csvFileName()` 是**必须逐字一致的一对双胞胎**。
+- `Cache-Control: no-store` 不是可选项：一份患者名单不得被任何中间层留存。
+- `X-Row-Count` 只带行数、不带任何患者信息，是给界面区分「没有符合条件的记录」与
+  「这就是你的文件」用的。它叫这个泛名是为了避开 `log-sanitization.spec.ts` 的
+  标识符门禁（`X-` + 大写动词 + `-` 这种形状里，连字符是词边界）。
+- 只有 `X-Row-Count: 0` 时界面才**不落盘**：0 行文件仍是一个合法 CSV（只有表头），
+  但存一个只有表头的文件对用户没有用。读不到这个头时按「有内容」处理，不能当成 0。
+
+**CSV 内容**
+
+编码 UTF-8 **带 BOM**（`EF BB BF`；Excel 靠它把中文表头读成 UTF-8 而不是乱码），
+行尾 `\r\n`（RFC 4180），含 `"` `,` `\r` `\n` 的值按 RFC 4180 加引号并翻倍内部引号。
+
+列顺序（精确）：
+
+```
+关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号
+```
+
+- **`NULL` 导出为空单元格，不是 `—`。** 屏幕上的 `—` 是渲染决定，不是数据；配合
+  #137「历史数据不回填」的决定，「空」正是「来源没有值」的意思，而且在 Excel 里
+  空单元格能正常参与排序与筛选。
+- 关注等级用中文（红色关注/黄色关注/绿色关注/未分级），与
+  `apps/web/src/attentionSource.ts` 的 `ATTENTION_LEVEL_LABELS` 逐字一致。
+- 患者类型：有名字时 `名字（code）`，否则 `code`，否则空。**服务端不臆造**
+  `patient_type_name`（data-dictionary 明令）；界面上的编码→中文兜底表是屏幕的
+  方便，故意没有搬到这里。
+- 检查日期/时间用 `HH:mm:ss`，与工作台那一列同形。
+- 命中关键词用 `、` 连接，只有**未被 AI 语义过滤掉的**命中（与屏幕上一致）。
+- **公式注入防护**：值首字符为 `=` `+` `-` `@` `\t` `\r` 时前置一个 `'`。仅加引号
+  **挡不住** Excel/LibreOffice 的公式求值，所以这条必须做，且那个 `'` 是文本前缀，
+  显示时会被吃掉（`+8613800000000` 仍然读得对）。
+- **文件里没有**：`reportContent`、`diagnosis`、`contextSnippet`（HIGH 级报告正文，
+  批量出口不应携带）、`passwordHash`、以及**任何内部 UUID**——**连 id 列都没有**，
+  使这份文件无法反查内部键。
+- 表头与文件名请以 `apps/api/src/monitor/monitor-csv.ts` 为唯一事实来源。
+
+**上限**
+
+`MONITOR_EXPORT_MAX_ROWS = 10000`。查询用 `take = MAX + 1` 作溢出探针，超过则
+`400 MONITOR_EXPORT_TOO_LARGE`（「当日该等级记录过多（超过 10000 条），导出已取消，
+请联系管理员。」），**绝不静默截断**——静默截断会交出一份看起来完整、实际不完整的
+文件。这是**数据损坏护栏**，不是用户路径：单日单等级下用户已无可再缩小的维度，
+拒绝等于死路，正常永远不该触发。
+
+**审计**
+
+落一条 `EXAM_EXPORT`，`meta = { scope, examDate, level, rowCount }`——只有筛选值与
+行数，**绝不含任何患者字段，也绝不含文件内容**。纪律同 `EXAM_LIST` 用
+`hadPatientName` 布尔量而非搜索串：审计轨迹必须能在不持有患者数据的前提下被阅读。
+注意 `AuditService.record` 是 **fail-open**，所以文档不声称「每次导出必有审计行」。
+复核用 `GET /api/audit?action=EXAM_EXPORT`。
+
 ## 测试
 
 - 单元测试（mock Prisma，无需数据库）：`apps/api/src/monitor/monitor.service.spec.ts`
@@ -542,6 +689,22 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
   两套枚举映射不上的组合恒不配对、等级相同不报、一命中对多发现与一发现对多命中
   各自成条、输出去重与排序。同一条判定的聚合与已读状态另有
   `apps/api/src/level-conflicts/` 下的三个 spec。
+
+- CSV 序列化的单测（纯函数，issue #139）：`apps/api/src/monitor/monitor-csv.spec.ts`
+  —— 表头与列序、BOM 三个字节、CRLF、引号与内部引号翻倍、七个可空字段 → 空单元格、
+  四个中文等级、手机号原文通过且脱敏串永不出现、公式注入四种前缀、0/1/N 个关键词、
+  患者类型三种组合、`contentDispositionFor` 的 ASCII 段不含非 ASCII。
+- 导出的控制器单测（mock service，issue #139）：
+  `apps/api/src/monitor/monitor.controller.spec.ts` —— 无授权 403 且**不读库、不写审计、
+  不设任何响应头**、`@CurrentUser()` 为 null 同样 403、成功时 `StreamableFile` 的
+  type/length/disposition、审计 `meta` 恰好只有四个键且序列化后无患者数据。
+- 导出的端到端测试（真实 Postgres，issue #139）：`apps/api/test/monitor.e2e-spec.ts`
+  新加的四条——整份 CSV 的逐行内容与「不含报告正文/诊断」、**日界两端**（当日
+  `00:00:00` 与 `23:59:00` 在内、次日 `00:00` 在外，这条就是防止 `D..D+1` 重犯的
+  回归测试）、`examTime` 为 null 的行永不出现、非法与多余参数 400；
+  `apps/api/test/security.e2e-spec.ts` 的——**系统管理员也不例外**的
+  `PATIENT_DETAIL_REQUIRED`、AUDITOR 的 `FORBIDDEN`、含原文手机号且不含脱敏串、
+  科室范围外为空、审计 `meta` 只有筛选值。
 
 本地验证 real Postgres 的临时实例方式（与 `docs/rules-api.md` 相同）：
 

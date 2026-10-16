@@ -47,6 +47,11 @@ export type AppRoleDto =
  * CONFIGURATION (a rule and a semantic that disagree about the same spot in a
  * report), never anything about a patient's report - see
  * docs/monitor-level-conflict-api.md.
+ * EXAM_EXPORT (issue #139) is one CSV export of the workbench list. Unlike
+ * every action above it, its payload LEAVES the system as a file, so the row
+ * exists to answer "who took a copy of patient data, of which day and level,
+ * and how many rows" - it stores the filter values and the row count, never a
+ * patient field and never the file.
  */
 export type AuditActionDto =
   | 'EXAM_LIST'
@@ -68,7 +73,8 @@ export type AuditActionDto =
   | 'ATTENTION_SEMANTIC_CREATE'
   | 'ATTENTION_SEMANTIC_UPDATE'
   | 'MONITOR_LEVEL_CONFLICT_READ'
-  | 'MONITOR_LEVEL_CONFLICT_UNREAD';
+  | 'MONITOR_LEVEL_CONFLICT_UNREAD'
+  | 'EXAM_EXPORT';
 
 /** One row of `GET /api/audit`. */
 export interface AuditLogDto {

@@ -11,13 +11,16 @@ import { Workbench } from './Workbench';
 
 /**
  * The list row carries attentionSource (issue #88) - required, so a fixture
- * cannot omit it and leave the reason silently wrong.
+ * cannot omit it and leave the reason silently wrong. Issue #137's patientSex /
+ * orderingDoctor are required the same way.
  */
 const examRows: MonitorExamWorkbenchDto[] = [
   {
     recordId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     monitorLevel: 'RED',
     patientName: '测试患者甲',
+    patientSex: '女',
+    orderingDoctor: '测试医生甲',
     department: '内镜中心',
     bedNo: '12床',
     patientType: { code: 'I', name: '住院' },
@@ -31,6 +34,10 @@ const examRows: MonitorExamWorkbenchDto[] = [
     recordId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     monitorLevel: 'GREEN',
     patientName: null,
+    // Issue #137: the "everything is unknown" row, so the placeholder path for
+    // both new columns is exercised on a row that has nothing to show.
+    patientSex: null,
+    orderingDoctor: null,
     department: null,
     bedNo: null,
     patientType: { code: 'O', name: null },
@@ -53,6 +60,8 @@ function examRow(
     recordId: `${patientName}-record`,
     monitorLevel,
     patientName,
+    patientSex: '男',
+    orderingDoctor: '测试医生乙',
     department: '内镜中心',
     bedNo: '1床',
     patientType: { code: 'I', name: '住院' },
@@ -181,6 +190,9 @@ describe('Workbench', () => {
     // Issue #92: the row tag spells the level out (「红色关注」), like the drawer.
     expect(within(row1).getByText('红色关注')).toBeInTheDocument();
     expect(within(row1).getByText('内镜中心')).toBeInTheDocument();
+    // Issue #137: the two columns the gateway added, shown verbatim.
+    expect(within(row1).getByText('女')).toBeInTheDocument();
+    expect(within(row1).getByText('测试医生甲')).toBeInTheDocument();
     expect(within(row1).getByText('12床')).toBeInTheDocument();
     expect(within(row1).getByText('住院（I）')).toBeInTheDocument();
     expect(within(row1).getByText('2026-08-20')).toBeInTheDocument();
@@ -195,9 +207,11 @@ describe('Workbench', () => {
     expect(within(row2).getByText('绿色关注')).toBeInTheDocument();
     expect(within(row2).getByText('门诊（O）')).toBeInTheDocument();
     // Nothing found it, so there is no reason to state - and none is invented.
-    // The 8 placeholders are 发现来源 + 姓名 + 科室 + 床号 + 检查项目 + 检查日期 +
-    // 检查时间 + 关注理由 (issue #112 added the first); every other cell has a value.
-    expect(within(row2).getAllByText('—')).toHaveLength(8);
+    // The 10 placeholders are 发现来源 + 姓名 + 性别 + 科室 + 床号 + 检查项目 +
+    // 检查日期 + 检查时间 + 开单医生 + 关注理由 (issue #112 added the first);
+    // every other cell has a value. #137 added 性别 and 开单医生, and an older
+    // record synced before the gateway carried them shows both as "—".
+    expect(within(row2).getAllByText('—')).toHaveLength(10);
   });
 
   /**
@@ -257,9 +271,7 @@ describe('Workbench', () => {
    * tells the user something untrue.
    */
   it('gives both toolbar entries the same plain button style, with no filled entry (issue #125)', async () => {
-    const { container } = render(
-      <Workbench onOpenRules={vi.fn()} onOpenAiSemantics={vi.fn()} />,
-    );
+    const { container } = render(<Workbench onOpenRules={vi.fn()} onOpenAiSemantics={vi.fn()} />);
     await screen.findByText('测试患者甲');
 
     const toolbar = container.querySelector('.workbench__toolbar') as HTMLElement;
@@ -276,16 +288,18 @@ describe('Workbench', () => {
   });
 
   /**
-   * Issue #116: the toolbar keeps the two entries that are the product's value
-   * proposition visible, and folds the three configuration/administration ones
-   * into a「⋯」.
+   * Issue #116: the toolbar keeps the entries that are the product's value
+   * proposition visible, and folds the configuration/administration ones into a
+   * 「⋯」. Issue #139 added a third visible entry (数据导出), so the count and
+   * the wording moved from "two" to "the three that are not settings" - the
+   * point of the test is unchanged: the count below is what pins the layout.
    *
-   * "Exactly two" is asserted as a count of the toolbar's own buttons rather
-   * than by listing three absences: with the menu closed those three are not in
-   * the DOM at all, so an absence check would pass even if someone had left a
-   * fourth visible button next to them. The count is what pins the layout.
+   * The count is asserted as a count of the toolbar's own buttons rather than
+   * by listing the folded ones as absences: with the menu closed those are not
+   * in the DOM at all, so an absence check would pass even if someone had left
+   * an extra visible button next to them.
    */
-  it('keeps two visible toolbar entries and folds the rest into「⋯」(issue #116)', async () => {
+  it('keeps the value entries visible and folds the rest into「⋯」(issue #116, #139)', async () => {
     const onOpenNotifications = vi.fn();
     const onOpenLevelConflicts = vi.fn();
     const onOpenUsers = vi.fn();
@@ -296,16 +310,19 @@ describe('Workbench', () => {
         onOpenNotifications={onOpenNotifications}
         onOpenLevelConflicts={onOpenLevelConflicts}
         onOpenUsers={onOpenUsers}
+        onOpenExport={vi.fn()}
       />,
     );
     await screen.findByText('测试患者甲');
 
     const toolbar = container.querySelector('.workbench__toolbar') as HTMLElement;
-    expect(toolbar.querySelectorAll('button')).toHaveLength(3); // 关键词监控 + AI 语义监控 + ⋯
+    // 关键词监控 + AI 语义监控 + 数据导出 + ⋯
+    expect(toolbar.querySelectorAll('button')).toHaveLength(4);
 
     const trigger = within(toolbar).getByRole('button', { name: '更多配置' });
     expect(within(toolbar).getByRole('button', { name: '关键词监控' })).toBeInTheDocument();
     expect(within(toolbar).getByRole('button', { name: 'AI 语义监控' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: '数据导出' })).toBeInTheDocument();
     // 收起时一项都不在 DOM 里 —— 不是 CSS 藏起来
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
 
@@ -338,6 +355,34 @@ describe('Workbench', () => {
    * neither RULE_ADMIN nor USER_ADMIN - and 消息推送 too in this render, since
    * Workbench is usable without it.
    */
+  /**
+   * Issue #139: 数据导出 is a visible entry of its own (it takes data out - it
+   * is not a setting to be folded away), gated on the patientDetail grant via
+   * the prop rather than on a role. It must stay a plain `.button`: #125 keeps
+   * `.button--primary` for form confirmations, and an entry is not one.
+   */
+  it('shows the export entry only when permitted, as a plain button (issue #139)', async () => {
+    const onOpenExport = vi.fn();
+    const { container, unmount } = render(
+      <Workbench onOpenRules={vi.fn()} onOpenExport={onOpenExport} />,
+    );
+    await screen.findByText('测试患者甲');
+
+    const toolbar = container.querySelector('.workbench__toolbar') as HTMLElement;
+    const entry = within(toolbar).getByRole('button', { name: '数据导出' });
+    expect(entry.className).toContain('button');
+    expect(entry.className).not.toContain('button--primary');
+
+    fireEvent.click(entry);
+    expect(onOpenExport).toHaveBeenCalledTimes(1);
+    unmount();
+
+    // 没传 prop（App.tsx 对没有 patientDetail 的账号就是这么做的）→ 按钮不渲染
+    render(<Workbench onOpenRules={vi.fn()} />);
+    await screen.findByText('测试患者甲');
+    expect(screen.queryByRole('button', { name: '数据导出' })).not.toBeInTheDocument();
+  });
+
   it('renders no「⋯」at all when there is nothing to fold into it (issue #116)', async () => {
     const { container } = render(<Workbench onOpenRules={vi.fn()} />);
     await screen.findByText('测试患者甲');
@@ -439,10 +484,27 @@ describe('Workbench', () => {
     expect(tipsOf(/测试患者丙/)).toHaveLength(iconsOf(/测试患者丙/).length);
 
     // The column is labelled and sits between the level and the patient name.
+    // Issue #137 pinned the whole order rather than a prefix: 性别 goes next to
+    // the name it qualifies and 开单医生 next to the patient type it belongs to,
+    // and a reader who learns the order once should not have it move under them.
     const headers = [...container.querySelectorAll('.workbench__table thead th')].map(
       (th) => th.textContent,
     );
-    expect(headers.slice(0, 3)).toEqual(['关注等级', '发现来源', '姓名']);
+    expect(headers).toEqual([
+      '关注等级',
+      '发现来源',
+      '姓名',
+      '性别',
+      '科室',
+      '床号',
+      '类型',
+      '开单医生',
+      '检查项目',
+      '检查日期',
+      '检查时间',
+      '关注理由',
+      '操作',
+    ]);
   });
 
   /**

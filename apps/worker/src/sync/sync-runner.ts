@@ -352,6 +352,9 @@ async function upsertReport(
         reportVersion,
         sourceUpdatedAt: item.sourceUpdatedAt,
         patientName: item.patientName || null,
+        patientSex: item.patientSex || null,
+        patientPhone: item.patientPhone || null,
+        orderingDoctor: item.orderingDoctor || null,
         department: item.department,
         bedNo: item.bedNo,
         patientTypeCode: item.patientTypeCode,
@@ -369,8 +372,13 @@ async function upsertReport(
             // No-op-ish touch: keep the snapshot fields fresh even when
             // skipping re-match (e.g. department renamed upstream with
             // no content change), but do not touch currentLevel/
-            // firstMatchedAt/lastMatchedAt.
+            // firstMatchedAt/lastMatchedAt. Issue #137's three columns are
+            // snapshot fields, so a re-sync of an unchanged report is what
+            // backfills them after the gateway starts sending them.
             patientName: item.patientName || null,
+            patientSex: item.patientSex || null,
+            patientPhone: item.patientPhone || null,
+            orderingDoctor: item.orderingDoctor || null,
             department: item.department,
             bedNo: item.bedNo,
             patientTypeCode: item.patientTypeCode,
@@ -383,6 +391,9 @@ async function upsertReport(
         : {
             sourceUpdatedAt: item.sourceUpdatedAt,
             patientName: item.patientName || null,
+            patientSex: item.patientSex || null,
+            patientPhone: item.patientPhone || null,
+            orderingDoctor: item.orderingDoctor || null,
             department: item.department,
             bedNo: item.bedNo,
             patientTypeCode: item.patientTypeCode,

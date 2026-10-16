@@ -97,16 +97,19 @@ psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821093500_add_local_auth
 
 ## 角色
 
-| 角色           | 监测列表/汇总 | 监测详情   | 规则读取 | 规则写 | 等级分歧待办 | 审计读取 | 系统状态 | 用户管理 |
-| -------------- | ------------- | ---------- | -------- | ------ | ------------ | -------- | -------- | -------- |
-| `VIEWER`       | ✅ 仅本科室   | ✅         | ✅       | ❌ 403 | ❌ 403       | ❌ 403   | ✅       | ❌ 403   |
-| `RULE_ADMIN`   | ✅（脱敏）    | ✅（脱敏） | ✅       | ✅     | ✅           | ❌ 403   | ✅       | ❌ 403   |
-| `SYSTEM_ADMIN` | ✅（脱敏）    | ✅（脱敏） | ✅       | ❌ 403 | ❌ 403       | ❌ 403   | ✅       | ❌ 403   |
-| `AUDITOR`      | ❌ 403        | ❌ 403     | ✅       | ❌ 403 | ❌ 403       | ✅       | ✅       | ❌ 403   |
-| `USER_ADMIN`   | ❌ 403        | ❌ 403     | ✅       | ❌ 403 | ❌ 403       | ❌ 403   | ✅       | ✅       |
-| 未登录         | 401           | 401        | 401      | 401    | 401          | 401      | 401      | 401      |
+| 角色           | 监测列表/汇总 | 监测详情   | 明细导出  | 规则读取 | 规则写 | 等级分歧待办 | 审计读取 | 系统状态 | 用户管理 |
+| -------------- | ------------- | ---------- | --------- | -------- | ------ | ------------ | -------- | -------- | -------- |
+| `VIEWER`       | ✅ 仅本科室   | ✅         | ⚠️ 需 `patientDetail` | ✅ | ❌ 403 | ❌ 403       | ❌ 403   | ✅       | ❌ 403   |
+| `RULE_ADMIN`   | ✅（脱敏）    | ✅（脱敏） | ⚠️ 需 `patientDetail` | ✅ | ✅ | ✅           | ❌ 403   | ✅       | ❌ 403   |
+| `SYSTEM_ADMIN` | ✅（脱敏）    | ✅（脱敏） | ⚠️ 需 `patientDetail` | ✅ | ❌ 403 | ❌ 403       | ❌ 403   | ✅       | ❌ 403   |
+| `AUDITOR`      | ❌ 403        | ❌ 403     | ❌ 403    | ✅       | ❌ 403 | ❌ 403       | ✅       | ✅       | ❌ 403   |
+| `USER_ADMIN`   | ❌ 403        | ❌ 403     | ❌ 403    | ✅       | ❌ 403 | ❌ 403       | ❌ 403   | ✅       | ✅       |
+| 未登录         | 401           | 401        | 401       | 401      | 401    | 401          | 401      | 401      | 401      |
 
 - 监测接口（`/api/monitor/*`）类级要求 `VIEWER | RULE_ADMIN | SYSTEM_ADMIN`。
+- **明细导出**（`GET /api/monitor/export`，issue #139）除读角色外**还要**
+  `patientDetail` 授权：只有读角色时返回 `403 PATIENT_DETAIL_REQUIRED`（不是
+  `FORBIDDEN`，两个 403 含义不同、提示语也不同）。原因见下一条。
 - 规则写接口（创建/编辑/导入确认）方法级要求 `RULE_ADMIN`；规则读取任意已登录。
 - **等级分歧待办**（`/api/monitor/level-conflicts`，issue #103）类级要求
   `RULE_ADMIN`，**读也要求**——与规则读取（任意已登录）不同。那是一处配置缺陷的
@@ -126,6 +129,11 @@ psql "$DATABASE_URL" -f apps/api/prisma/migrations/20260821093500_add_local_auth
   （`张三丰` → `张**`）、床号 → `***`、`reportContent`/`diagnosis`/每个命中
   `contextSnippet` → `null`，并在响应体附加 `dataAccess: { masked: true }`。
   未脱敏响应不带该字段，以便区分“被脱敏”与“报告本就无正文”。
+  **它同时是明细导出（CSV）的闸门**（issue #139）：导出的文件里手机号是**原文**，
+  所以只有已经能读到该手机号的账号才允许把数据带出去。缺该授权时导出 403
+  `PATIENT_DETAIL_REQUIRED`，界面上的「数据导出」入口也直接不渲染。
+- **`patientDetail` 不随角色自动获得**：`SYSTEM_ADMIN` 默认也是脱敏的，它同样是
+  一份**显式授予**，在 `app_user_access` 里逐账号配置。
 - **越权即 404**：受科室限制的用户请求范围外记录时返回 `404
 MONITOR_RECORD_NOT_FOUND`（而非 403），不暴露该记录存在。
 
@@ -166,12 +174,15 @@ pnpm --filter @epgs/api auth:show-access --username doctor
 ## 审计日志
 
 `audit_log` 只增不删（无更新/删除接口，仅 `GET /api/audit` 由 `AUDITOR` 读取）。
-已触发动作：`EXAM_LIST`、`EXAM_DETAIL`、`RULE_CREATE`、`RULE_UPDATE`、
+已触发动作：`EXAM_LIST`、`EXAM_DETAIL`、`EXAM_EXPORT`（issue #139，明细导出）、
+`RULE_CREATE`、`RULE_UPDATE`、
 `RULE_IMPORT`、`AUDIT_VIEW`；`LOGIN`、`CONFIG_CHANGE` 预留在枚举中，尚未接入。
 
 - 审计 `meta` 只含低敏感字段（过滤条件、`masked` 标记、规则语义、计数），
   **绝不包含**患者姓名本身（仅记 `hadPatientName` 布尔）；命中关键词 `keyword`
   来自规则库、非敏感，原样记录。`log-sanitization` 静态测试对全源码树强制该约束。
+  导出只多记一个 `rowCount`（它记的是**离开系统的份数**，是这一行审计存在的理由），
+  同样不含任何患者字段、不含文件内容。
 - **审计 fail-open**：写失败仅记告警日志，绝不让业务请求变成 500；授权始终
   fail-closed。无授权记录的账号（例如只访问健康检查）不产生审计行。
 - 审计查询支持按 `action`/`actorUsername`/`department` 过滤 + 分页（`GET

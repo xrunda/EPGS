@@ -25,6 +25,10 @@ function syntheticRecord(overrides: Record<string, unknown> = {}) {
     科室: '测试科室',
     类型: 'I',
     诊断: '测试诊断意见文本，仅为合成数据。',
+    // Issue #137: the three columns the gateway added to this query.
+    性别: '女',
+    手机号: '13800000000',
+    开单医生: '测试医生甲',
     ...overrides,
   };
 }
@@ -37,7 +41,9 @@ function soapEnvelope(records: unknown[]): string {
 </SOAP-ENV:Envelope>`;
 }
 
-function mockFetch(handler: (input: unknown, init?: RequestInit) => Promise<Response> | Response): typeof fetch {
+function mockFetch(
+  handler: (input: unknown, init?: RequestInit) => Promise<Response> | Response,
+): typeof fetch {
   return handler as unknown as typeof fetch;
 }
 
@@ -73,7 +79,41 @@ describe('mapSoapWireRecordToDto', () => {
     expect(dto.examTimeText).toBe('09:30:00');
     expect(dto.reportContent).toBe('测试检查所见文本，仅为合成数据。');
     expect(dto.diagnosis).toBe('测试诊断意见文本，仅为合成数据。');
+    // Issue #137: the three columns added to the W00000206 payload.
+    expect(dto.patientSex).toBe('女');
+    expect(dto.patientPhone).toBe('13800000000');
+    expect(dto.orderingDoctor).toBe('测试医生甲');
     expect(dto.reportId).toBe(dto.sourceRecordId);
+  });
+
+  it('maps the three #137 columns to null when the gateway omits them', () => {
+    // A payload from a gateway that has not been updated (or a different
+    // KeyName) is a degraded display, not a contract violation: these are
+    // display-only snapshot columns, and failing the whole batch over a missing
+    // phone number would take the report itself down with it.
+    const record = syntheticRecord();
+    delete (record as Record<string, unknown>).性别;
+    delete (record as Record<string, unknown>).手机号;
+    delete (record as Record<string, unknown>).开单医生;
+
+    const dto = mapSoapWireRecordToDto(record);
+
+    expect(dto.patientSex).toBeNull();
+    expect(dto.patientPhone).toBeNull();
+    expect(dto.orderingDoctor).toBeNull();
+    // The rest of the record is untouched by their absence.
+    expect(dto.patientName).toBe('测试患者甲');
+    expect(dto.diagnosis).toBe('测试诊断意见文本，仅为合成数据。');
+  });
+
+  it('maps empty-string #137 columns to null rather than ""', () => {
+    // 门诊 patients routinely have no bed and often no phone on file, and the
+    // gateway sends those as "". "" is not a value the workbench can render.
+    const dto = mapSoapWireRecordToDto(syntheticRecord({ 性别: '', 手机号: '', 开单医生: '' }));
+
+    expect(dto.patientSex).toBeNull();
+    expect(dto.patientPhone).toBeNull();
+    expect(dto.orderingDoctor).toBeNull();
   });
 
   it('maps empty-string fields to null (bedNo, department, etc)', () => {
@@ -204,9 +244,7 @@ describe('SoapPacsRisAdapter.fetchReports', () => {
   });
 
   it('throws SoapPacsTransientError on a network error', async () => {
-    const adapter = buildAdapter(
-      mockFetch(() => Promise.reject(new Error('network unreachable'))),
-    );
+    const adapter = buildAdapter(mockFetch(() => Promise.reject(new Error('network unreachable'))));
     await expect(
       adapter.fetchReports({
         since: new Date('2026-08-21T00:00:00+08:00'),
@@ -216,7 +254,9 @@ describe('SoapPacsRisAdapter.fetchReports', () => {
   });
 
   it('throws SoapPacsContractError when the response has no DHCWebInterfaceResult element', async () => {
-    const adapter = buildAdapter(mockFetch(() => textResponse('<SOAP-ENV:Envelope></SOAP-ENV:Envelope>')));
+    const adapter = buildAdapter(
+      mockFetch(() => textResponse('<SOAP-ENV:Envelope></SOAP-ENV:Envelope>')),
+    );
     await expect(
       adapter.fetchReports({
         since: new Date('2026-08-21T00:00:00+08:00'),

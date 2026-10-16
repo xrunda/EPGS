@@ -81,6 +81,15 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       reportContent: string;
       diagnosis: string | null;
       matchedKeyword: string;
+      /**
+       * Issue #139: the gateway columns #137 added. Set on A1 only, because the
+       * export is the one surface that writes them into a file - and the export
+       * tests have to prove both "the raw phone is in the file" and "a record
+       * with none of them does not grow a fake value".
+       */
+      patientSex?: string;
+      patientPhone?: string;
+      orderingDoctor?: string;
     }[] = [
       {
         key: 'A1',
@@ -91,6 +100,9 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
         reportContent: '胃窦见一处隆起性病变，病理提示黏膜内腺癌早期。',
         diagnosis: '胃腺癌（早期）。',
         matchedKeyword: KEYWORD,
+        patientSex: '男',
+        patientPhone: '13800000000',
+        orderingDoctor: '王医生',
       },
       {
         key: 'A2',
@@ -171,6 +183,9 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
           patientTypeCode: 'I',
           patientTypeName: '住院',
           examItem: '电子胃镜检查',
+          patientSex: row.patientSex ?? null,
+          patientPhone: row.patientPhone ?? null,
+          orderingDoctor: row.orderingDoctor ?? null,
           examTime: new Date('2026-08-20T08:15:00Z'),
           currentLevel: row.currentLevel as never,
           firstMatchedAt: new Date('2026-08-20T08:15:30Z'),
@@ -422,6 +437,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       const plain = request(app.getHttpServer());
       await plain.get('/api/monitor/exams').expect(401);
       await plain.get('/api/monitor/summary').expect(401);
+      await plain.get('/api/monitor/export').query({ examDate: '2026-08-20', level: 'RED' }).expect(401);
       await plain.get('/api/rules').expect(401);
       await plain.get('/api/audit').expect(401);
       await plain.get('/api/system/sync-status').expect(401);
@@ -576,6 +592,102 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       expect(JSON.stringify(meta)).not.toMatch(/测试患者甲/);
     },
   );
+
+  // --- Issue #139: the CSV export is gated on the grant, not on the role ----
+
+  /**
+   * The export is the one read here whose payload LEAVES the system: a file the
+   * holder can print, mail or hand over. It therefore costs one grant more than
+   * reading the same rows on screen - the `patientDetail` grant, which is
+   * exactly what already lets its holder read the same phone in the drawer. So
+   * these cases are about the SECOND wall: `expectForbidden` (role) and
+   * PATIENT_DETAIL_REQUIRED (grant) must stay distinguishable, because the
+   * modal says a different sentence for each.
+   */
+  itWithDb('the export requires the patientDetail grant even for a system admin', async () => {
+    for (const key of ['viewer', 'sysAdmin', 'ruleAdmin'] as const) {
+      const res = await agents[key]
+        .get('/api/monitor/export')
+        .query({ examDate: '2026-08-20', level: 'RED' })
+        .expect(403);
+      // NOT plain FORBIDDEN: the role gate passed, the grant gate refused.
+      expect(res.body.error.code).toBe('PATIENT_DETAIL_REQUIRED');
+      expect(res.body.error.message).toContain('没有导出患者明细的权限');
+    }
+
+    // No file bytes and no audit row: the refusal happens before either.
+    const rows = await prisma.auditLog.findMany({ where: { action: 'EXAM_EXPORT' } });
+    expect(rows).toHaveLength(0);
+  });
+
+  itWithDb('AUDITOR cannot reach the export at all (role gate)', async () => {
+    await expectForbidden(
+      await agents.auditor
+        .get('/api/monitor/export')
+        .query({ examDate: '2026-08-20', level: 'RED' }),
+    );
+  });
+
+  itWithDb(
+    'the export writes the raw phone, stays inside the caller scope, and audits only the filter',
+    async () => {
+      const res = await agents.viewerFull
+        .get('/api/monitor/export')
+        .query({ examDate: '2026-08-20', level: 'RED' })
+        .expect(200);
+
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['x-row-count']).toBe('1');
+
+      // A1 only: scoped to 消化内科 (B1 is 呼吸内科 and a different level anyway).
+      expect(res.text).toContain('测试患者甲');
+      expect(res.text).not.toContain('测试患者丙');
+
+      // The owner's decision (2026-10-16): no masked variant of the phone
+      // exists in the file. The grant is the control, not a redaction - so the
+      // raw number must be here AND the masked form must not.
+      expect(res.text).toContain('13800000000');
+      expect(res.text).not.toContain('138****0000');
+      expect(res.text).not.toContain('****');
+
+      // The gateway columns #137 added travel with it...
+      expect(res.text).toContain('男,消化内科,12-1,住院（I）,王医生');
+      // ...and the report body / diagnosis never do.
+      for (const forbidden of ['胃窦见一处隆起性病变', '胃腺癌', '…腺癌早期…']) {
+        expect(res.text).not.toContain(forbidden);
+      }
+
+      const rows = await prisma.auditLog.findMany({
+        where: { action: 'EXAM_EXPORT', actorUsername: USERS.viewerFull },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      });
+      expect(rows).toHaveLength(1);
+      // The row answers "who took a copy of which day and level, how many rows" -
+      // and holds nothing else. No patient field, and not the file.
+      expect(rows[0].meta).toEqual({
+        scope: ['消化内科'],
+        examDate: '2026-08-20',
+        level: 'RED',
+        rowCount: 1,
+      });
+      expect(rows[0].resourceId).toBeNull();
+      expect(JSON.stringify(rows[0].meta)).not.toMatch(/测试患者|13800000000|王医生/);
+    },
+  );
+
+  itWithDb('the export is department-scoped, so an out-of-scope day is empty', async () => {
+    // B1 (呼吸内科, GREEN) is outside viewerFull's scope: the same day/level
+    // that a SYSTEM_ADMIN would fill returns nothing at all here - an empty
+    // file, not a filtered one.
+    const res = await agents.viewerFull
+      .get('/api/monitor/export')
+      .query({ examDate: '2026-08-20', level: 'GREEN' })
+      .expect(200);
+    expect(res.headers['x-row-count']).toBe('0');
+    expect(res.text).not.toContain('测试患者丙');
+  });
 
   // --- Issue #88: the AI explanation crosses the same masking boundary ------
 

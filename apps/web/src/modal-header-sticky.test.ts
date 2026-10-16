@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 /**
  * 弹层标题栏固定在顶部的回归护栏（issue #133）。
  *
- * 为什么要读 CSS 源码：这五个弹层的滚动容器就是弹层本身
+ * 为什么要读 CSS 源码：这些弹层的滚动容器就是弹层本身
  * （`.xxx-modal { max-height: calc(100dvh - 48px); overflow: auto }`），标题栏是它的
  * 第一个孩子。少一条 `position: sticky` 就会跟着正文一起滚走，滚到一半右上角的 ×
  * 看不见了 —— 但 jsdom 没有布局引擎（vitest 也没开 `css: true`），吸附在单测里测不出来，
@@ -52,7 +52,7 @@ function declaration(css: string, selector: string, property: string): string | 
   return match ? match[1].trim() : null;
 }
 
-/** 五个「弹层自身即滚动容器」的弹层；.auth-modal 没有 max-height、.drawer 已是 flex 列布局，都不在内。 */
+/** 六个「弹层自身即滚动容器」的弹层；.auth-modal 没有 max-height、.drawer 已是 flex 列布局，都不在内。 */
 const MODALS = [
   {
     label: 'AI 语义监控',
@@ -83,6 +83,12 @@ const MODALS = [
     css: 'LevelConflictsModal.css',
     modal: '.level-conflict-modal',
     header: '.level-conflict-modal__header',
+  },
+  {
+    label: '数据导出',
+    css: 'ExportModal.css',
+    modal: '.export-modal',
+    header: '.export-modal__header',
   },
 ] as const;
 

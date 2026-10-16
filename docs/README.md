@@ -45,6 +45,12 @@
 > （`apps/api/src/security/closed-loop-absence.spec.ts`）。
 > **凡 PRD 与 [acceptance.md](./acceptance.md) 冲突之处，一律以 acceptance.md 为准。**
 >
+> **「导出日报」仍取消，但别把它和 issue #139 的「数据导出」混为一谈**：#139 新增的是
+> **只读明细导出**——按需选一天 + 一个关注等级，把用户本来就能读到的明细存成 CSV。
+> 没有聚合、没有定时、没有推送、没有任何闭环状态字段，因此与上面的取消条款不冲突
+> （对照表见 [product/read-only-display-spec.md](./product/read-only-display-spec.md) §8）。
+> §13.1 第 10/11/14 项里的「待上报队列」与「误报处理」**不受影响，继续取消**。
+>
 > 另有一处被后续 issue **部分更新**（不是被取消）：`Doc/PRD.md` §7.3 末条
 > "否定语义（如'未见肿瘤'）在当前 UI 中仅通过备注提示人工复核，V1.0 不自动识别
 > 否定关系"。issue #87 已实现"对命中处上下文做语义判读"，其中包含高把握的否定识别，

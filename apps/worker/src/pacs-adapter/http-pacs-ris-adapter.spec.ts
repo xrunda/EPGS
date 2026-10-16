@@ -461,4 +461,47 @@ describe('mapWireReportToDto', () => {
       PacsHttpContractError,
     );
   });
+
+  // --- issue #137: the three optional gateway columns -----------------------
+
+  it('maps the three #137 columns when the payload carries them', () => {
+    const dto = mapWireReportToDto(
+      syntheticReport({
+        patientSex: '男',
+        patientPhone: '13800000000',
+        orderingDoctor: '测试医生甲',
+      }),
+    );
+
+    expect(dto.patientSex).toBe('男');
+    expect(dto.patientPhone).toBe('13800000000');
+    expect(dto.orderingDoctor).toBe('测试医生甲');
+  });
+
+  it('maps absent and empty #137 fields to null rather than failing the batch', () => {
+    // Both halves matter: `undefined` is a gateway that predates the columns or
+    // a CSV without them (the frozen replay dataset), `''` is a value the source
+    // genuinely has none of. Neither is a contract violation - a display-only
+    // snapshot must not take a report down with it.
+    const absent = mapWireReportToDto(syntheticReport());
+    expect(absent.patientSex).toBeNull();
+    expect(absent.patientPhone).toBeNull();
+    expect(absent.orderingDoctor).toBeNull();
+
+    const empty = mapWireReportToDto(
+      syntheticReport({ patientSex: '', patientPhone: '', orderingDoctor: '' }),
+    );
+    expect(empty.patientSex).toBeNull();
+    expect(empty.patientPhone).toBeNull();
+    expect(empty.orderingDoctor).toBeNull();
+  });
+
+  it('rejects a non-string #137 value rather than coercing it', () => {
+    // The payload crosses a network boundary, so a wrong type is a gateway bug
+    // and must fail loudly - coercing a number into a phone string is how a
+    // display field quietly becomes a different value than the source holds.
+    expect(() => mapWireReportToDto(syntheticReport({ patientPhone: 13800000000 }))).toThrow(
+      PacsHttpContractError,
+    );
+  });
 });

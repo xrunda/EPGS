@@ -7,10 +7,18 @@
  * PACS/RIS vendor schema. Per the read-only display spec (#27) and the
  * IRIS contract (#28) the DTO carries ONLY the confirmed source snapshot
  * fields: source stable ID, patient/study display fields, and the report
- * body. No workflow/review status, no sex/age/inpatient number, no
+ * body. No workflow/review status, no age/inpatient number, no
  * disposition fields - see docs/api/pacs-ris-data-api.md §9 for the
  * removed legacy contract fields. The IRIS adapter also retains the
  * confirmed registration number and source date/time text used by #24.
+ *
+ * Issue #137 adds the three snapshot columns the hospital's DHC/Ensemble
+ * gateway now returns alongside the report: patient sex, patient phone and
+ * the ordering doctor. Sex and phone are NOT the "no sex/age" legacy fields
+ * #26 removed - those were unmapped contract leftovers; these are confirmed
+ * columns of the live W00000206 payload and are displayed by the workbench.
+ * `patientPhone` is HIGH sensitivity (see docs/data-dictionary.md) and must
+ * never reach a log, an audit `meta`, a push body or an AI prompt.
  *
  * IMPORTANT: nothing in this file may contain real patient data. These
  * are type/shape definitions only.
@@ -38,6 +46,29 @@ export interface PacsReportDto {
   patientRegistrationNo: string | null;
   /** PA_PatMas.PAPMI_Name; nullable because the source join is a LEFT JOIN. */
   patientName: string | null;
+  /**
+   * Patient sex as the source states it (issue #137; gateway key `性别`).
+   * Stored and displayed verbatim - the source has no code dictionary for
+   * this column, so it must not be normalized into an enum. MEDIUM
+   * sensitivity: it never identifies a patient on its own, so it is not
+   * masked by docs/data-dictionary.md's HIGH rules.
+   */
+  patientSex: string | null;
+  /**
+   * Patient contact phone (issue #137; gateway key `手机号`). HIGH
+   * sensitivity - the most directly identifying field EPGS stores. Never
+   * logged, never audited, never pushed, never sent to a model, and never
+   * served in a list response; the detail read masks it unless the caller
+   * holds the `patientDetail` grant (see apps/api/src/access/data-scope.ts).
+   */
+  patientPhone: string | null;
+  /**
+   * Name of the clinician who ordered the exam (issue #137; gateway key
+   * `开单医生`). A member of staff, not a patient - the workbench shows it so
+   * a reader can tell who requested the study. MEDIUM sensitivity; not
+   * masked.
+   */
+  orderingDoctor: string | null;
   /** Ordering/performing department at time of sync. */
   department: string | null;
   /** Current bed number; empty for outpatient/unknown -> display as "—". */

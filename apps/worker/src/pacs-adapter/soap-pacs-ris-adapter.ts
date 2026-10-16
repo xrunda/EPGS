@@ -66,6 +66,12 @@ interface SoapWireRecord {
   科室?: unknown;
   类型?: unknown;
   诊断?: unknown;
+  // Issue #137: the gateway added these three columns to the same query.
+  // Optional here because a payload from an older gateway (or a different
+  // KeyName) legitimately lacks them - see mapSoapWireRecordToDto.
+  性别?: unknown;
+  手机号?: unknown;
+  开单医生?: unknown;
 }
 
 function xmlEscape(value: string): string {
@@ -76,7 +82,12 @@ function xmlEscape(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function buildEnvelope(username: string, password: string, keyName: string, inputParameter: string): string {
+function buildEnvelope(
+  username: string,
+  password: string,
+  keyName: string,
+  inputParameter: string,
+): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
   <soapenv:Header>
@@ -104,7 +115,8 @@ function buildEnvelope(username: string, password: string, keyName: string, inpu
  * the confirmed sample envelope.
  */
 function extractCdataResult(xml: string): string {
-  const match = /<DHCWebInterfaceResult>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/DHCWebInterfaceResult>/.exec(xml);
+  const match =
+    /<DHCWebInterfaceResult>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/DHCWebInterfaceResult>/.exec(xml);
   if (!match) {
     // Some gateway responses omit CDATA and inline the JSON directly.
     const inline = /<DHCWebInterfaceResult>([\s\S]*?)<\/DHCWebInterfaceResult>/.exec(xml);
@@ -209,6 +221,13 @@ export function mapSoapWireRecordToDto(raw: SoapWireRecord): PacsReportDto {
     sourceRecordId: requireWireString(raw.检查号, '检查号'),
     patientRegistrationNo: emptyAsNull(raw.登记号),
     patientName: emptyAsNull(raw.姓名),
+    // Issue #137: three columns the gateway added to this query. `emptyAsNull`
+    // already returns null for `undefined`, so a payload that lacks them
+    // entirely maps to null instead of failing the batch - an older gateway
+    // is a degraded display, not a contract violation.
+    patientSex: emptyAsNull(raw.性别),
+    patientPhone: emptyAsNull(raw.手机号),
+    orderingDoctor: emptyAsNull(raw.开单医生),
     department: emptyAsNull(raw.科室),
     bedNo: emptyAsNull(raw.床号),
     patientTypeCode: emptyAsNull(raw.类型),

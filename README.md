@@ -37,7 +37,8 @@ Documentation index: [docs/README.md](./docs/README.md).
   error response shape, correlation-ID propagation, structured logging, env-var
   config validation (fail-fast on missing required vars), (issue #4) the
   `monitor_rule` management API under `/api/rules`, and (issue #7) the read-only
-  monitor workbench API under `/api/monitor` (list/filter/summary + detail) — see
+  monitor workbench API under `/api/monitor` (list/filter/summary + detail, plus
+  issue #139's single-day CSV export) — see
   "Rules API" / "Monitor API" below and [`docs/rules-api.md`](docs/rules-api.md) /
   [`docs/api/monitor-api.md`](docs/api/monitor-api.md).
 - **apps/worker** — a NestJS background service that periodically reads endoscopy
@@ -50,7 +51,8 @@ Documentation index: [docs/README.md](./docs/README.md).
   pagination, and a read-only detail drawer that shows the report/diagnosis and hit
   evidence from `apps/api`'s `/api/monitor` endpoints (see "Monitor API" below and
   `docs/product/read-only-display-spec.md`). The 监测规则 button opens the rule
-  configuration modal (issue #11).
+  configuration modal (issue #11); the 数据导出 button (issue #139, rendered only
+  for accounts holding the `patientDetail` grant) opens the export modal.
 - **packages/shared-types** — TypeScript types/interfaces shared across api/worker/web
   (e.g. `HealthStatus`, `ApiErrorBody`), proving the workspace linking works end to end.
 
@@ -81,7 +83,8 @@ docker-compose.yml          # Local Postgres for later issues
   target read-only database-gateway API contract for issue #24.
 - [`docs/api/monitor-api.md`](docs/api/monitor-api.md) — issue #7/#8's read-only
   monitor workbench API contract (`/api/monitor/exams`, `/api/monitor/exams/:id`,
-  `/api/monitor/summary`): filter semantics, Shanghai-day boundaries, sort contract,
+  `/api/monitor/summary`, and issue #139's `/api/monitor/export`): filter semantics,
+  Shanghai-day boundaries, sort contract,
   pagination, error codes, and the detail endpoint's hit evidence (rule provenance +
   matched-field location).
 - **Web workbench (issues #9/#10)** — the frontend single-page workbench consuming
@@ -319,7 +322,14 @@ global `RolesGuard` enforces per request:
 - **Masking**: without `patientDetail`, patient names keep only the surname,
   bed numbers become `***`, and report text / diagnosis / hit snippets are
   nulled with a `dataAccess: { masked: true }` flag.
-- **Audit**: `GET /api/monitor/exams*`, rule writes, and audit reads write
+- **Export (issue #139)**: `GET /api/monitor/export?examDate=D&level=L` writes one
+  Shanghai day at one attention level as a UTF-8-BOM CSV attachment. It requires
+  the `patientDetail` grant on top of the read role (`403 PATIENT_DETAIL_REQUIRED`
+  otherwise) because the file carries the patient phone **in the clear** — a
+  deliberate owner decision, not a masking gap. No report text, no diagnosis, no
+  ids. See [`docs/api/monitor-api.md`](docs/api/monitor-api.md).
+- **Audit**: `GET /api/monitor/exams*`, `GET /api/monitor/export`, rule writes, and
+  audit reads write
   append-only `audit_log` rows (fail-open; meta never holds patient data).
   `GET /api/audit` is AUDITOR-only.
 - **Actor authority**: on rule writes the server-side login wins over any
@@ -336,11 +346,13 @@ pnpm --filter @epgs/api auth:show-access --username doctor
 See [`docs/auth.md`](docs/auth.md) for the full permission matrix, masking
 rules and audit design.
 
-## Monitor API (issue #7, #8)
+## Monitor API (issue #7, #8, #139)
 
-`GET /api/monitor/exams`, `GET /api/monitor/exams/:id` and
-`GET /api/monitor/summary` implement the **read-only** endoscopy workbench: a
-filterable/paginated list, the attention-level summary cards, and a detail drawer.
+`GET /api/monitor/exams`, `GET /api/monitor/exams/:id`,
+`GET /api/monitor/summary` and `GET /api/monitor/export` implement the **read-only**
+endoscopy workbench: a
+filterable/paginated list, the attention-level summary cards, a detail drawer, and a
+CSV export of one day at one attention level.
 They surface the synced exam snapshot (`monitor_record`) plus its hit evidence
 (`monitor_match`) — the product converged to read-only display (issue #26), so there
 is deliberately no report/disposition status anywhere in these responses, and the
@@ -364,6 +376,11 @@ Key semantics (full contract in [`docs/api/monitor-api.md`](docs/api/monitor-api
   (never auto-GREEN).
 - `summary` computes total/red/yellow/green/unclassified under the **same** filters
   as the list (`total` = sum of the 5 buckets).
+- `export` takes exactly two required params (`examDate`, `level`) — one day, one
+  level, no "all levels" — and answers `text/csv; charset=utf-8` with a BOM, a
+  `Content-Disposition` attachment, `Cache-Control: no-store`, and an `X-Row-Count`
+  header. Note `examDateTo` equals `examDateFrom` here: the Shanghai-day upper bound
+  is already the *next* day's 00:00, so passing `D..D+1` would export two days.
 
 ## Commit message convention
 

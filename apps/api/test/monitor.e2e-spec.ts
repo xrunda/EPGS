@@ -67,6 +67,15 @@ describe('Monitor API (e2e, real Postgres)', () => {
     reportContent: string | null;
     diagnosis: string | null;
     matches: FixtureMatch[];
+    /**
+     * Issue #139: the three gateway columns #137 added, set on R1 only. The CSV
+     * export has to carry them (that is half the reason the export exists), and
+     * the remaining rows keep them null - which is also what the export has to
+     * render as an empty cell rather than a dash.
+     */
+    patientSex?: string | null;
+    patientPhone?: string | null;
+    orderingDoctor?: string | null;
   }
 
   // Rule keywords are disjoint from the prisma/seed.ts keywords
@@ -94,6 +103,11 @@ describe('Monitor API (e2e, real Postgres)', () => {
       currentLevel: 'RED',
       reportContent: '胃窦见一处隆起性病变，病理提示黏膜内腺癌。',
       diagnosis: '胃腺癌（早期）。',
+      // Issue #139: only R1 carries the gateway trio, so the export tests can
+      // assert both "the value is in the file" and "a null renders as nothing".
+      patientSex: '男',
+      patientPhone: '13800000000',
+      orderingDoctor: '王医生',
       matches: [
         {
           keyword: '腺癌',
@@ -385,6 +399,10 @@ describe('Monitor API (e2e, real Postgres)', () => {
           patientTypeCode: row.patientTypeCode,
           patientTypeName: row.patientTypeName,
           examItem: row.examItem,
+          // Issue #137/#139: undefined for every row but R1 -> stored as NULL.
+          patientSex: row.patientSex ?? null,
+          patientPhone: row.patientPhone ?? null,
+          orderingDoctor: row.orderingDoctor ?? null,
           examTime,
           currentLevel: row.currentLevel as never,
           firstMatchedAt: row.matches.length ? new Date(row.matches[0].matchedAt) : null,
@@ -835,6 +853,136 @@ describe('Monitor API (e2e, real Postgres)', () => {
       .query({ examDateFrom: '2026-02-31' })
       .expect(400);
     expect(impossible.body.error.code).toBe('INVALID_DATE_PARAM');
+  });
+
+  // --- Issue #139: the single-day CSV export ------------------------------
+
+  /**
+   * The exact column order the file must have. Spelled out as one string so a
+   * reordering, an added column or a stray space fails here rather than being
+   * discovered by whoever opens the file in Excel.
+   */
+  const CSV_HEADER = '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号';
+
+  /** Data lines only (drops the BOM-prefixed header and the trailing blank). */
+  function csvDataLines(text: string): string[] {
+    const withoutBom = text.startsWith('﻿') ? text.slice(1) : text;
+    return withoutBom.split('\r\n').slice(1).filter((line) => line !== '');
+  }
+
+  itWithDb(
+    'export writes one Shanghai day at one level as a CSV carrying the gateway columns (issue #137/#139)',
+    async () => {
+      const res = await agent
+        .get('/api/monitor/export')
+        .query({ examDate: '2026-08-20', level: 'RED' })
+        .expect(200);
+
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      // ASCII fallback first, then the RFC 5987 form with the Chinese name.
+      expect(res.headers['content-disposition']).toBe(
+        `attachment; filename="monitor-2026-08-20-RED.csv"; filename*=UTF-8''${encodeURIComponent('数据导出-2026-08-20-红色关注.csv')}`,
+      );
+
+      expect(res.text.startsWith('﻿')).toBe(true);
+      expect(res.text).toContain(CSV_HEADER);
+
+      // R1 / R8 / R9 are the three RED rows whose Shanghai exam day is 08-20.
+      const lines = csvDataLines(res.text);
+      expect(lines).toHaveLength(3);
+      expect(res.headers['x-row-count']).toBe('3');
+
+      const r1 = lines.find((line) => line.includes('测试患者甲'));
+      expect(r1).toBeDefined();
+      // 等级 / 姓名 / 性别 / … / 开单医生 / 检查项目 / 检查日期 / 检查时间 / … / 手机号
+      // 检查时间 is HH:mm:ss, the same string the workbench column shows - the
+      // file and the screen must not disagree about the same instant.
+      expect(r1).toContain(
+        '红色关注,测试患者甲,男,消化内科,12-1,住院（I）,王医生,电子胃镜检查,2026-08-20,16:15:00,腺癌、息肉样,13800000000',
+      );
+
+      // No patient field may be missing-but-looked-like-data: a NULL renders as
+      // an empty cell, never a dash (the dash is a screen decision, not a value).
+      const r8 = lines.find((line) => line.includes('测试患者庚'));
+      expect(r8).toContain(
+        '红色关注,测试患者庚,,消化内科,12-8,住院（I）,,电子胃镜检查,2026-08-20,18:00:00,浸润癌,',
+      );
+      expect(r8).not.toContain('—');
+
+      // The report body and the diagnosis are not in the file at all.
+      for (const forbidden of ['胃窦见一处隆起性病变', '胃腺癌', '贲门浸润癌', '腺癌组织']) {
+        expect(res.text).not.toContain(forbidden);
+      }
+    },
+  );
+
+  itWithDb('export=the day is Shanghai-bounded on both ends', async () => {
+    // R3 (Shanghai 08-20 00:30) is IN 08-20; R6 (08-19 20:00) is not.
+    const day = await agent
+      .get('/api/monitor/export')
+      .query({ examDate: '2026-08-20', level: 'GREEN' })
+      .expect(200);
+    expect(day.text).toContain('测试患者丙');
+    expect(day.text).not.toContain('测试患者己');
+
+    // R11 is exactly 2026-08-18T00:00+08: the lower bound is inclusive...
+    const midnight = await agent
+      .get('/api/monitor/export')
+      .query({ examDate: '2026-08-18', level: 'GREEN' })
+      .expect(200);
+    expect(midnight.text).toContain('测试患者癸');
+    expect(midnight.text).toContain(',2026-08-18,00:00:00,');
+    expect(midnight.headers['x-row-count']).toBe('1');
+
+    // ...and the same instant is OUT of the previous day, which is the whole
+    // point of resolving the upper bound to the NEXT day's 00:00. Passing
+    // examDateTo = D+1 anywhere would make this day return R11 and R12.
+    const previousDay = await agent
+      .get('/api/monitor/export')
+      .query({ examDate: '2026-08-17', level: 'GREEN' })
+      .expect(200);
+    expect(previousDay.headers['x-row-count']).toBe('0');
+    expect(csvDataLines(previousDay.text)).toHaveLength(0);
+
+    // R12 (08-17 23:59) belongs to 08-17, not to 08-18.
+    const lastMinute = await agent
+      .get('/api/monitor/export')
+      .query({ examDate: '2026-08-17', level: 'UNCLASSIFIED' })
+      .expect(200);
+    expect(lastMinute.text).toContain('测试患者子');
+    expect(lastMinute.text).toContain(',2026-08-17,23:59:00,');
+  });
+
+  itWithDb('export never includes a record with no exam time', async () => {
+    // R7 is UNCLASSIFIED with a NULL examTime. It is in no day at all - and
+    // this is also the empty-day case: 200 + header only + X-Row-Count: 0,
+    // never a 404 and never an error.
+    const res = await agent
+      .get('/api/monitor/export')
+      .query({ examDate: '2026-08-20', level: 'UNCLASSIFIED' })
+      .expect(200);
+
+    expect(res.headers['x-row-count']).toBe('0');
+    expect(res.text).toBe(`\uFEFF${CSV_HEADER}\r\n`);
+  });
+
+  itWithDb('export rejects anything that is not one day and one known level', async () => {
+    const cases = [
+      {}, // both missing
+      { examDate: '2026-08-20' }, // no level
+      { level: 'RED' }, // no day
+      { examDate: '2026-08-20', level: 'BLUE' }, // unknown level
+      { examDate: '2026/08/20', level: 'RED' }, // wrong date shape
+      // forbidNonWhitelisted: the workbench's filter surface cannot be smuggled
+      // in through this route, so "one day, one level" stays a server rule.
+      { examDate: '2026-08-20', level: 'RED', page: '1' },
+      { examDate: '2026-08-20', level: 'RED', department: '消化内科' },
+    ];
+    for (const query of cases) {
+      await agent.get('/api/monitor/export').query(query).expect(400);
+    }
   });
 
   // --- Summary ---------------------------------------------------------

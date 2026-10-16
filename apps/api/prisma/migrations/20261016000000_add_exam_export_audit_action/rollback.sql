@@ -1,0 +1,37 @@
+-- Rollback for add_exam_export_audit_action (issue #139).
+--
+-- PostgreSQL has no `ALTER TYPE ... DROP VALUE`. Removing EXAM_EXPORT requires
+-- rebuilding the enum type: create a new type without the value, repoint every
+-- column that uses it, drop the old type, rename the new one into place. This
+-- is only safe if NO row currently uses the value. Same pattern as the
+-- add_user_admin_role_and_audit_actions and add_notification_push_rules
+-- rollbacks.
+--
+-- Before running, confirm no audit history depends on the value:
+--
+--   SELECT count(*) FROM audit_log WHERE action = 'EXAM_EXPORT';
+--
+-- Must return 0. If it is non-zero, decide whether to delete those rows or to
+-- keep the enum value and skip this rollback. Deleting them is not free: unlike
+-- a reconstructible configuration action, each of those rows is the ONLY record
+-- that a copy of patient data was taken out of the system.
+--
+-- 1. Rebuild AuditAction without EXAM_EXPORT:
+--
+--      ALTER TYPE "AuditAction" RENAME TO "AuditAction_old";
+--      CREATE TYPE "AuditAction" AS ENUM (
+--        'EXAM_LIST', 'EXAM_DETAIL', 'RULE_CREATE', 'RULE_UPDATE',
+--        'RULE_IMPORT', 'CONFIG_CHANGE', 'AUDIT_VIEW', 'LOGIN',
+--        'NOTIFICATION_TEST_SEND', 'NOTIFICATION_RULE_RUN',
+--        'USER_CREATE', 'USER_ROLE_CHANGE', 'USER_DISABLE', 'USER_ENABLE',
+--        'USER_DELETE', 'USER_PASSWORD_RESET',
+--        'ATTENTION_SEMANTIC_CREATE', 'ATTENTION_SEMANTIC_UPDATE',
+--        'MONITOR_LEVEL_CONFLICT_READ', 'MONITOR_LEVEL_CONFLICT_UNREAD'
+--      );
+--      ALTER TABLE "audit_log"
+--        ALTER COLUMN "action" TYPE "AuditAction" USING "action"::text::"AuditAction";
+--      DROP TYPE "AuditAction_old";
+--
+-- 2. Roll the API back WITH the schema. If the enum value is gone but the code
+--    still references it, every export fails with a Prisma enum error rather
+--    than degrading - the route is not fail-open like the audit write is.

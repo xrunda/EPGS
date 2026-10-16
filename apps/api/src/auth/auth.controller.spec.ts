@@ -34,6 +34,56 @@ describe('AuthController', () => {
     expect(JSON.stringify(result)).not.toContain('signed-token');
   });
 
+  describe('GET /api/auth/me (issue #139 patientDetail)', () => {
+    const sessionUser = { id: 'user-1', username: 'doctor', displayName: '测试医生' };
+
+    it('echoes the roles and the patientDetail grant resolved by RolesGuard', () => {
+      const { controller } = setup();
+      const result = controller.me({
+        user: sessionUser,
+        accessUser: {
+          username: 'doctor',
+          roles: ['VIEWER'],
+          departmentScope: ['消化内科'],
+          patientDetail: true,
+        },
+      } as never);
+
+      expect(result).toEqual({
+        user: { ...sessionUser, roles: ['VIEWER'], patientDetail: true },
+      });
+    });
+
+    it('fails closed to patientDetail:false when the account has no access row', () => {
+      const { controller } = setup();
+
+      expect(controller.me({ user: sessionUser } as never)).toEqual({
+        user: { ...sessionUser, roles: [], patientDetail: false },
+      });
+      expect(
+        controller.me({ user: sessionUser, accessUser: null } as never).user.patientDetail,
+      ).toBe(false);
+    });
+
+    it('never leaks the access grant itself (scope stays server-side)', () => {
+      const { controller } = setup();
+      const result = controller.me({
+        user: sessionUser,
+        accessUser: {
+          username: 'doctor',
+          roles: ['VIEWER'],
+          departmentScope: ['消化内科'],
+          patientDetail: false,
+        },
+      } as never);
+
+      // departmentScope is a server-side filter, not a UI input - the workbench
+      // never sends it, so it must not ride along on /me.
+      expect(JSON.stringify(result)).not.toContain('消化内科');
+      expect(result.user).not.toHaveProperty('departmentScope');
+    });
+  });
+
   it('clears the cookie on logout and after a password change', async () => {
     const { controller, response } = setup();
     controller.logout(response as never);

@@ -170,18 +170,23 @@
   background: #eaf4f5;
 }
 /* 原生 radio 必须显式钉死尺寸（issue #141）。
-   RulesModal.css 里有一组**裸元素选择器**（`input, select { width:100%; height:38px;
-   padding: 0 11px }` 与 `input:focus { box-shadow: var(--shadow-focus) }`），Vite 把
-   全仓 CSS 打进同一张表、组件级 CSS 文件不构成作用域，所以它会泄漏到页面上每一个
-   `input`：圆点被撑成 47.5×38 的框，聚焦时 3px 焦点环套在那个框上，看起来就是一个大
-   灰方块。想量到就能量到（浏览器里读计算样式即可）。
-   同 .semantic-level-picker__option input —— 那是全仓另一处 radio，它正是靠这几条
-   钉死才没事。**删掉这里任何一条都会把那个灰方块放回来。** */
+   #141 时这是为了对抗 RulesModal.css 里那组**裸元素选择器**（Vite 把全仓 CSS 打进同一张
+   表、组件级 CSS 文件不构成作用域，那组规则会泄漏到页面上每一个 `input`）：圆点被
+   `width: 100%; height: 38px` 撑成 47.5×38 的框，聚焦时 3px 焦点环套在那个框上，看起来
+   就是一个大灰方块。想量到就能量到（浏览器里读计算样式即可）。
+   issue #143 已把那组规则收进**弹层容器作用域**，而 `.export-modal` 正是被收进去的容器
+   之一 —— 底座里的 `width: 100%; height: 38px` 照样落在本弹层每个 input 上（含这个
+   radio）。所以下面这几条**仍然承重**，不是历史遗留：删掉它，灰方块立刻回来
+   （#143 实测：改成 `:is()` 让底座与它打平时，这个圆点就从 16×16 变成 92.5×38）。
+   同 .semantic-level-picker__option input —— 全仓另一处 radio，同样靠钉死才行。 */
 .export-level input {
-  /* 不被 flex 拉伸、不吃泄漏来的 padding：border-box 下 16px 就是最终尺寸 */
+  /* 不被 flex 拉伸：border-box 下 16px 就是最终尺寸 */
   flex: 0 0 auto;
   width: 16px;
   height: 16px;
+  /* 下面两条不是为了这 16px（#143 实测：Chrome 对 native appearance 的控件不套用 author
+     的 padding/border/background —— 裸 checkbox 是 400×38 但 padding 0、border 0），
+     写出来只是不去依赖那条实测行为，同时也让 flex 容器里的外边距归零。 */
   margin: 0;
   padding: 0;
   /* 全仓单选框都是品牌青，不跟随 Chrome 默认蓝 */

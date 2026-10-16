@@ -181,9 +181,42 @@ button:disabled {
   font-size: 13px;
   font-weight: 600;
 }
-input,
-select,
-textarea {
+/* ── 表单控件底座（issue #143）────────────────────────────────────────────────
+   这里原本是一组**裸元素选择器**（`input, select, textarea { … }`）。组件级 CSS 文件
+   在 Vite 里不构成作用域 —— 全仓 CSS 被打进同一张表 —— 所以那组规则对页面上**每一个**
+   表单控件生效，包括它从未打算管的弹层与原生控件。后果有两条，都是实测出来的：
+
+   1. **没写规则就没得商量。** 一个控件如果自己没有任何规则（issue #141 的导出 radio），
+      拿到的就是这组泄漏值：`width: 100%; height: 38px` 把圆点撑成 47.5×38 的灰方块。
+      （原生 checkbox/radio 只吃得到 width/height —— Chrome 对 native appearance 的控件
+      不套用 border/padding/background，实测：裸 checkbox 400×38 但 padding 0、
+      border 0。全仓 9 个 checkbox 之所以没坏，是因为它们都在 `.switch-row` 里。）
+   2. **外观的真实来源在别的文件里。** 六个弹层的输入框全靠这几行撑着，但那些组件
+      文件里一个字都看不到；想改一个输入框的人只能靠浏览器翻计算样式。
+
+   现在改成**穷举容器**：下面是全仓表单控件外观的唯一入口。新增任何含表单控件的
+   弹层/面板，必须把它的根类加进这个列表，否则那个容器里的输入框会掉回浏览器默认样式
+   （`form-controls-scope.test.ts` 会拦下裸选择器，但拦不下「忘了加容器」，那一半靠评审）。
+
+   用 `:where()` 而不是 `:is()`：`:where()` 的特异性贡献是 **0**，所以
+   `.rules-modal :where(input, select, textarea)` 只有 (0,1,0) —— 比原来裸选择器的
+   (0,0,1) 只高一点点，仍然**打不过任何一条「类+元素」写法的组件规则**（(0,1,1)）。
+   这是本 Issue 的实测教训：先用 `:is()`（与组件规则同为 (0,1,1)）试过一版，结果
+   `ExportModal.css` 里的 `.export-level input { width: 16px }`、
+   `.notification-channel-option input`、`.export-form__date input` **全部被底座反超**
+   —— 打平之后胜负由**打包顺序**决定，而 `ExportModal.css` 先于本文件注入。换成
+   `:where()` 后组件规则永远赢，与改动前逐像素相同（逐控件比对计算样式的对照表见 PR）。
+
+   刻意**不在**列表里的三个容器 —— 它们自带等价规则，加进来反而会因为顺序打架：
+   - `.login-panel` / `.auth-modal`（AuthGate.css）：自带完整底座与自有焦点环
+   - `.workbench__filters`（Workbench.css）：自带完整底座与自有焦点环
+   ──────────────────────────────────────────────────────────────────────────── */
+.rules-modal :where(input, select, textarea),
+.export-modal :where(input, select, textarea),
+.semantic-modal :where(input, select, textarea),
+.notification-modal :where(input, select, textarea),
+.users-modal :where(input, select, textarea),
+.level-conflict-modal :where(input, select, textarea) {
   width: 100%;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -194,23 +227,38 @@ textarea {
     border-color var(--dur-fast) var(--ease-standard),
     box-shadow var(--dur-fast) var(--ease-standard);
 }
-input:hover,
-select:hover,
-textarea:hover {
+.rules-modal :where(input, select, textarea):hover,
+.export-modal :where(input, select, textarea):hover,
+.semantic-modal :where(input, select, textarea):hover,
+.notification-modal :where(input, select, textarea):hover,
+.users-modal :where(input, select, textarea):hover,
+.level-conflict-modal :where(input, select, textarea):hover {
   border-color: var(--ink-200);
 }
-input,
-select {
+.rules-modal :where(input, select),
+.export-modal :where(input, select),
+.semantic-modal :where(input, select),
+.notification-modal :where(input, select),
+.users-modal :where(input, select),
+.level-conflict-modal :where(input, select) {
   height: 38px;
   padding: 0 11px;
 }
-textarea {
+.rules-modal :where(textarea),
+.export-modal :where(textarea),
+.semantic-modal :where(textarea),
+.notification-modal :where(textarea),
+.users-modal :where(textarea),
+.level-conflict-modal :where(textarea) {
   padding: 10px 11px;
   resize: vertical;
 }
-input:focus,
-select:focus,
-textarea:focus {
+.rules-modal :where(input, select, textarea):focus,
+.export-modal :where(input, select, textarea):focus,
+.semantic-modal :where(input, select, textarea):focus,
+.notification-modal :where(input, select, textarea):focus,
+.users-modal :where(input, select, textarea):focus,
+.level-conflict-modal :where(input, select, textarea):focus {
   border-color: var(--teal-500);
   box-shadow: var(--shadow-focus);
 }

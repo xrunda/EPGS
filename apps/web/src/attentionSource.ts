@@ -38,3 +38,33 @@ export const ATTENTION_LEVEL_LABELS: Record<MonitorLevelDto, string> = {
   GREEN: '绿色关注',
   UNCLASSIFIED: '未分级',
 };
+
+/**
+ * 关注等级的**规范顺序**：红 → 黄 → 绿 → 未分级（配置页、列表、导出弹层的卡片
+ * 都是这个顺序）。
+ *
+ * 单独抽出来是因为 issue #145 让导出可以一次选多个等级：文件名必须由**选择本身**
+ * 决定，而不是由调用方凑巧给出的顺序决定，否则同一组选择会下载成两个不同的名字。
+ * 与后端 `apps/api/src/monitor/monitor-csv.ts` 的 `EXPORT_LEVEL_ORDER` 是一对双胞胎，
+ * 改一边要改另一边（同 `ATTENTION_LEVEL_LABELS` 与 `CSV_LEVEL_LABELS` 的关系）。
+ */
+export const ATTENTION_LEVEL_ORDER: readonly MonitorLevelDto[] = [
+  'RED',
+  'YELLOW',
+  'GREEN',
+  'UNCLASSIFIED',
+];
+
+/**
+ * 去重并按 `ATTENTION_LEVEL_ORDER` 排好，未知值留在末尾。
+ *
+ * 未知值不在这里丢掉：它该由服务端的 `@IsEnum` 报 400，而前端把请求原样发出去
+ * （本地只在文件名与 URL 上用得到这个函数）。与后端 `orderExportLevels` 同规则。
+ */
+export function orderAttentionLevels(levels: readonly string[]): MonitorLevelDto[] {
+  const unique = [...new Set(levels)];
+  return [
+    ...ATTENTION_LEVEL_ORDER.filter((level) => unique.includes(level)),
+    ...unique.filter((level) => !ATTENTION_LEVEL_ORDER.includes(level as MonitorLevelDto)),
+  ] as MonitorLevelDto[];
+}

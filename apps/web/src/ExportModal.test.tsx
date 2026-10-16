@@ -3,19 +3,20 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ExportModal } from './ExportModal';
 
 /**
- * 数据导出弹层（issue #139）。
+ * 数据导出弹层（issue #139；等级单选改多选见 #145）。
  *
  * 这里不 mock `monitorApi` 而是替掉 `fetch`，让真实的 `downloadExamsCsv` 一起跑：
  * 请求参数、响应头解析（`X-Row-Count`）、错误信封分支、文件名双胞胎是否与后端一致，
  * 全都在同一条链上被验到。只 mock 掉 jsdom 没有的三件事：`URL.createObjectURL`、
  * `URL.revokeObjectURL`、以及 `<a>` 的 `click`（jsdom 会尝试真的导航）。
  *
- * 断的是五件事：
- *  1. 两个选择（一天 + 一个等级）真的发到了服务端；
- *  2. 有内容才落盘 —— 明确 0 行时不产生一个只有表头的文件；
- *  3. 读不到行数头时按「有内容」处理，不把正常文件当成空的丢掉；
- *  4. 403 显示的是服务端原话（「没有导出患者明细的权限…」）；
- *  5. 键盘与背景关闭，且开着时焦点在弹层上。
+ * 断的是六件事：
+ *  1. 两个选择（一天 + 若干个等级）真的发到了服务端，且顺序与文件名归一化；
+ *  2. 一个都不勾时按钮禁用并给出原因（勾选框的语义不能骗人）；
+ *  3. 有内容才落盘 —— 明确 0 行时不产生一个只有表头的文件；
+ *  4. 读不到行数头时按「有内容」处理，不把正常文件当成空的丢掉；
+ *  5. 403 显示的是服务端原话（「没有导出患者明细的权限…」）；
+ *  6. 键盘与背景关闭，且开着时焦点在弹层上。
  */
 
 const CSV_BODY = '﻿关注等级,患者姓名\r\n红色关注,测试患者甲\r\n';
@@ -111,7 +112,7 @@ describe('ExportModal (issue #139)', () => {
     expect(screen.getByRole('dialog', { name: '数据导出' })).toBeInTheDocument();
   });
 
-  it('offers one day and one level, defaulting to today and 红色关注', () => {
+  it('offers one day and four CHECKBOX levels, defaulting to today and 红色关注', () => {
     render(<ExportModal open onClose={vi.fn()} />);
 
     const date = screen.getByLabelText('检查日期') as HTMLInputElement;
@@ -122,20 +123,26 @@ describe('ExportModal (issue #139)', () => {
     );
 
     // 四个等级，文案来自全应用唯一那份映射（attentionSource.ts）
-    const options = screen.getAllByRole('radio') as HTMLInputElement[];
+    const options = screen.getAllByRole('checkbox') as HTMLInputElement[];
     expect(options.map((option) => option.value)).toEqual([
       'RED',
       'YELLOW',
       'GREEN',
       'UNCLASSIFIED',
     ]);
+    expect(options.every((option) => option.type === 'checkbox')).toBe(true);
     expect(screen.getByLabelText('红色关注')).toBeChecked();
-    // 没有「全部等级」这种选项 —— 暴露面控制的一部分，不是遗漏
+    // 另外三个默认不勾：默认值与 #145 之前的单选默认一致，最常用的一档
+    expect(screen.getByLabelText('黄色关注')).not.toBeChecked();
+    // 没有「全部等级」这种选项 —— 一次勾满四个是操作者的明确选择，
+    // 不是一个叫「全部」的隐含快捷方式（暴露面控制的一部分，不是遗漏）
     expect(screen.queryByLabelText('全部等级')).not.toBeInTheDocument();
   });
 
-  it('sends the chosen day and level, then saves the file under the agreed name', async () => {
-    const fetchMock = installFetch(csvResponse(CSV_BODY));
+  it('sends EVERY ticked level, in the canonical order, under one `levels` parameter', async () => {
+    // #145 的核心：勾两个就必须导出两个。发成一个的话文件比弹层上看见的窄，
+    // 而且是静默的 —— 操作者只会发现少了一部分人。
+    const fetchMock = installFetch(csvResponse(CSV_BODY, '2'));
     render(<ExportModal open onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText('检查日期'), { target: { value: '2026-08-20' } });
@@ -143,15 +150,77 @@ describe('ExportModal (issue #139)', () => {
     await submitExport();
 
     const requested = String(fetchMock.mock.calls[0][0]);
+    // 顺序归一化到红→未分级，与后端 orderExportLevels 一致（同一个选择同一个名字）
+    expect(requested).toContain('levels=RED%2CYELLOW');
+    expect(requested).not.toContain('level=RED');
+    expect(clickedAnchors[0].download).toBe('数据导出-2026-08-20-红色关注+黄色关注.csv');
+  });
+
+  it('drops a level when it is unticked again', async () => {
+    const fetchMock = installFetch(csvResponse(CSV_BODY));
+    render(<ExportModal open onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('检查日期'), { target: { value: '2026-08-20' } });
+    fireEvent.click(screen.getByLabelText('红色关注')); // 取消默认勾选的红色
+    fireEvent.click(screen.getByLabelText('绿色关注'));
+    await submitExport();
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('levels=GREEN');
+    expect(clickedAnchors[0].download).toBe('数据导出-2026-08-20-绿色关注.csv');
+  });
+
+  it('exports all four levels when all four are ticked', async () => {
+    const fetchMock = installFetch(csvResponse(CSV_BODY, '9'));
+    render(<ExportModal open onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('检查日期'), { target: { value: '2026-08-20' } });
+    fireEvent.click(screen.getByLabelText('黄色关注'));
+    fireEvent.click(screen.getByLabelText('绿色关注'));
+    fireEvent.click(screen.getByLabelText('未分级'));
+    await submitExport();
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      'levels=RED%2CYELLOW%2CGREEN%2CUNCLASSIFIED',
+    );
+    expect(clickedAnchors[0].download).toBe(
+      '数据导出-2026-08-20-红色关注+黄色关注+绿色关注+未分级.csv',
+    );
+  });
+
+  it('disables 导出 with a visible reason when nothing is ticked', async () => {
+    // 不禁用就等于给了一个点了没反应的按钮；只禁用不说原因同样不行。
+    // 但不阻止取消勾选 —— 勾选框的语义不能骗人（#145）。
+    installFetch(csvResponse(CSV_BODY));
+    render(<ExportModal open onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByLabelText('红色关注'));
+
+    expect(screen.getByRole('button', { name: '导出' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('至少选择一个关注等级才能导出。');
+
+    // 再勾回来就必须能点 —— 禁用是状态的函数，不是一个粘住的标志
+    fireEvent.click(screen.getByLabelText('未分级'));
+    expect(screen.getByRole('button', { name: '导出' })).not.toBeDisabled();
+    expect(screen.queryByText('至少选择一个关注等级才能导出。')).not.toBeInTheDocument();
+  });
+
+  it('sends the chosen day and levels, then saves the file under the agreed name', async () => {
+    const fetchMock = installFetch(csvResponse(CSV_BODY));
+    render(<ExportModal open onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('检查日期'), { target: { value: '2026-08-20' } });
+    await submitExport();
+
+    const requested = String(fetchMock.mock.calls[0][0]);
     expect(requested).toContain('/api/monitor/export?');
     expect(requested).toContain('examDate=2026-08-20');
-    expect(requested).toContain('level=YELLOW');
+    expect(requested).toContain('levels=RED');
     expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ credentials: 'include' }));
 
     // 文件名与后端 monitor-csv.ts 的 csvFileName 是同一形状（双胞胎）
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(clickedAnchors).toHaveLength(1);
-    expect(clickedAnchors[0].download).toBe('数据导出-2026-08-20-黄色关注.csv');
+    expect(clickedAnchors[0].download).toBe('数据导出-2026-08-20-红色关注.csv');
     expect(clickedAnchors[0].href).toBe('blob:epgs-mock');
     // 用完就撤销，不留一个悬着的 object URL
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:epgs-mock');

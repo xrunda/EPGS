@@ -65,19 +65,25 @@ const DEFAULT_EXAM_ORDER_BY: Prisma.MonitorRecordOrderByWithRelationInput[] = [
 ];
 
 /**
- * Hard ceiling on one export (issue #139). See
- * MonitorExportTooLargeException: this is a corruption guard rather than a
- * usable user path, because "one day + one level" leaves the caller nothing to
- * narrow. An endoscopy centre's day at one level is tens to low hundreds of
- * rows, so this is ~50x the expected worst case and roughly 1.5 MB of UTF-8.
+ * Hard ceiling on one export (issue #139; re-judged by #145).
+ *
+ * MonitorExportTooLargeException is still a corruption guard rather than a
+ * normal path - but #145 made "all four levels" selectable, which is every
+ * record of the day, so the guard is now reachable in principle where it used
+ * to be unreachable. It stays at 10_000 because the caller always has something
+ * to narrow (export fewer levels, or a different day), and because a truncated
+ * file that looks complete is worse than a refusal: an endoscopy centre's whole
+ * day is low thousands of rows, so this is still several times the worst
+ * expected case and roughly 1.5 MB of UTF-8.
  */
 export const MONITOR_EXPORT_MAX_ROWS = 10_000;
 
-/** Issue #139 export input: one Shanghai day + one attention level. */
+/** Issue #139 export input: one Shanghai day + the selected attention levels (#145 made it multi). */
 export interface MonitorExportQuery {
   /** The single Asia/Shanghai calendar day, inclusive of both ends. */
   examDate: string;
-  level: MonitorLevel;
+  /** One to four attention levels, already de-duplicated and ordered by the DTO. */
+  levels: MonitorLevel[];
 }
 
 export interface MonitorExportResult {
@@ -375,8 +381,8 @@ export class MonitorService {
   }
 
   /**
-   * One Shanghai day at one attention level, as a finished CSV file (issue
-   * #139).
+   * One Shanghai day at the selected attention levels, as a finished CSV file
+   * (issue #139; several levels since #145).
    *
    * `examDateTo` is passed as the SAME day as `examDateFrom`, never +1:
    * resolveDateRange already advances the upper bound to the start of the NEXT
@@ -389,7 +395,11 @@ export class MonitorService {
    * truncating, so a caller never receives a file that looks complete and is
    * not.
    *
-   * Deliberately parameterless apart from the day, the level and the caller's
+   * With several levels the rows stay in the one list order (examTime desc,
+   * ties by level) rather than being grouped per level: the file is meant to be
+   * read next to the screen, which shows the same interleaving.
+   *
+   * Deliberately parameterless apart from the day, the levels and the caller's
    * scope: this is not a second, unbounded filter surface (see
    * ExportExamsQueryDto), and it takes no maskPatient option because a masked
    * export is a mode that must not exist - see EXPORT_SELECT.
@@ -399,7 +409,7 @@ export class MonitorService {
     opts?: MonitorQueryOptions,
   ): Promise<MonitorExportResult> {
     const where = this.buildWhere(
-      { examDateFrom: query.examDate, examDateTo: query.examDate, level: query.level },
+      { examDateFrom: query.examDate, examDateTo: query.examDate, levels: query.levels },
       opts?.scope,
     );
     const rows = await this.prisma.monitorRecord.findMany({
@@ -414,7 +424,10 @@ export class MonitorService {
     return { rowCount: rows.length, body: buildExamsCsv(rows) };
   }
 
-  private buildWhere(query: MonitorFiltersDto, scope?: string[]): Prisma.MonitorRecordWhereInput {
+  private buildWhere(
+    query: MonitorFiltersDto & { levels?: MonitorLevel[] },
+    scope?: string[],
+  ): Prisma.MonitorRecordWhereInput {
     const range = resolveDateRange(query.examDateFrom, query.examDateTo);
     // Department = scope (issue #13) AND the caller's own department filter,
     // merged into one field condition so the hard authorization boundary is
@@ -433,6 +446,12 @@ export class MonitorService {
           }
         : {}),
       ...(query.patientTypeCode ? { patientTypeCode: query.patientTypeCode } : {}),
+      // `levels` (export, #145) and `level` (the list's own filter) are the same
+      // column, so they can never both apply - the export DTO has no `level` and
+      // ListExamsQueryDto has no `levels`. The single-value branch is written
+      // LAST so that, if a future caller ever set both, the narrower filter wins
+      // rather than being silently widened by an `in`.
+      ...(query.levels ? { currentLevel: { in: query.levels } } : {}),
       ...(query.level ? { currentLevel: query.level } : {}),
       ...(query.examItem ? { examItem: { contains: query.examItem, mode: 'insensitive' } } : {}),
       // patientName and keyword are independent filters combined by AND

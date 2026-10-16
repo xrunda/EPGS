@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { MonitorLevel } from '@prisma/client';
 import { MonitorService, MONITOR_EXPORT_MAX_ROWS } from './monitor.service';
 import { MonitorExportTooLargeException } from './errors/monitor-export-too-large.exception';
 
@@ -215,9 +216,7 @@ describe('MonitorService', () => {
     it('reports BOTH when the AI found something too, whatever the two levels are (issue #88)', async () => {
       // Keyword hits are present AND aiAttentionLevel is set. The badge answers
       // "which paths found something", so a lower AI level is still BOTH.
-      prisma.monitorRecord.findMany.mockResolvedValue([
-        makeRow({ aiAttentionLevel: 'YELLOW' }),
-      ]);
+      prisma.monitorRecord.findMany.mockResolvedValue([makeRow({ aiAttentionLevel: 'YELLOW' })]);
       prisma.monitorRecord.count.mockResolvedValue(1);
 
       const result = await service.list({} as any);
@@ -338,7 +337,7 @@ describe('MonitorService', () => {
     });
   });
 
-  describe('exportDay (issue #139)', () => {
+  describe('exportDay (issue #139, multi-level since #145)', () => {
     /** Two rows is enough to prove the day/level filters and the count. */
     function twoRows() {
       return [
@@ -358,7 +357,7 @@ describe('MonitorService', () => {
     it('resolves ONE day: examDateFrom === examDateTo, upper bound is the next Shanghai 00:00', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
 
       const where = prisma.monitorRecord.findMany.mock.calls[0][0].where;
       // Regression guard for the trap: resolveDateRange already advances the
@@ -367,27 +366,61 @@ describe('MonitorService', () => {
         gte: new Date('2026-08-19T16:00:00Z'), // 2026-08-20T00:00:00+08:00
         lt: new Date('2026-08-20T16:00:00Z'), // 2026-08-21T00:00:00+08:00 (exclusive)
       });
-      expect(where.currentLevel).toBe('RED');
+      // `in`, not `=`: one level is the one-element case of the selection
+      // (#145). A single-select remnant here would silently drop the other
+      // ticks and export a narrower file than the modal showed.
+      expect(where.currentLevel).toEqual({ in: ['RED'] });
     });
 
-    it('carries the level through and nothing else from the filter surface', async () => {
+    it('carries the whole selection through and nothing else from the filter surface', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', level: 'UNCLASSIFIED' });
+      await service.exportDay({ examDate: '2026-08-20', levels: ['RED', 'YELLOW', 'GREEN'] });
 
       expect(prisma.monitorRecord.findMany.mock.calls[0][0].where).toEqual({
         examTime: {
           gte: new Date('2026-08-19T16:00:00Z'),
           lt: new Date('2026-08-20T16:00:00Z'),
         },
-        currentLevel: 'UNCLASSIFIED',
+        currentLevel: { in: ['RED', 'YELLOW', 'GREEN'] },
       });
+    });
+
+    it('passes an unrecognised level straight into the query (the DTO is the gate, not this)', async () => {
+      // Defence in depth: if a future caller reaches the service without going
+      // through the DTO, the service must not "helpfully" widen or narrow the
+      // selection. An empty `in ()` would be Prisma's own error; silently
+      // dropping the unknown value would export the wrong rows with a 200.
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportDay({
+        examDate: '2026-08-20',
+        levels: ['RED', 'PURPLE' as MonitorLevel],
+      });
+
+      expect(prisma.monitorRecord.findMany.mock.calls[0][0].where.currentLevel).toEqual({
+        in: ['RED', 'PURPLE'],
+      });
+    });
+
+    it('never sends an empty selection to Prisma as an unfiltered read', async () => {
+      // `levels: []` must not become `{ in: [] }` (Prisma matches nothing) NOR
+      // the absence of the clause (which would export the whole day - the exact
+      // path #145 made reachable). The DTO's @ArrayNotEmpty is the real gate;
+      // this pins that the service keeps the clause rather than dropping it.
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportDay({ examDate: '2026-08-20', levels: [] });
+
+      const where = prisma.monitorRecord.findMany.mock.calls[0][0].where;
+      expect(where.currentLevel).toEqual({ in: [] });
+      expect(where).not.toHaveProperty('level');
     });
 
     it('applies the caller department scope', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', level: 'RED' }, { scope: ['消化内科'] });
+      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] }, { scope: ['消化内科'] });
 
       expect(prisma.monitorRecord.findMany.mock.calls[0][0].where.department).toEqual({
         in: ['消化内科'],
@@ -397,7 +430,7 @@ describe('MonitorService', () => {
     it('reads at most MAX+1 rows, with no pagination and no count round-trip', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
 
       const args = prisma.monitorRecord.findMany.mock.calls[0][0];
       // +1 is the overflow probe: it distinguishes "exactly MAX" from "more
@@ -413,7 +446,7 @@ describe('MonitorService', () => {
     it('orders the file like the workbench list', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
 
       expect(prisma.monitorRecord.findMany.mock.calls[0][0].orderBy).toEqual([
         { examTime: { sort: 'desc', nulls: 'last' } },
@@ -425,7 +458,7 @@ describe('MonitorService', () => {
     it('selects the patient phone - the one place LIST_SELECT is not enough', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
 
       const select = prisma.monitorRecord.findMany.mock.calls[0][0].select;
       expect(select.patientPhone).toBe(true);
@@ -452,7 +485,7 @@ describe('MonitorService', () => {
     it('keeps the effective hit set: matches exclude AI-semantic-filtered keywords', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
 
       const select = prisma.monitorRecord.findMany.mock.calls[0][0].select;
       expect(select.matches.select.keyword).toBe(true);
@@ -462,7 +495,7 @@ describe('MonitorService', () => {
     it('returns the CSV bytes with the row count', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue(twoRows());
 
-      const result = await service.exportDay({ examDate: '2026-08-20', level: 'RED' });
+      const result = await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
 
       expect(result.rowCount).toBe(2);
       const text = result.body.toString('utf8');
@@ -479,14 +512,14 @@ describe('MonitorService', () => {
       );
 
       await expect(
-        service.exportDay({ examDate: '2026-08-20', level: 'RED' }),
+        service.exportDay({ examDate: '2026-08-20', levels: ['RED'] }),
       ).rejects.toBeInstanceOf(MonitorExportTooLargeException);
     });
 
     it('exports a header-only file for a day with no matching rows', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      const result = await service.exportDay({ examDate: '2026-08-20', level: 'GREEN' });
+      const result = await service.exportDay({ examDate: '2026-08-20', levels: ['GREEN'] });
 
       expect(result.rowCount).toBe(0);
       expect(result.body.toString('utf8')).toBe(

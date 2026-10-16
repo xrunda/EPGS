@@ -145,7 +145,8 @@ export class MonitorController {
   }
 
   /**
-   * Issue #139: one Shanghai day at one attention level, as a CSV file.
+   * Issue #139: one Shanghai day at the selected attention levels (one or more,
+   * since #145), as a CSV file.
    *
    * The second gate below is the whole point of this endpoint's design. The
    * class-level @RequireRoles already covers "may read the workbench"; the
@@ -173,7 +174,7 @@ export class MonitorController {
   @Get('export')
   @ApiOperation({
     summary:
-      'Export one Shanghai day at one attention level as a CSV file (issue #139). ' +
+      'Export one Shanghai day at the selected attention levels as a CSV file (issue #139, multi-level since #145). ' +
       'Requires the patientDetail grant: the file carries the raw patient phone. ' +
       'Never contains reportContent/diagnosis.',
   })
@@ -193,7 +194,7 @@ export class MonitorController {
     // omitted branch - the grant checked above already decided this call is a
     // detail-level read.
     const { rowCount, body } = await this.monitorService.exportDay(
-      { examDate: query.examDate, level: query.level },
+      { examDate: query.examDate, levels: query.levels },
       { scope: user.departmentScope },
     );
 
@@ -209,7 +210,10 @@ export class MonitorController {
       meta: {
         scope: user.departmentScope,
         examDate: query.examDate,
-        level: query.level,
+        // The selection, as an array (#145) - one export of "red+yellow" is one
+        // row here, which is what tells an auditor afterwards how wide the file
+        // that left the system was.
+        levels: query.levels,
         rowCount,
       },
       ip: request.ip,
@@ -227,7 +231,7 @@ export class MonitorController {
     response.setHeader('X-Row-Count', String(rowCount));
     return new StreamableFile(body, {
       type: 'text/csv; charset=utf-8',
-      disposition: contentDispositionFor(query.examDate, query.level),
+      disposition: contentDispositionFor(query.examDate, query.levels),
       length: body.length,
     });
   }

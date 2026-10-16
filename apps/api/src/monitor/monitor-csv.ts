@@ -157,15 +157,55 @@ export function buildExamsCsv(rows: CsvExamRow[]): Buffer {
 }
 
 /**
- * The download filename, e.g. `数据导出-2026-08-20-红色关注.csv`.
+ * The attention levels in the order this system always shows them: 红 → 黄 →
+ * 绿 → 未分级 (the same order as the config list, the export modal's cards and
+ * the CSV's own level labels).
  *
- * Twin of `csvFileName` in apps/web/src/monitorApi.ts: the browser builds the
- * saved name itself (Content-Disposition is ignored on a fetch+blob download),
- * so the two must produce the same string. The server still sends the header
- * for the clients that DO use it - `curl -OJ`, a direct browser GET.
+ * Issue #145 made the export accept several levels at once, which turns "which
+ * order" into a contract question rather than a layout detail: the filename has
+ * to be a function of the SELECTION, not of the order the client happened to
+ * list it in, or the same choice would download as two different names.
  */
-export function csvFileName(examDate: string, level: MonitorLevel): string {
-  return `数据导出-${examDate}-${CSV_LEVEL_LABELS[level]}.csv`;
+export const EXPORT_LEVEL_ORDER: readonly MonitorLevel[] = [
+  'RED',
+  'YELLOW',
+  'GREEN',
+  'UNCLASSIFIED',
+];
+
+/**
+ * De-duplicate and put a selection of levels into `EXPORT_LEVEL_ORDER`,
+ * preserving anything unrecognised at the end.
+ *
+ * Unknown values are deliberately KEPT rather than dropped here: they are the
+ * DTO's `@IsEnum` failure to report. Dropping them here would turn
+ * `?levels=RED,PURPLE` into a 200 that quietly exports only red - the caller
+ * would get a file and never learn that half the request was ignored.
+ */
+export function orderExportLevels(levels: readonly string[]): string[] {
+  const unique = [...new Set(levels)];
+  return [
+    ...EXPORT_LEVEL_ORDER.filter((level) => unique.includes(level)),
+    ...unique.filter((level) => !EXPORT_LEVEL_ORDER.includes(level as MonitorLevel)),
+  ];
+}
+
+/**
+ * The download filename, e.g. `数据导出-2026-08-20-红色关注+黄色关注.csv`.
+ *
+ * One name per SELECTION (see `orderExportLevels`), so re-running the same
+ * choice overwrites the same file instead of piling up `…(1).csv`.
+ *
+ * Twin of `exportFileName` in apps/web/src/monitorApi.ts: the browser builds
+ * the saved name itself (Content-Disposition is ignored on a fetch+blob
+ * download), so the two must produce the same string. The server still sends
+ * the header for the clients that DO use it - `curl -OJ`, a direct browser GET.
+ */
+export function csvFileName(examDate: string, levels: readonly MonitorLevel[]): string {
+  const labels = orderExportLevels(levels).map(
+    (level) => CSV_LEVEL_LABELS[level as MonitorLevel] ?? level,
+  );
+  return `数据导出-${examDate}-${labels.join('+')}.csv`;
 }
 
 /**
@@ -186,12 +226,17 @@ function encodeAttrValue(value: string): string {
  * ignore RFC 5987, then `filename*=`. Nothing here depends on an intermediary
  * preserving UTF-8 bytes, which is why the ASCII fallback is not optional.
  *
- * `examDate` has already passed the DTO's `^\d{4}-\d{2}-\d{2}$` check and
- * `level` is an enum member, so neither can carry a CR/LF or a `"` into the
- * header. The encoder is belt-and-braces on top of that rather than the
- * defence itself.
+ * The ASCII form joins the enum names with `-` (`monitor-2026-08-20-RED-YELLOW.csv`)
+ * because `+` is a legal `attr-char` but reads as a space in some download
+ * managers; the Chinese form keeps `+`, which is how a human writes "红+黄".
+ *
+ * `examDate` has already passed the DTO's `^\d{4}-\d{2}-\d{2}$` check and every
+ * entry of `levels` is an enum member, so neither can carry a CR/LF or a `"`
+ * into the header. The encoder is belt-and-braces on top of that rather than
+ * the defence itself.
  */
-export function contentDispositionFor(examDate: string, level: MonitorLevel): string {
-  const ascii = `monitor-${examDate}-${level}.csv`;
-  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeAttrValue(csvFileName(examDate, level))}`;
+export function contentDispositionFor(examDate: string, levels: readonly MonitorLevel[]): string {
+  const ordered = orderExportLevels(levels) as MonitorLevel[];
+  const ascii = `monitor-${examDate}-${ordered.join('-')}.csv`;
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeAttrValue(csvFileName(examDate, ordered))}`;
 }

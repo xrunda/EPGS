@@ -10,7 +10,7 @@ import type {
 } from '@epgs/shared-types';
 // 等级文案只有一个来源（attentionSource.ts）；导出文件名里的等级段必须与屏幕上、
 // 与后端 CSV 表头下的等级列用的是同一份映射。
-import { ATTENTION_LEVEL_LABELS } from './attentionSource';
+import { ATTENTION_LEVEL_LABELS, orderAttentionLevels } from './attentionSource';
 
 // Relative to the current origin - see apps/web/src/authApi.ts for why.
 const API_BASE_URL = '';
@@ -101,18 +101,22 @@ export async function getSyncStatus(): Promise<SyncStatusDto> {
   );
 }
 
-/* ── 单日单等级明细导出（issue #139） ──────────────────────────────────────── */
+/* ── 单日、多等级明细导出（issue #139；多选见 #145） ───────────────────────── */
 
 /**
- * 下载文件名，例如 `数据导出-2026-08-20-红色关注.csv`。
+ * 下载文件名，例如 `数据导出-2026-08-20-红色关注+黄色关注.csv`。
  *
  * 与后端 `apps/api/src/monitor/monitor-csv.ts` 的 `csvFileName` 是**一对双胞胎**：
  * fetch + blob 下载时浏览器用的是我们自己设的 `anchor.download`，
  * `Content-Disposition` 根本读不到（它是给 `curl -OJ` 和直接 GET 用的），
  * 所以两边必须给出同一个名字。改一边就得改另一边。
+ *
+ * 先在本地归一化（去重 + 规范顺序），这样 URL、请求参数与文件名三者用的是同一个
+ * 顺序 —— 服务端也会归一化一次，两边不会因为顺序不同而给出不同的名字。
  */
-export function exportFileName(examDate: string, level: MonitorLevelDto): string {
-  return `数据导出-${examDate}-${ATTENTION_LEVEL_LABELS[level]}.csv`;
+export function exportFileName(examDate: string, levels: readonly MonitorLevelDto[]): string {
+  const labels = orderAttentionLevels(levels).map((level) => ATTENTION_LEVEL_LABELS[level]);
+  return `数据导出-${examDate}-${labels.join('+')}.csv`;
 }
 
 export interface ExportedExamsCsv {
@@ -129,7 +133,7 @@ export interface ExportedExamsCsv {
 }
 
 /**
- * 取回某一天、某个关注等级的明细 CSV。**不复用 `parseResponse`**：那个函数无条件
+ * 取回某一天、若干关注等级的明细 CSV。**不复用 `parseResponse`**：那个函数无条件
  * `await response.json()`，而成功响应是二进制/文本流，`json()` 会直接抛错。
  *
  * 失败仍然是 JSON 错误信封（服务端用 StreamableFile，异常过滤器照常兜底），
@@ -141,9 +145,12 @@ export interface ExportedExamsCsv {
  */
 export async function downloadExamsCsv(query: {
   examDate: string;
-  level: MonitorLevelDto;
+  levels: readonly MonitorLevelDto[];
 }): Promise<ExportedExamsCsv> {
-  const params = new URLSearchParams({ examDate: query.examDate, level: query.level });
+  const levels = orderAttentionLevels(query.levels);
+  // 逗号分隔的**一个**参数（不是重复参数）：服务端 DTO 就是这么读的，而且
+  // `?levels=RED,YELLOW` 在日志与审计里是一眼能看懂的形状。
+  const params = new URLSearchParams({ examDate: query.examDate, levels: levels.join(',') });
   const response = await fetch(`${API_BASE_URL}/api/monitor/export?${params.toString()}`, {
     credentials: 'include',
   });
@@ -168,7 +175,7 @@ export async function downloadExamsCsv(query: {
   const parsed = rawRowCount === null ? Number.NaN : Number(rawRowCount);
   return {
     blob: await response.blob(),
-    fileName: exportFileName(query.examDate, query.level),
+    fileName: exportFileName(query.examDate, levels),
     rowCount: Number.isInteger(parsed) ? parsed : null,
   };
 }

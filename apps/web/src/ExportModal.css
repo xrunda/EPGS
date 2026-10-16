@@ -169,8 +169,23 @@
   border-color: var(--teal-600);
   background: #eaf4f5;
 }
+/* 原生 radio 必须显式钉死尺寸（issue #141）。
+   RulesModal.css 里有一组**裸元素选择器**（`input, select { width:100%; height:38px;
+   padding: 0 11px }` 与 `input:focus { box-shadow: var(--shadow-focus) }`），Vite 把
+   全仓 CSS 打进同一张表、组件级 CSS 文件不构成作用域，所以它会泄漏到页面上每一个
+   `input`：圆点被撑成 47.5×38 的框，聚焦时 3px 焦点环套在那个框上，看起来就是一个大
+   灰方块。想量到就能量到（浏览器里读计算样式即可）。
+   同 .semantic-level-picker__option input —— 那是全仓另一处 radio，它正是靠这几条
+   钉死才没事。**删掉这里任何一条都会把那个灰方块放回来。** */
 .export-level input {
+  /* 不被 flex 拉伸、不吃泄漏来的 padding：border-box 下 16px 就是最终尺寸 */
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
   margin: 0;
+  padding: 0;
+  /* 全仓单选框都是品牌青，不跟随 Chrome 默认蓝 */
+  accent-color: var(--teal-700);
 }
 .export-level span {
   white-space: nowrap;

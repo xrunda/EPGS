@@ -2,7 +2,14 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthGate } from './AuthGate';
 
-const user = { id: 'user-1', username: 'doctor', displayName: '测试医生', roles: ['VIEWER'] };
+// Issue #139: /me also answers whether the caller may export patient detail.
+const user = {
+  id: 'user-1',
+  username: 'doctor',
+  displayName: '测试医生',
+  roles: ['VIEWER'],
+  patientDetail: false,
+};
 
 function response(status: number, body: unknown) {
   return Promise.resolve({ ok: status >= 200 && status < 300, status, json: async () => body });

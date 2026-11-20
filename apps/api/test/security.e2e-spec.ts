@@ -659,10 +659,14 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
 
       // The gateway columns #137 added travel with it...
       expect(res.text).toContain('男,消化内科,12-1,住院（I）,王医生');
-      // ...and the report body / diagnosis never do.
-      for (const forbidden of ['胃窦见一处隆起性病变', '胃腺癌', '…腺癌早期…']) {
-        expect(res.text).not.toContain(forbidden);
-      }
+      // ...and since #151 (owner decision 2026-11-20) the report body and the
+      // diagnosis do too: viewerFull holds `patientDetail` - the same grant
+      // that shows this exact text in the drawer - so the file carries A1's
+      // body verbatim. The hit-level snippet ('…腺癌早期…') still does not:
+      // the export select never picks contextSnippet.
+      expect(res.text).toContain('胃窦见一处隆起性病变，病理提示黏膜内腺癌早期。');
+      expect(res.text).toContain('胃腺癌（早期）。');
+      expect(res.text).not.toContain('…腺癌早期…');
 
       const rows = await prisma.auditLog.findMany({
         where: { action: 'EXAM_EXPORT', actorUsername: USERS.viewerFull },

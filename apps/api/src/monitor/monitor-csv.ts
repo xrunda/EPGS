@@ -18,6 +18,14 @@ import { formatShanghaiDateTime } from './monitor-time';
  *  - the patient phone appears IN THE CLEAR (owner decision, 2026-10-16). The
  *    endpoint is gated on the `patientDetail` grant precisely because of this;
  *    there is no masked variant of this file.
+ *  - the report body and the diagnosis appear IN FULL (owner decision,
+ *    2026-11-20, issue #151 - reversing #139's restraint clause). The follow-up
+ *    workflow needs the file to be self-contained: with only keywords in it, a
+ *    doctor doing 随访 must reopen the drawer per patient to learn what was
+ *    found and what was treated. No new privilege is granted: `patientDetail`
+ *    is exactly the grant that already lets its holder read both fields in the
+ *    drawer, so the file only carries what its holder can already read one by
+ *    one - the same argument the phone rests on.
  *  - `NULL` becomes an EMPTY CELL, not the screen's "—". The dash is a
  *    rendering decision; an exported blank sorts and filters as blank in Excel,
  *    and with #137's no-backfill decision "blank" is exactly what "the source
@@ -36,6 +44,10 @@ export interface CsvExamRow {
   patientTypeCode: string | null;
   patientTypeName: string | null;
   examItem: string | null;
+  /** Issue #151: the full report body snapshot, verbatim from the record. */
+  reportContent: string | null;
+  /** Issue #151: the diagnosis snapshot, verbatim from the record. */
+  diagnosis: string | null;
   orderingDoctor: string | null;
   matches: { keyword: string }[];
 }
@@ -61,7 +73,14 @@ export const CSV_LEVEL_LABELS: Record<MonitorLevel, string> = {
  * Column order mirrors the workbench table (so the file can be read next to the
  * screen), minus the two columns that do not belong in a file: 发现来源 is a
  * provenance badge rather than data, and 操作 is the drawer button. 手机号 has
- * no screen column at all (the list deliberately omits it) and is appended.
+ * no screen column at all (the list deliberately omits it) and is appended;
+ * 报告内容 and 诊断 (issue #151) are appended AFTER it so the twelve columns a
+ * reader already knows keep their positions and the two long-text columns sit
+ * at the tail - the first screens in Excel stay compact and filterable.
+ *
+ * The two names are word-identical to the drawer's section titles (报告内容 /
+ * 诊断): a column whose header does not match the place the reader learned the
+ * term makes the file and the screen disagree about the same field.
  *
  * There is deliberately NO id column: an exported file must not be joinable
  * back to internal record keys, and no reader needs one.
@@ -79,6 +98,8 @@ const CSV_HEADERS = [
   '检查时间',
   '命中关键词',
   '手机号',
+  '报告内容',
+  '诊断',
 ] as const;
 
 /**
@@ -137,6 +158,12 @@ function toCells(row: CsvExamRow): string {
     // delimiter at all (and matches how the H5 list joins them).
     cell(row.matches.map((match) => match.keyword).join('、')),
     cell(row.patientPhone),
+    // Issue #151: verbatim snapshots, NULL → empty cell like every other
+    // column. Newlines and quotes in the report text are handled by the same
+    // RFC 4180 quoting below, and the formula guard fires per cell, so a body
+    // that starts with `=` cannot execute on open.
+    cell(row.reportContent),
+    cell(row.diagnosis),
   ].join(',');
 }
 

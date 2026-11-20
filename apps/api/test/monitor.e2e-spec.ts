@@ -860,15 +860,46 @@ describe('Monitor API (e2e, real Postgres)', () => {
    * discovered by whoever opens the file in Excel.
    */
   const CSV_HEADER =
-    '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号';
+    '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号,报告内容,诊断';
 
-  /** Data lines only (drops the BOM-prefixed header and the trailing blank). */
+  /**
+   * Data lines only (drops the BOM-prefixed header and the trailing blank).
+   *
+   * Quote-aware, NOT a plain `split('\r\n')`: since #151 a report body may
+   * carry embedded newlines (镜下所见 / 诊断意见 are separate paragraphs in a
+   * real endoscopy report), and RFC 4180 lets them sit inside a quoted cell.
+   * A naive split would tear that row in two and every assertion downstream
+   * would fail pointing at the wrong thing.
+   */
   function csvDataLines(text: string): string[] {
     const withoutBom = text.startsWith('﻿') ? text.slice(1) : text;
-    return withoutBom
-      .split('\r\n')
-      .slice(1)
-      .filter((line) => line !== '');
+    const records: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < withoutBom.length; i += 1) {
+      const char = withoutBom[i];
+      if (char === '"') {
+        // RFC 4180: `""` inside a quoted cell is a literal quote; a lone `"`
+        // opens or closes the cell.
+        if (inQuotes && withoutBom[i + 1] === '"') {
+          current += '""';
+          i += 1;
+          continue;
+        }
+        inQuotes = !inQuotes;
+        current += char;
+        continue;
+      }
+      if (!inQuotes && char === '\r' && withoutBom[i + 1] === '\n') {
+        records.push(current);
+        current = '';
+        i += 1;
+        continue;
+      }
+      current += char;
+    }
+    if (current !== '') records.push(current);
+    return records.slice(1).filter((line) => line !== '');
   }
 
   itWithDb(
@@ -898,26 +929,66 @@ describe('Monitor API (e2e, real Postgres)', () => {
       const r1 = lines.find((line) => line.includes('测试患者甲'));
       expect(r1).toBeDefined();
       // 等级 / 姓名 / 性别 / … / 开单医生 / 检查项目 / 检查日期 / 检查时间 / … / 手机号
+      // / 报告内容 / 诊断（issue #151 的两列追加在末尾，全文、逐字）。
       // 检查时间 is HH:mm:ss, the same string the workbench column shows - the
       // file and the screen must not disagree about the same instant.
       expect(r1).toContain(
-        '红色关注,测试患者甲,男,消化内科,12-1,住院（I）,王医生,电子胃镜检查,2026-08-20,16:15:00,腺癌、息肉样,13800000000',
+        '红色关注,测试患者甲,男,消化内科,12-1,住院（I）,王医生,电子胃镜检查,2026-08-20,16:15:00,腺癌、息肉样,13800000000,胃窦见一处隆起性病变，病理提示黏膜内腺癌。,胃腺癌（早期）。',
       );
 
       // No patient field may be missing-but-looked-like-data: a NULL renders as
       // an empty cell, never a dash (the dash is a screen decision, not a value).
       const r8 = lines.find((line) => line.includes('测试患者庚'));
       expect(r8).toContain(
-        '红色关注,测试患者庚,,消化内科,12-8,住院（I）,,电子胃镜检查,2026-08-20,18:00:00,浸润癌,',
+        '红色关注,测试患者庚,,消化内科,12-8,住院（I）,,电子胃镜检查,2026-08-20,18:00:00,浸润癌,,贲门见浸润性病变，考虑浸润癌。,贲门浸润癌。',
       );
       expect(r8).not.toContain('—');
 
-      // The report body and the diagnosis are not in the file at all.
-      for (const forbidden of ['胃窦见一处隆起性病变', '胃腺癌', '贲门浸润癌', '腺癌组织']) {
-        expect(res.text).not.toContain(forbidden);
-      }
+      // Issue #151 (owner decision 2026-11-20, reversing #139's restraint):
+      // the report body and the diagnosis ARE in the file - 随访 must not have
+      // to reopen the drawer per patient. Each RED row of the day carries its
+      // own body verbatim.
+      expect(res.text).toContain('胃窦见一处隆起性病变，病理提示黏膜内腺癌。');
+      expect(res.text).toContain('胃腺癌（早期）。');
+      expect(res.text).toContain('贲门见浸润性病变，考虑浸润癌。');
+      expect(res.text).toContain('胃体见腺癌组织。');
     },
   );
+
+  itWithDb('export preserves a multi-line report body quoted per RFC 4180', async () => {
+    // Issue #151's acceptance criterion asks for the newline/quote case end to
+    // end, not only on the pure function: a real endoscopy body separates
+    // 镜下所见 from 诊断意见 with a line break, and the DB round-trip plus the
+    // CSV writer must keep it. R1's body is replaced for this one test and
+    // restored in `finally` - the fixture is seeded once (file header) and the
+    // detail contract asserts R1's original text later in this file.
+    const original = '胃窦见一处隆起性病变，病理提示黏膜内腺癌。';
+    const multiline = '镜下所见：\r\n黏膜充血水肿。\r\n诊断：慢性胃炎。';
+    await prisma.monitorRecord.update({
+      where: { id: ids.R1 },
+      data: { reportContent: multiline },
+    });
+    try {
+      const res = await agent
+        .get('/api/monitor/export')
+        .query({ examDate: '2026-08-20', levels: 'RED' })
+        .expect(200);
+
+      // The cell is quoted, and the embedded CRLFs survive verbatim...
+      expect(res.text).toContain(`"${multiline}"`);
+      // ...and it is still ONE data row: the quote-aware split must not tear
+      // a multi-line cell into two records (a naive split would report 4).
+      expect(csvDataLines(res.text)).toHaveLength(3);
+      const r1 = csvDataLines(res.text).find((line) => line.includes('测试患者甲'));
+      expect(r1).toContain(`"${multiline}"`);
+      expect(r1).toContain('胃腺癌（早期）。');
+    } finally {
+      await prisma.monitorRecord.update({
+        where: { id: ids.R1 },
+        data: { reportContent: original },
+      });
+    }
+  });
 
   itWithDb('export=the day is Shanghai-bounded on both ends', async () => {
     // R3 (Shanghai 08-20 00:30) is IN 08-20; R6 (08-19 20:00) is not.

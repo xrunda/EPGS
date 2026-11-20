@@ -28,7 +28,9 @@
 - **列表永不返回报告正文**：`reportContent`/`diagnosis` 只在
   `GET /api/monitor/exams/:id` 详情接口按需返回（高敏感，不应随列表批量暴露）。
   列表查询的 Prisma `select` 就没有选择这两列，即使出错也不可能泄漏进列表响应。
-  导出（issue #139）同样不包含这两列——它是**批量出口**，比列表更需要克制。
+  导出（issue #151 起）**包含**这两列——所有者 2026-11-20 决定推翻 #139 的克制条款
+  （随访需要文件自含病情信息）；其授权闸门（`patientDetail`）正是抽屉里查看同一份
+  正文的那份授权，文件只带走调用者本来就能逐条读到的内容。**列表的禁令不变**。
 - **导出不是「日报」**：issue #26 取消的是**导出日报**（定时、按等级聚合、推送的
   上报产物），该取消条款至今有效，见
   [product/read-only-display-spec.md](../product/read-only-display-spec.md) §8。
@@ -629,7 +631,7 @@ GET /api/monitor/export?examDate=2026-08-20&levels=RED,YELLOW
 列顺序（精确）：
 
 ```
-关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号
+关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号,报告内容,诊断
 ```
 
 - **`NULL` 导出为空单元格，不是 `—`。** 屏幕上的 `—` 是渲染决定，不是数据；配合
@@ -645,8 +647,14 @@ GET /api/monitor/export?examDate=2026-08-20&levels=RED,YELLOW
 - **公式注入防护**：值首字符为 `=` `+` `-` `@` `\t` `\r` 时前置一个 `'`。仅加引号
   **挡不住** Excel/LibreOffice 的公式求值，所以这条必须做，且那个 `'` 是文本前缀，
   显示时会被吃掉（`+8613800000000` 仍然读得对）。
-- **文件里没有**：`reportContent`、`diagnosis`、`contextSnippet`（HIGH 级报告正文，
-  批量出口不应携带）、`passwordHash`、以及**任何内部 UUID**——**连 id 列都没有**，
+- **`reportContent`/`diagnosis` 在文件里**（issue #151，所有者 2026-11-20 翻案 #139
+  的克制条款）：末尾两列、全文逐字、**不截断**、`NULL` → 空单元格；含 `,` `"` 换行
+  的正文按 RFC 4180 加引号，公式注入守卫逐格生效。所有者 2026-11-20 决定推翻 #139
+  「批量出口不携带 HIGH 级正文」的克制——随访需要文件自含病情，而 `patientDetail`
+  恰是抽屉里看同一份正文的那份授权，与手机号原文（2026-10-16）同一逻辑，**不存在
+  脱敏导出变体**。
+- **文件里没有**：`contextSnippet`（命中上下文片段——关键词列已经说了什么命中，逐条
+  片段对随访没有增量价值）、`passwordHash`、以及**任何内部 UUID**——**连 id 列都没有**，
   使这份文件无法反查内部键。
 - 表头与文件名请以 `apps/api/src/monitor/monitor-csv.ts` 为唯一事实来源。
 
@@ -709,15 +717,17 @@ GET /api/monitor/export?examDate=2026-08-20&levels=RED,YELLOW
   `apps/api/src/level-conflicts/` 下的三个 spec。
 
 - CSV 序列化的单测（纯函数，issue #139）：`apps/api/src/monitor/monitor-csv.spec.ts`
-  —— 表头与列序、BOM 三个字节、CRLF、引号与内部引号翻倍、七个可空字段 → 空单元格、
-  四个中文等级、手机号原文通过且脱敏串永不出现、公式注入四种前缀、0/1/N 个关键词、
-  患者类型三种组合、`contentDispositionFor` 的 ASCII 段不含非 ASCII。
+  —— 表头与列序（含 #151 的报告内容/诊断两列）、BOM 三个字节、CRLF、引号与内部引号
+  翻倍、可空字段 → 空单元格、四个中文等级、手机号原文通过且脱敏串永不出现、公式注入
+  多种前缀、0/1/N 个关键词、患者类型三种组合、报告正文/诊断全文与多行正文的引号
+  （issue #151）、`contentDispositionFor` 的 ASCII 段不含非 ASCII。
 - 导出的控制器单测（mock service，issue #139）：
   `apps/api/src/monitor/monitor.controller.spec.ts` —— 无授权 403 且**不读库、不写审计、
   不设任何响应头**、`@CurrentUser()` 为 null 同样 403、成功时 `StreamableFile` 的
   type/length/disposition、审计 `meta` 恰好只有四个键且序列化后无患者数据。
 - 导出的端到端测试（真实 Postgres，issue #139）：`apps/api/test/monitor.e2e-spec.ts`
-  新加的四条——整份 CSV 的逐行内容与「不含报告正文/诊断」、**日界两端**（当日
+  新加的四条——整份 CSV 的逐行内容与「含报告正文/诊断」（issue #151 翻案后的断言）、
+  **日界两端**（当日
   `00:00:00` 与 `23:59:00` 在内、次日 `00:00` 在外，这条就是防止 `D..D+1` 重犯的
   回归测试）、`examTime` 为 null 的行永不出现、非法与多余参数 400；
   `apps/api/test/security.e2e-spec.ts` 的——**系统管理员也不例外**的

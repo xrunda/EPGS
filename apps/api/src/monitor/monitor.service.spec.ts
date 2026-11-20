@@ -455,13 +455,18 @@ describe('MonitorService', () => {
       ]);
     });
 
-    it('selects the patient phone - the one place LIST_SELECT is not enough', async () => {
+    it('selects the patient phone and the report fields - the one place LIST_SELECT is not enough', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
       await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
 
       const select = prisma.monitorRecord.findMany.mock.calls[0][0].select;
       expect(select.patientPhone).toBe(true);
+      // Issue #151 (owner decision 2026-11-20): the report body and the
+      // diagnosis are selected too - LIST_SELECT must stay without them (the
+      // list/H5 contract), so the export keeps widening its own select.
+      expect(select.reportContent).toBe(true);
+      expect(select.diagnosis).toBe(true);
       // Every other column the CSV writes must be selected too.
       for (const field of [
         'patientName',
@@ -477,9 +482,6 @@ describe('MonitorService', () => {
       ]) {
         expect(select[field]).toBe(true);
       }
-      // The export must never carry report content or the diagnosis.
-      expect(select).not.toHaveProperty('reportContent');
-      expect(select).not.toHaveProperty('diagnosis');
     });
 
     it('keeps the effective hit set: matches exclude AI-semantic-filtered keywords', async () => {
@@ -523,7 +525,7 @@ describe('MonitorService', () => {
 
       expect(result.rowCount).toBe(0);
       expect(result.body.toString('utf8')).toBe(
-        '﻿关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号\r\n',
+        '﻿关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号,报告内容,诊断\r\n',
       );
     });
   });

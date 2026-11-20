@@ -9,7 +9,7 @@ import {
 } from './monitor-csv';
 
 const HEADER =
-  '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号';
+  '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号,报告内容,诊断';
 
 const BOM = '﻿';
 
@@ -38,6 +38,9 @@ const baseRow: CsvExamRow = {
   patientTypeCode: 'I',
   patientTypeName: '住院',
   examItem: '电子胃镜检查',
+  // Issue #151: the file now carries the report body and the diagnosis in full.
+  reportContent: '胃窦见一处隆起性病变，病理提示黏膜内腺癌。',
+  diagnosis: '胃腺癌（早期）。',
   orderingDoctor: '王医生',
   matches: [{ keyword: '腺癌' }, { keyword: '高级别上皮内瘤变' }],
 };
@@ -64,7 +67,7 @@ describe('buildExamsCsv (issue #139)', () => {
   it('renders one row with the on-screen column values', () => {
     expect(dataLines([baseRow])).toEqual([
       HEADER,
-      '红色关注,张三丰,男,消化内科,12-1,住院（I）,王医生,电子胃镜检查,2026-08-20,16:15:30,腺癌、高级别上皮内瘤变,13800000000',
+      '红色关注,张三丰,男,消化内科,12-1,住院（I）,王医生,电子胃镜检查,2026-08-20,16:15:30,腺癌、高级别上皮内瘤变,13800000000,胃窦见一处隆起性病变，病理提示黏膜内腺癌。,胃腺癌（早期）。',
     ]);
   });
 
@@ -111,13 +114,16 @@ describe('buildExamsCsv (issue #139)', () => {
           orderingDoctor: null,
           bedNo: null,
           department: null,
+          reportContent: null,
+          diagnosis: null,
         },
       ]);
       // 关注等级,患者姓名,性别(空),科室(空),床号(空),患者类型,开单医生(空),...
+      // 手机号(空),报告内容(空),诊断(空) - three trailing empty cells.
       expect(row).toBe(
         '红色关注,张三丰,,,,' +
           '住院（I）' +
-          ',,电子胃镜检查,2026-08-20,16:15:30,腺癌、高级别上皮内瘤变,',
+          ',,电子胃镜检查,2026-08-20,16:15:30,腺癌、高级别上皮内瘤变,,,',
       );
       expect(row).not.toContain('—');
     });
@@ -152,8 +158,48 @@ describe('buildExamsCsv (issue #139)', () => {
         { ...baseRow, matches: [{ keyword: '腺癌' }, { keyword: '低级别' }, { keyword: '息肉' }] },
       ]);
       expect(row).toContain('腺癌、低级别、息肉');
-      // One cell, not three columns.
-      expect(row.split(',')).toHaveLength(12);
+      // One cell, not three columns. 14 columns since #151 (the two report
+      // columns at the tail); the report body has no ASCII comma here, so a
+      // naive split still counts cells correctly.
+      expect(row.split(',')).toHaveLength(14);
+    });
+  });
+
+  describe('report body and diagnosis (issue #151)', () => {
+    it('carries both fields in full, in the two trailing columns', () => {
+      // The whole point of #151: the file must be self-contained for 随访 - the
+      // doctor reads what was found and what was treated without reopening the
+      // drawer per patient.
+      const [, row] = dataLines([baseRow]);
+      expect(
+        row.endsWith(',13800000000,胃窦见一处隆起性病变，病理提示黏膜内腺癌。,胃腺癌（早期）。'),
+      ).toBe(true);
+    });
+
+    it('writes NULL report/diagnosis as empty cells, like every other column', () => {
+      const [, row] = dataLines([{ ...baseRow, reportContent: null, diagnosis: null }]);
+      // A pre-#137-style legacy record may have neither; the cell stays empty
+      // rather than growing a dash.
+      expect(row.endsWith(',13800000000,,')).toBe(true);
+    });
+
+    it('quotes a multi-line report body per RFC 4180, so the row stays one line', () => {
+      // Real endoscopy reports carry line breaks between 镜下所见 and 诊断意见;
+      // the cell must be quoted or Excel would tear the row apart.
+      const lines = textOf([
+        { ...baseRow, reportContent: '镜下所见：\n黏膜充血水肿。\n诊断：慢性胃炎。' },
+      ])
+        .slice(BOM.length)
+        .split('\r\n');
+      // Header + ONE data row (the newlines live inside a quoted cell) + trailing ''.
+      expect(lines).toHaveLength(3);
+      expect(lines[1]).toContain('"镜下所见：\n黏膜充血水肿。\n诊断：慢性胃炎。"');
+    });
+
+    it('guards the report body against formula injection like any other cell', () => {
+      const [, row] = dataLines([{ ...baseRow, reportContent: '=HYPERLINK("http://x")' }]);
+      // The guard runs before quoting: the apostrophe is the Excel text marker.
+      expect(row.endsWith(`,"'=HYPERLINK(""http://x"")",胃腺癌（早期）。`)).toBe(true);
     });
   });
 
@@ -172,7 +218,9 @@ describe('buildExamsCsv (issue #139)', () => {
 
     it('quotes a phone that carries a separator, so the column count holds', () => {
       const rows = dataLines([{ ...baseRow, patientPhone: '138-0000,0000' }]);
-      expect(rows[1].endsWith('"138-0000,0000"')).toBe(true);
+      // No longer the last column (#151 appended the two report columns after
+      // it), so assert on the quoted cell rather than the end of the line.
+      expect(rows[1]).toContain('"138-0000,0000"');
     });
   });
 

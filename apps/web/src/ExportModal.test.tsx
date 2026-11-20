@@ -112,6 +112,16 @@ describe('ExportModal (issue #139)', () => {
     expect(screen.getByRole('dialog', { name: '数据导出' })).toBeInTheDocument();
   });
 
+  it('warns that the file carries the report content, not just names and phones (issue #151)', () => {
+    // The custody warning is the only place the operator is told what leaves
+    // the system. #151 added 报告内容 to the file, so the sentence must say so;
+    // it is asserted here so a later copy edit cannot quietly drop it.
+    render(<ExportModal open onClose={vi.fn()} />);
+    expect(screen.getByText(/患者姓名、手机号与报告内容/)).toBeInTheDocument();
+    // The monitoring-only disclaimer stays next to it.
+    expect(screen.getByText(/不作为正式诊断依据/)).toBeInTheDocument();
+  });
+
   it('offers one day and four CHECKBOX levels, defaulting to today and 红色关注', () => {
     render(<ExportModal open onClose={vi.fn()} />);
 

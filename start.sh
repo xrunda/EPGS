@@ -56,6 +56,21 @@ stop_all() {
     done < "$PID_FILE"
     rm -f "$PID_FILE"
   fi
+  # Issue #153：PID_FILE 里记的是 `pnpm --filter … run start:prod` 的**外层
+  # pnpm PID**，真正的 `node dist/main` 是它的子进程。只杀外层时，子进程会被
+  # reparent 到 PID 1 继续占着 3000/3001，下一个进程就 EADDRINUSE 退出——而
+  # 等待循环看到的 /health 200 仍然来自旧进程，于是「部署成功」是假绿，跑的
+  # 还是旧代码（2026-11-20 实际踩到：进程启动比 dist 写入早 22 秒）。
+  # 按真实命令行再清一遍，比只按端口更可靠：端口释放有 TIME_WAIT 延迟，
+  # 而 `pgrep -f` 认的是进程本身。
+  for pattern in 'apps/api/dist/main' 'apps/worker/dist/main'; do
+    pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+      echo "按命令行清理 $pattern: $pids"
+      # shellcheck disable=SC2086
+      kill -9 $pids 2>/dev/null || true
+    fi
+  done
   for port in 3000 3001; do
     # 防御性清扫（issue #129）：api/worker 现在以 `node dist/main.js` 启动，
     # 而 `pnpm` 会把信号转给它拉起的 node 子进程 —— 实测 kill 掉 PID_FILE 里
@@ -92,15 +107,28 @@ if [ "${1:-}" = "stop" ]; then
   exit 0
 fi
 
-stop_all
-
+# Issue #153: git pull 必须在停服务之前。
+#
+# 旧顺序是 `stop_all()` → `git pull`。院内到 GitHub 的通道时通时断
+# （2026-11-20 现场：GnuTLS recv error -110），pull 一旦失败，`set -e` 让脚本
+# 在这里直接退出——而此时 api/worker 已被杀、构建与重启都没执行，nginx 仍在
+# 监听并代理到死端口，全院 502，只能人工把进程拉起来。
+#
+# 现在 pull 失败只报错退出，正在运行的服务完全不受影响，现场看到的是
+# 「代码没更新，服务照常」，而不是一次停机。
 if [ "${1:-}" != "nopull" ]; then
   echo ""
   echo "===== [0/7] git pull 最新代码 ====="
   # --ff-only（issue #127）：堡垒机是只读的部署目标，不该在那里产生合并提交。
   # 一旦有人在那儿改过文件或有本地提交，这里会快速失败并说清楚，而不是悄悄
   # 合出一个没人看过的 merge commit。
-  git pull --ff-only origin main
+  if ! git pull --ff-only origin main; then
+    echo ""
+    echo "错误: git pull 失败，代码未更新。"
+    echo "      服务未受影响，仍在以当前版本运行；修好网络后重新执行 bash start.sh。"
+    echo "      长期不通时可离线部署：git fetch <bundle> main && git merge --ff-only FETCH_HEAD"
+    exit 1
+  fi
 fi
 
 # 只要求 api/worker 的 .env（issue #127 去掉了 apps/web/.env）：生产构建不读它 ——
@@ -375,7 +403,15 @@ echo "===== [5/7] 数据库迁移 (prisma migrate deploy) ====="
 pnpm --filter api exec prisma migrate deploy
 
 echo ""
-echo "===== [6/7] 后台启动 api / worker，生成并 reload nginx ====="
+echo "===== [6/7] 停止旧进程、后台启动 api / worker、生成并 reload nginx ====="
+# Issue #153：停进程挪到这里——排在 pull / install / build / migrate 之后。
+# 这样任何一步失败都不会让服务停着（旧顺序是先停后拉，pull 一挂全院 502），
+# 且真正的停服窗口只剩进程替换这几秒。
+#
+# 代价是构建期间旧进程仍在服务：Node 已加载的模块不受磁盘覆盖影响，依赖不变时
+# `pnpm install` 是 no-op（"Already up to date"），迁移也一直是加法式（加枚举值/
+# 加表，不删列），因此这个窗口对线上是安全的；换来的是停机时间从一分钟级降到秒级。
+stop_all
 : > "$PID_FILE"
 
 # start:prod = `node dist/main.js`。不用 `nest start --watch`（原先的 start:dev）：
@@ -401,17 +437,38 @@ echo "nginx 已启动，监听 :$LISTEN_PORT，配置见 $NGINX_CONF"
 
 echo ""
 echo "===== [7/7] 等待服务就绪 ====="
+# Issue #153：`/health` 200 不一定来自刚启动的进程——旧进程没杀干净时它会一直
+# 有 200，而新进程已经 EADDRINUSE 退出了。那样「启动完成」是假绿，跑的仍是旧
+# 代码。所以每一轮先看新进程的日志有没有绑定失败，有就立即失败，不等到超时。
+api_ready=0
+worker_ready=0
 for i in $(seq 1 60); do
+  if grep -q 'EADDRINUSE' "$LOG_DIR/api.log" 2>/dev/null; then
+    echo ""
+    echo "错误: api 端口 3000 已被占用，新进程没能启动（EADDRINUSE）。"
+    echo "      现在响应 /health 的很可能是**旧进程**，即跑的还是旧代码。"
+    echo "      排查: ss -tlnp | grep ':3000'  然后 pkill -9 -f 'apps/api/dist/main' 后重跑本脚本。"
+    exit 1
+  fi
   api_up=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/health" || true)
   worker_up=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3001/health" || true)
-  if [ "$api_up" = "200" ] && [ "$worker_up" = "200" ]; then
+  [ "$api_up" = "200" ] && api_ready=1
+  [ "$worker_up" = "200" ] && worker_ready=1
+  if [ "$api_ready" = "1" ] && [ "$worker_ready" = "1" ]; then
     break
   fi
   sleep 1
 done
 
+if [ "$api_ready" != "1" ] || [ "$worker_ready" != "1" ]; then
+  echo ""
+  echo "错误: 60 秒内未就绪（api=$api_ready worker=$worker_ready），查 $LOG_DIR/api.log 与 $LOG_DIR/worker.log"
+  exit 1
+fi
+
 echo ""
 echo "===== 启动完成 ====="
+echo "当前版本: $(git rev-parse --short HEAD 2>/dev/null || echo '<未知>')  （$(git log -1 --format=%s 2>/dev/null || echo '')）"
 echo "web+api (经 nginx 单端口对外):  http://<本机地址或网闸映射地址>:$LISTEN_PORT"
 echo "worker 健康检查 (仅本机):        http://localhost:3001/health"
 echo ""

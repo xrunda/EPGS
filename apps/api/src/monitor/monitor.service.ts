@@ -144,7 +144,7 @@ export class MonitorService {
 
   /**
    * Export fields (issue #139) = everything a list row carries, PLUS the
-   * patient phone.
+   * patient phone and, since #151, the report body and the diagnosis.
    *
    * It MUST be its own select rather than a widened LIST_SELECT: LIST_SELECT is
    * shared with the alert-link list (listByIds), whose whole contract is that
@@ -159,12 +159,23 @@ export class MonitorService {
    * masking to this path, the file silently stops being what the ward asked for
    * - the owner decided on 2026-10-16 that the CSV always carries it raw.
    *
-   * Still absent, deliberately: reportContent, diagnosis, and every AI/audit
-   * column - this is a copy of the workbench list, not of the report.
+   * `reportContent`/`diagnosis` are here for the same reason since #151 (owner
+   * decision 2026-11-20, reversing #139's restraint clause): the follow-up
+   * workflow needs the file to be self-contained, and `patientDetail` is
+   * already the grant that lets its holder read both fields in the drawer. The
+   * LIST boundary does not move with this: the two stay out of LIST_SELECT and
+   * out of the list DTO - a list response is a scanning surface, a file behind
+   * the second (grant) wall is not.
+   *
+   * Still absent, deliberately: contextSnippet and every AI/audit column - the
+   * keywords column already says what fired, and the hit-level snippets add no
+   * follow-up value to a file the holder can search in Excel anyway.
    */
   private static readonly EXPORT_SELECT = {
     ...MonitorService.LIST_SELECT,
     patientPhone: true,
+    reportContent: true,
+    diagnosis: true,
   } as const satisfies Prisma.MonitorRecordSelect;
 
   private static readonly LEVEL_KEYS: Record<MonitorLevel, keyof Omit<MonitorSummaryDto, 'total'>> =

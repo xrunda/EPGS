@@ -155,7 +155,7 @@ export function ExportModal({ open, onClose }: ExportModalProps): JSX.Element | 
           <p>
             导出的是<b>一天、选定的关注等级</b>（可多选）的患者明细，文件为 CSV，可用 Excel
             直接打开。文件里含
-            <b>患者姓名与手机号</b>，请按院内规定保管，不要转发到无关的群。
+            <b>患者姓名、手机号与报告内容</b>，请按院内规定保管，不要转发到无关的群。
           </p>
           <p>未审核报告仅用于监测，不作为正式诊断依据；导出的内容与此一致。</p>
         </div>

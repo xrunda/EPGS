@@ -43,6 +43,47 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
+      # Issue #153: start.sh 的停机安全护栏。
+      #
+      # 这两条对应 2026-11-20 院内的两次真实事故：
+      #   1) 先 stop_all() 再 git pull —— 院内到 GitHub 断网时 pull 失败，
+      #      服务已停、构建与重启都没跑，全院 502；
+      #   2) PID 文件记的是 pnpm 外层 PID，node 子进程漏网继续占着 3000，
+      #      新进程 EADDRINUSE 退出，而 /health 200 来自旧进程 —— 假绿。
+      # 这里既钉住顺序，也真的跑一次「pull 失败」看它是否拒绝停服务。
+      - name: Deploy script guards (start.sh)
+        run: |
+          set -euo pipefail
+          bash -n start.sh
+
+          pull_line=$(grep -n 'git pull --ff-only' start.sh | head -1 | cut -d: -f1)
+          stop_line=$(grep -n '^stop_all$' start.sh | head -1 | cut -d: -f1)
+          echo "git pull at line $pull_line, stop_all at line $stop_line"
+          test -n "$pull_line" && test -n "$stop_line" && [ "$pull_line" -lt "$stop_line" ]
+
+          # EADDRINUSE 必须让脚本失败，不能报「启动完成」。
+          grep -q 'EADDRINUSE' start.sh
+          # 停进程必须按真实命令行清扫，而不只依赖 PID 文件。
+          grep -q 'apps/api/dist/main' start.sh
+
+          # 行为测试：pull 失败 → 非 0 退出，且绝不先说「停止已运行的 api/worker」。
+          tmp=$(mktemp -d)
+          cp start.sh "$tmp/"
+          cd "$tmp"
+          git init -q
+          git remote add origin /nonexistent/repo.git
+          if bash start.sh > out.txt 2>&1; then
+            echo "::error::pull 失败时 start.sh 应当以非 0 退出"
+            cat out.txt
+            exit 1
+          fi
+          cat out.txt
+          grep -q '服务未受影响' out.txt
+          if grep -q '停止已运行的 api/worker' out.txt; then
+            echo "::error::pull 失败前就把服务停了（issue #153 回归）"
+            exit 1
+          fi
+
       - name: Typecheck
         run: pnpm run typecheck
 

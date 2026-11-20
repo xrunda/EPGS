@@ -190,9 +190,15 @@ systemctl disable --now nginx # 关键，见 §11 第 3 条
 bash start.sh
 ```
 
-脚本会依次做（脚本自己按 0 起编号，即 `[0/7]`…`[7/7]`）：停旧进程 → `git pull` → 校验 `.env` →
+脚本会依次做（脚本自己按 0 起编号，即 `[0/7]`…`[7/7]`）：`git pull` → 校验 `.env` →
 准备 PostgreSQL → 校正 `.env` → 装依赖 → **构建全部产物**（libs + web + api/worker 的 `dist`）→
-迁移 → 后台起 api/worker（`node dist/main.js`）→ 生成并 reload nginx → 等就绪。
+迁移 → **停旧进程**并后台起 api/worker（`node dist/main.js`）→ 生成并 reload nginx → 等就绪。
+
+> **失败不会让服务停着（issue #153）**：停进程排在 pull / 装依赖 / 构建 / 迁移之后。
+> 任何一步失败，正在跑的 api/worker 原样继续服务，脚本以非 0 退出并说明原因。
+> 例如院内到 GitHub 断网时只会看到「git pull 失败，代码未更新 / 服务未受影响」，
+> 而不是全院 502。`[7/7]` 还会检查新进程日志里有没有 `EADDRINUSE`——有就说明
+> 旧进程没被杀掉、`/health` 200 来自旧代码，脚本会直接失败而不是报「启动完成」。
 
 **看到「错误: ...」就停下改 `.env`，不要绕过**——那些检查对应的都是「绕过之后要等 60 秒才以
 『api 未就绪』收场」的坑。

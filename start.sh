@@ -6,6 +6,10 @@
 #   bash start.sh nopull    跳过 git pull，仅重启（用于 .env 手动改完后快速重启）
 #   bash start.sh stop      仅停止 api/worker，并 reload nginx（不碰 PostgreSQL）
 #
+# issue #155：若已安装 deploy/install-systemd.sh 的 unit，本脚本会自动改用
+# systemctl 重启 api/worker/nginx（随机器自启、崩溃自动拉起、日志进 journald）；
+# 未安装时退回下面的 nohup 方式，两种模式行为一致。迁移见 docs/deployment.md。
+#
 #   PG_MODE=docker|native|auto（默认 auto）强制指定 PostgreSQL 形态，见 [1/7]
 #
 # 前置条件:
@@ -44,6 +48,21 @@ LISTEN_PORT="${LISTEN_PORT:-5173}"
 WEB_DIST="$REPO_ROOT/apps/web/dist"
 NGINX_CONF="$REPO_ROOT/.run-nginx.conf"
 NGINX_PID_FILE="$REPO_ROOT/.run-nginx.pid"
+
+# issue #155：安装过 deploy/install-systemd.sh 之后，api/worker/nginx 由 systemd
+# 托管（随机器自启、崩溃 5 秒内自拉起、日志进 journald）。没装时保持原有的
+# nohup 路径不变 —— 升级部署方式不该要求先改环境，两种模式都能跑。
+#
+# 事故背景：2026-11-21 有人为抢修在 SSH 会话里手工 nohup 拉起 api/worker，
+# 会话断开后进程随之消失，nginx 独立存活，对外持续 502 约 30 小时无人发现。
+SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
+SYSTEMD_MODE=0
+if [ -f "$SYSTEMD_DIR/epgs-api.service" ] \
+    && [ -f "$SYSTEMD_DIR/epgs-worker.service" ] \
+    && [ -f "$SYSTEMD_DIR/epgs-nginx.service" ] \
+    && command -v systemctl >/dev/null 2>&1; then
+  SYSTEMD_MODE=1
+fi
 
 stop_all() {
   echo "===== 停止已运行的 api/worker ====="
@@ -99,6 +118,11 @@ stop_all() {
 }
 
 if [ "${1:-}" = "stop" ]; then
+  # issue #155：systemd 模式先停 unit，再用 nginx -s stop 兜底清掉可能是手工
+  # 启动的那份（否则 5173 不会被真正释放）。
+  if [ "$SYSTEMD_MODE" = 1 ]; then
+    sudo systemctl stop epgs-nginx.service epgs-worker.service epgs-api.service 2>/dev/null || true
+  fi
   stop_all
   if [ -f "$NGINX_CONF" ]; then
     sudo nginx -s stop -c "$NGINX_CONF" 2>/dev/null || true
@@ -411,29 +435,59 @@ echo "===== [6/7] 停止旧进程、后台启动 api / worker、生成并 reload
 # 代价是构建期间旧进程仍在服务：Node 已加载的模块不受磁盘覆盖影响，依赖不变时
 # `pnpm install` 是 no-op（"Already up to date"），迁移也一直是加法式（加枚举值/
 # 加表，不删列），因此这个窗口对线上是安全的；换来的是停机时间从一分钟级降到秒级。
-stop_all
-: > "$PID_FILE"
+if [ "$SYSTEMD_MODE" = 1 ]; then
+  echo ""
+  echo "检出 systemd unit（$SYSTEMD_DIR/epgs-*.service）-> 由 systemctl 托管（issue #155）。"
+  echo "启动后会随机器自启、崩溃 5 秒内自动拉起，日志见 journalctl -u epgs-api / epgs-worker。"
+  # 旧版/手工 nohup 起的进程不认识 systemd，会继续占着 3000/3001 —— 先停 unit
+  # （整组杀），再清扫残留，最后启动；否则新 unit 启动就 EADDRINUSE。
+  sudo systemctl stop epgs-api.service epgs-worker.service 2>/dev/null || true
+  stop_all
+  sudo systemctl start epgs-api.service epgs-worker.service
 
-# start:prod = `node dist/main.js`。不用 `nest start --watch`（原先的 start:dev）：
-# watch 会派生一个 dist/main 子进程，父进程被杀后它被 reparent 到 PID 1 继续占着
-# 端口，下次启动就以 EADDRINUSE 收场，而人只看到"api 未就绪"（issue #129）。
-nohup pnpm --filter api run start:prod > "$LOG_DIR/api.log" 2>&1 &
-echo $! >> "$PID_FILE"
+  # nginx 配置是生成物：每次部署按当前仓库重新渲染。unit 的 ExecStartPre
+  # 会在启动前再跑一次 `nginx -t`，语法错误不会被静默放过。
+  sed -e "s#__LISTEN_PORT__#$LISTEN_PORT#" -e "s#__WEB_ROOT__#$WEB_DIST#" \
+    -e "s#__PID_FILE__#$NGINX_PID_FILE#" \
+    deploy/nginx.conf.template > "$NGINX_CONF"
+  if ! command -v nginx >/dev/null 2>&1; then
+    echo "错误: 未找到 nginx，请先安装 (如 apt/yum install nginx)。"
+    exit 1
+  fi
+  sudo systemctl stop epgs-nginx.service 2>/dev/null || true
+  # 兜底：可能还有手工 `nginx -c` 起的进程占着 ${LISTEN_PORT}，先让它退出。
+  sudo nginx -s stop -c "$NGINX_CONF" 2>/dev/null || true
+  sudo systemctl start epgs-nginx.service
+  echo "nginx 已由 systemd 启动，监听 :${LISTEN_PORT}，配置见 $NGINX_CONF"
+else
+  stop_all
+  : > "$PID_FILE"
 
-nohup env PORT=3001 pnpm --filter worker run start:prod > "$LOG_DIR/worker.log" 2>&1 &
-echo $! >> "$PID_FILE"
+  # start:prod = `node dist/main.js`。不用 `nest start --watch`（原先的 start:dev）：
+  # watch 会派生一个 dist/main 子进程，父进程被杀后它被 reparent 到 PID 1 继续占着
+  # 端口，下次启动就以 EADDRINUSE 收场，而人只看到"api 未就绪"（issue #129）。
+  nohup pnpm --filter api run start:prod > "$LOG_DIR/api.log" 2>&1 &
+  echo $! >> "$PID_FILE"
 
-sed -e "s#__LISTEN_PORT__#$LISTEN_PORT#" -e "s#__WEB_ROOT__#$WEB_DIST#" \
-  -e "s#__PID_FILE__#$NGINX_PID_FILE#" \
-  deploy/nginx.conf.template > "$NGINX_CONF"
-if ! command -v nginx >/dev/null 2>&1; then
-  echo "错误: 未找到 nginx，请先安装 (如 apt/yum install nginx)。"
-  exit 1
+  nohup env PORT=3001 pnpm --filter worker run start:prod > "$LOG_DIR/worker.log" 2>&1 &
+  echo $! >> "$PID_FILE"
+
+  sed -e "s#__LISTEN_PORT__#$LISTEN_PORT#" -e "s#__WEB_ROOT__#$WEB_DIST#" \
+    -e "s#__PID_FILE__#$NGINX_PID_FILE#" \
+    deploy/nginx.conf.template > "$NGINX_CONF"
+  if ! command -v nginx >/dev/null 2>&1; then
+    echo "错误: 未找到 nginx，请先安装 (如 apt/yum install nginx)。"
+    exit 1
+  fi
+  sudo nginx -t -c "$NGINX_CONF"
+  sudo nginx -s stop -c "$NGINX_CONF" 2>/dev/null || true
+  sudo nginx -c "$NGINX_CONF"
+  echo "nginx 已启动，监听 :${LISTEN_PORT}，配置见 $NGINX_CONF"
+  echo ""
+  echo "提示: 当前是 nohup 模式 —— 进程不随机器自启，也不随崩溃拉起，且手工启动时"
+  echo "      会随 SSH 会话结束而消失。建议执行一次 sudo bash deploy/install-systemd.sh,"
+  echo "      下次运行本脚本即切换为 systemd 托管（issue #155）。"
 fi
-sudo nginx -t -c "$NGINX_CONF"
-sudo nginx -s stop -c "$NGINX_CONF" 2>/dev/null || true
-sudo nginx -c "$NGINX_CONF"
-echo "nginx 已启动，监听 :$LISTEN_PORT，配置见 $NGINX_CONF"
 
 echo ""
 echo "===== [7/7] 等待服务就绪 ====="
@@ -442,8 +496,23 @@ echo "===== [7/7] 等待服务就绪 ====="
 # 代码。所以每一轮先看新进程的日志有没有绑定失败，有就立即失败，不等到超时。
 api_ready=0
 worker_ready=0
+# 未就绪时提示去哪里看日志：nohup 模式在 .run-logs/，systemd 模式在 journald。
+log_hint() {
+  if [ "$SYSTEMD_MODE" = 1 ]; then
+    echo "      sudo journalctl -u epgs-api -n 50 --no-pager"
+    echo "      sudo journalctl -u epgs-worker -n 50 --no-pager"
+  else
+    echo "      $LOG_DIR/api.log"
+    echo "      $LOG_DIR/worker.log"
+  fi
+}
 for i in $(seq 1 60); do
-  if grep -q 'EADDRINUSE' "$LOG_DIR/api.log" 2>/dev/null; then
+  if [ "$SYSTEMD_MODE" = 1 ]; then
+    api_eaddr=$(sudo journalctl -u epgs-api.service --since '-2 min' --no-pager -n 100 2>/dev/null | grep -c 'EADDRINUSE' || true)
+  else
+    api_eaddr=$(grep -c 'EADDRINUSE' "$LOG_DIR/api.log" 2>/dev/null || true)
+  fi
+  if [ "${api_eaddr:-0}" != "0" ]; then
     echo ""
     echo "错误: api 端口 3000 已被占用，新进程没能启动（EADDRINUSE）。"
     echo "      现在响应 /health 的很可能是**旧进程**，即跑的还是旧代码。"
@@ -462,7 +531,8 @@ done
 
 if [ "$api_ready" != "1" ] || [ "$worker_ready" != "1" ]; then
   echo ""
-  echo "错误: 60 秒内未就绪（api=$api_ready worker=$worker_ready），查 $LOG_DIR/api.log 与 $LOG_DIR/worker.log"
+  echo "错误: 60 秒内未就绪（api=$api_ready worker=${worker_ready}），查日志:"
+  log_hint
   exit 1
 fi
 
@@ -472,7 +542,14 @@ echo "当前版本: $(git rev-parse --short HEAD 2>/dev/null || echo '<未知>')
 echo "web+api (经 nginx 单端口对外):  http://<本机地址或网闸映射地址>:$LISTEN_PORT"
 echo "worker 健康检查 (仅本机):        http://localhost:3001/health"
 echo ""
-echo "日志目录: $LOG_DIR"
+if [ "$SYSTEMD_MODE" = 1 ]; then
+  echo "运行模式: systemd 托管（随机器自启、崩溃自动重启）"
+  echo "日志:     sudo journalctl -u epgs-api -n 200 --no-pager"
+  echo "          sudo journalctl -u epgs-worker -f"
+else
+  echo "运行模式: nohup 裸进程（不自启、不自动重启）—— 建议 sudo bash deploy/install-systemd.sh"
+  echo "日志目录: $LOG_DIR"
+fi
 echo "停止服务: bash start.sh stop"
 echo "仅重启(不pull): bash start.sh nopull"
 echo "更换对外端口: LISTEN_PORT=8080 bash start.sh nopull"

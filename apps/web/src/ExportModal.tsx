@@ -5,9 +5,10 @@ import { downloadExamsCsv, MonitorApiError } from './monitorApi';
 import './ExportModal.css';
 
 /**
- * 数据导出（issue #139）—— 按「一天 + 选定的关注等级」把患者明细存成一个 CSV。
+ * 数据导出（issue #139）—— 按「起止日期 + 选定的关注等级」把患者明细存成一个 CSV。
+ * 起止日期区间见 issue #157（此前只能一天）。
  *
- * 为什么只有这两个选项：文件离开系统之后就不受这里管了（会被打印、贴进 Excel、
+ * 为什么只有这两组选项：文件离开系统之后就不受这里管了（会被打印、贴进 Excel、
  * 发到群里），所以暴露面必须由服务端的契约钉死，而不是靠界面上的组合去暗示。
  * 没有「导出当前筛选」——那会让文件内容与弹层上看得见的选择不一致。
  *
@@ -16,11 +17,15 @@ import './ExportModal.css';
  * 从「永不触发的护栏」变成可能真的挡住一次请求 —— 它返回 400，**不截断**。
  * 一个都不选时导出按钮禁用（不阻止取消勾选：勾选框的语义不能骗人）。
  *
+ * issue #157 把「一天」放宽成「起止日期（含两端）」。顺序校验这里只做「别让人白点」：
+ * 结束早于起始时禁用按钮并说明原因，真正的闸门在 `MonitorService.exportRange`
+ * （400 INVALID_DATE_RANGE），手工拼 URL 绕不过去。
+ *
  * 权限：入口本身只在有 `patientDetail` 授权时出现（Workbench / App.tsx），这里
  * 再对 403 显示服务端原话。前端两道都只是「别让人白点」，真正的闸门在服务端。
  *
  * 0 行不落盘：一个只有表头的文件对用户没有任何用，却会被当成「导出成功」存进
- * 下载目录，然后被转发出去。所以这里是明确的一句「当日没有符合条件的记录」。
+ * 下载目录，然后被转发出去。所以这里是明确的一句「所选日期范围内没有符合条件的记录」。
  */
 
 interface ExportModalProps {
@@ -55,13 +60,17 @@ function friendlyError(error: unknown): string {
 }
 
 export function ExportModal({ open, onClose }: ExportModalProps): JSX.Element | null {
-  const [examDate, setExamDate] = useState(todayLocalDate);
+  const [examDateFrom, setExamDateFrom] = useState(todayLocalDate);
+  const [examDateTo, setExamDateTo] = useState(todayLocalDate);
   // 默认勾红色：与 #145 之前那次单选的默认一致，最常用的一档。
   const [levels, setLevels] = useState<MonitorLevelDto[]>(['RED']);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
+
+  // ISO 日期字符串按字典序比较就是按时间比较（YYYY-MM-DD）。
+  const rangeInvalid = examDateFrom > examDateTo;
 
   const requestClose = useCallback(() => {
     setError(null);
@@ -89,11 +98,11 @@ export function ExportModal({ open, onClose }: ExportModalProps): JSX.Element | 
     setError(null);
     setNotice(null);
     try {
-      const result = await downloadExamsCsv({ examDate, levels });
+      const result = await downloadExamsCsv({ examDateFrom, examDateTo, levels });
       if (result.rowCount === 0) {
         // 明确知道是空的：不产出一个只有表头的文件。rowCount 为 null（头读不到）
         // 时按有内容处理 —— 宁可让用户拿到文件，也不能把正常结果静默丢掉。
-        setNotice('当日没有符合条件的记录');
+        setNotice('所选日期范围内没有符合条件的记录');
         return;
       }
       const url = URL.createObjectURL(result.blob);
@@ -153,8 +162,8 @@ export function ExportModal({ open, onClose }: ExportModalProps): JSX.Element | 
         <div className="export-modal__notice">
           <span aria-hidden="true">i</span>
           <p>
-            导出的是<b>一天、选定的关注等级</b>（可多选）的患者明细，文件为 CSV，可用 Excel
-            直接打开。文件里含
+            导出的是<b>所选起止日期内、选定的关注等级</b>（可多选）的患者明细，文件为 CSV，可用
+            Excel 直接打开。文件里含
             <b>患者姓名、手机号与报告内容</b>，请按院内规定保管，不要转发到无关的群。
           </p>
           <p>未审核报告仅用于监测，不作为正式诊断依据；导出的内容与此一致。</p>
@@ -167,15 +176,32 @@ export function ExportModal({ open, onClose }: ExportModalProps): JSX.Element | 
             void runExport();
           }}
         >
-          <label className="export-form__date">
-            检查日期
-            <input
-              type="date"
-              value={examDate}
-              onChange={(event) => setExamDate(event.target.value)}
-              required
-            />
-          </label>
+          <div className="export-form__dates">
+            <label className="export-form__date">
+              起始日期
+              <input
+                type="date"
+                value={examDateFrom}
+                onChange={(event) => setExamDateFrom(event.target.value)}
+                required
+              />
+            </label>
+            <label className="export-form__date">
+              结束日期
+              <input
+                type="date"
+                value={examDateTo}
+                onChange={(event) => setExamDateTo(event.target.value)}
+                required
+              />
+            </label>
+          </div>
+          {/* 顺序不合法时按钮会禁用；不说一句就等于给了一个点了没反应的按钮。 */}
+          {rangeInvalid && (
+            <p className="export-form__hint" role="status">
+              结束日期不能早于起始日期。
+            </p>
+          )}
 
           <fieldset className="export-form__levels">
             <legend>关注等级</legend>
@@ -220,7 +246,7 @@ export function ExportModal({ open, onClose }: ExportModalProps): JSX.Element | 
             <button
               className="button button--primary"
               type="submit"
-              disabled={busy || !examDate || levels.length === 0}
+              disabled={busy || !examDateFrom || !examDateTo || rangeInvalid || levels.length === 0}
             >
               {busy ? '正在导出…' : '导出'}
             </button>

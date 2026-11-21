@@ -5,8 +5,9 @@ import { MonitorLevel } from '@prisma/client';
 import { orderExportLevels } from '../monitor-csv';
 
 /**
- * Query for `GET /api/monitor/export` (issue #139, multi-level since #145):
- * ONE Shanghai calendar day and one or more attention levels.
+ * Query for `GET /api/monitor/export` (issue #139, multi-level since #145,
+ * date range since #157): a Shanghai calendar-date range (both ends inclusive)
+ * and one or more attention levels.
  *
  * Deliberately NOT a reuse of MonitorFiltersDto, for two separate reasons:
  *
@@ -14,27 +15,41 @@ import { orderExportLevels } from '../monitor-csv';
  *     inherited metadata, and `@IsOptional()` on the parent's examDateFrom /
  *     examDateTo short-circuits every validator on those properties, so a
  *     subclass cannot turn them into required ones;
- *  2. reusing the eight-filter surface would leave "one day, which levels" as a
- *     frontend rule only. AGENTS.md §2.3 puts the business judgement on the
+ *  2. reusing the eight-filter surface would leave "a date range, which levels"
+ *     as a frontend rule only. AGENTS.md §2.3 puts the business judgement on the
  *     server, and a hand-crafted URL must not be able to ask for a 30-day dump.
  *
- * Both fields are required and there are no others. `main.ts` runs the global
- * ValidationPipe with `forbidNonWhitelisted`, so `?examDateFrom=`, `?page=1` or
- * any other leftover workbench parameter is a 400 rather than a silently
- * ignored filter - and so is the pre-#145 `?level=RED`, deliberately: keeping
- * the old single-value name as an alias would leave the single-level contract
- * in the API forever. The caller's department scope is applied server-side and
- * is deliberately not a parameter here - a filter the modal does not show would
- * make the file disagree with the choices the operator made.
+ * Both dates and the level selection are required and there are no other
+ * fields. `main.ts` runs the global ValidationPipe with `forbidNonWhitelisted`,
+ * so `?department=`, `?page=1` or any other leftover workbench parameter is a
+ * 400 rather than a silently ignored filter - and so is the pre-#145
+ * `?level=RED` and the pre-#157 `?examDate=…`, deliberately: keeping old names
+ * as aliases would leave those contracts in the API forever. The caller's
+ * department scope is applied server-side and is deliberately not a parameter
+ * here - a filter the modal does not show would make the file disagree with the
+ * choices the operator made.
+ *
+ * The order of the two dates (from <= to) is NOT enforced here: class-validator
+ * has no cross-field comparison, and putting it in the DTO would mean a custom
+ * constraint duplicating calendar logic. `MonitorService.exportRange` owns it,
+ * server-side, so a hand-crafted URL cannot bypass it either.
  */
 export class ExportExamsQueryDto {
   @ApiProperty({
     description:
-      'The single Asia/Shanghai calendar day to export, YYYY-MM-DD. Both bounds are this one value - the exclusive upper bound is resolved to the start of the NEXT Shanghai day internally, so this is exactly one day.',
+      'Inclusive start of the Asia/Shanghai calendar-date range to export, YYYY-MM-DD. Equal to examDateTo for a single day.',
     example: '2026-08-20',
   })
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'examDate must be a YYYY-MM-DD date' })
-  examDate!: string;
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'examDateFrom must be a YYYY-MM-DD date' })
+  examDateFrom!: string;
+
+  @ApiProperty({
+    description:
+      'Inclusive end of the Asia/Shanghai calendar-date range to export, YYYY-MM-DD. The exclusive upper bound is resolved to the start of the NEXT Shanghai day internally, so the end date is fully included.',
+    example: '2026-08-26',
+  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'examDateTo must be a YYYY-MM-DD date' })
+  examDateTo!: string;
 
   @ApiProperty({
     enum: MonitorLevel,

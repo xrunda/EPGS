@@ -122,15 +122,15 @@ describe('ExportModal (issue #139)', () => {
     expect(screen.getByText(/不作为正式诊断依据/)).toBeInTheDocument();
   });
 
-  it('offers one day and four CHECKBOX levels, defaulting to today and 红色关注', () => {
+  it('offers a date range and four CHECKBOX levels, defaulting to today and 红色关注', () => {
     render(<ExportModal open onClose={vi.fn()} />);
 
-    const date = screen.getByLabelText('检查日期') as HTMLInputElement;
     const now = new Date();
     const pad = (value: number): string => String(value).padStart(2, '0');
-    expect(date.value).toBe(
-      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
-    );
+    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    // 两个日期默认都是今天 —— 打开的默认结果与 #157 之前完全一致（一天）。
+    expect((screen.getByLabelText('起始日期') as HTMLInputElement).value).toBe(today);
+    expect((screen.getByLabelText('结束日期') as HTMLInputElement).value).toBe(today);
 
     // 四个等级，文案来自全应用唯一那份映射（attentionSource.ts）
     const options = screen.getAllByRole('checkbox') as HTMLInputElement[];
@@ -155,7 +155,8 @@ describe('ExportModal (issue #139)', () => {
     const fetchMock = installFetch(csvResponse(CSV_BODY, '2'));
     render(<ExportModal open onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('检查日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('起始日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-08-20' } });
     fireEvent.click(screen.getByLabelText('黄色关注'));
     await submitExport();
 
@@ -170,7 +171,8 @@ describe('ExportModal (issue #139)', () => {
     const fetchMock = installFetch(csvResponse(CSV_BODY));
     render(<ExportModal open onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('检查日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('起始日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-08-20' } });
     fireEvent.click(screen.getByLabelText('红色关注')); // 取消默认勾选的红色
     fireEvent.click(screen.getByLabelText('绿色关注'));
     await submitExport();
@@ -183,7 +185,8 @@ describe('ExportModal (issue #139)', () => {
     const fetchMock = installFetch(csvResponse(CSV_BODY, '9'));
     render(<ExportModal open onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('检查日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('起始日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-08-20' } });
     fireEvent.click(screen.getByLabelText('黄色关注'));
     fireEvent.click(screen.getByLabelText('绿色关注'));
     fireEvent.click(screen.getByLabelText('未分级'));
@@ -214,20 +217,25 @@ describe('ExportModal (issue #139)', () => {
     expect(screen.queryByText('至少选择一个关注等级才能导出。')).not.toBeInTheDocument();
   });
 
-  it('sends the chosen day and levels, then saves the file under the agreed name', async () => {
+  it('sends the chosen range and levels, then saves the file under the agreed name', async () => {
     const fetchMock = installFetch(csvResponse(CSV_BODY));
     render(<ExportModal open onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('检查日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('起始日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-08-20' } });
     await submitExport();
 
     const requested = String(fetchMock.mock.calls[0][0]);
     expect(requested).toContain('/api/monitor/export?');
-    expect(requested).toContain('examDate=2026-08-20');
+    expect(requested).toContain('examDateFrom=2026-08-20');
+    expect(requested).toContain('examDateTo=2026-08-20');
+    // 旧参数名发了也没用（服务端 forbidNonWhitelisted），别再发它。
+    expect(requested).not.toContain('examDate=2026');
     expect(requested).toContain('levels=RED');
     expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ credentials: 'include' }));
 
-    // 文件名与后端 monitor-csv.ts 的 csvFileName 是同一形状（双胞胎）
+    // 文件名与后端 monitor-csv.ts 的 csvFileName 是同一形状（双胞胎）：
+    // 单日保持 #157 之前那个名字，逐字节不变。
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(clickedAnchors).toHaveLength(1);
     expect(clickedAnchors[0].download).toBe('数据导出-2026-08-20-红色关注.csv');
@@ -238,7 +246,39 @@ describe('ExportModal (issue #139)', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('已导出 1 条记录');
   });
 
-  it('does not save a header-only file when the day has no matching rows', async () => {
+  it('sends both ends of a multi-day range and names the file with the range (issue #157)', async () => {
+    const fetchMock = installFetch(csvResponse(CSV_BODY, '3'));
+    render(<ExportModal open onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('起始日期'), { target: { value: '2026-08-18' } });
+    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-08-20' } });
+    await submitExport();
+
+    const requested = String(fetchMock.mock.calls[0][0]);
+    expect(requested).toContain('examDateFrom=2026-08-18');
+    expect(requested).toContain('examDateTo=2026-08-20');
+    expect(clickedAnchors[0].download).toBe('数据导出-2026-08-18_2026-08-20-红色关注.csv');
+    expect(await screen.findByRole('status')).toHaveTextContent('已导出 3 条记录');
+  });
+
+  it('disables 导出 with a visible reason when the end date is before the start date', async () => {
+    // 服务端仍然是闸门（400 INVALID_DATE_RANGE），这里只做「别让人白点」。
+    installFetch(csvResponse(CSV_BODY));
+    render(<ExportModal open onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('起始日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-08-18' } });
+
+    expect(screen.getByRole('button', { name: '导出' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('结束日期不能早于起始日期。');
+
+    // 改成合法顺序就必须能点 —— 禁用是状态的函数，不是粘住的标志。
+    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-08-20' } });
+    expect(screen.getByRole('button', { name: '导出' })).not.toBeDisabled();
+    expect(screen.queryByText('结束日期不能早于起始日期。')).not.toBeInTheDocument();
+  });
+
+  it('does not save a header-only file when the range has no matching rows', async () => {
     installFetch(csvResponse('﻿关注等级,患者姓名\r\n', '0'));
     render(<ExportModal open onClose={vi.fn()} />);
 
@@ -246,7 +286,7 @@ describe('ExportModal (issue #139)', () => {
 
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(clickedAnchors).toHaveLength(0);
-    expect(await screen.findByRole('status')).toHaveTextContent('当日没有符合条件的记录');
+    expect(await screen.findByRole('status')).toHaveTextContent('所选日期范围内没有符合条件的记录');
     // 不是错误：当天没有这个等级的患者是常态
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -308,9 +348,13 @@ describe('ExportModal (issue #139)', () => {
     expect(createObjectURL).not.toHaveBeenCalled();
   });
 
-  it('disables 导出 while a date is missing', () => {
+  it('disables 导出 while either date is missing', () => {
     render(<ExportModal open onClose={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText('检查日期'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('起始日期'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: '导出' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('起始日期'), { target: { value: '2026-08-20' } });
+    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '' } });
     expect(screen.getByRole('button', { name: '导出' })).toBeDisabled();
   });
 

@@ -291,15 +291,19 @@ describe('orderExportLevels (issue #145)', () => {
 
 describe('csvFileName', () => {
   it('names the file in the operator’s language, per day and level', () => {
-    expect(csvFileName('2026-08-20', ['RED'])).toBe('数据导出-2026-08-20-红色关注.csv');
-    expect(csvFileName('2026-08-20', ['UNCLASSIFIED'])).toBe('数据导出-2026-08-20-未分级.csv');
+    expect(csvFileName('2026-08-20', '2026-08-20', ['RED'])).toBe(
+      '数据导出-2026-08-20-红色关注.csv',
+    );
+    expect(csvFileName('2026-08-20', '2026-08-20', ['UNCLASSIFIED'])).toBe(
+      '数据导出-2026-08-20-未分级.csv',
+    );
   });
 
   it('joins several levels with `+`, always in the red-to-unclassified order (#145)', () => {
-    expect(csvFileName('2026-08-20', ['RED', 'YELLOW'])).toBe(
+    expect(csvFileName('2026-08-20', '2026-08-20', ['RED', 'YELLOW'])).toBe(
       '数据导出-2026-08-20-红色关注+黄色关注.csv',
     );
-    expect(csvFileName('2026-08-20', ['UNCLASSIFIED', 'RED', 'GREEN'])).toBe(
+    expect(csvFileName('2026-08-20', '2026-08-20', ['UNCLASSIFIED', 'RED', 'GREEN'])).toBe(
       '数据导出-2026-08-20-红色关注+绿色关注+未分级.csv',
     );
   });
@@ -307,26 +311,42 @@ describe('csvFileName', () => {
   it('is a function of the SELECTION, not of the caller’s order or repetitions', () => {
     // The modal sends whatever the operator ticked; the same choice must not be
     // able to download under two different names (and pile up `…(1).csv`).
-    const canonical = csvFileName('2026-08-20', ['RED', 'YELLOW']);
-    expect(csvFileName('2026-08-20', ['YELLOW', 'RED'])).toBe(canonical);
-    expect(csvFileName('2026-08-20', ['YELLOW', 'RED', 'RED', 'YELLOW'])).toBe(canonical);
+    const canonical = csvFileName('2026-08-20', '2026-08-20', ['RED', 'YELLOW']);
+    expect(csvFileName('2026-08-20', '2026-08-20', ['YELLOW', 'RED'])).toBe(canonical);
+    expect(csvFileName('2026-08-20', '2026-08-20', ['YELLOW', 'RED', 'RED', 'YELLOW'])).toBe(
+      canonical,
+    );
+  });
+
+  it('names a multi-day range with both ends, and a single day exactly as before (#157)', () => {
+    expect(csvFileName('2026-08-18', '2026-08-20', ['RED'])).toBe(
+      '数据导出-2026-08-18_2026-08-20-红色关注.csv',
+    );
+    expect(csvFileName('2026-08-18', '2026-08-20', ['YELLOW', 'RED'])).toBe(
+      '数据导出-2026-08-18_2026-08-20-红色关注+黄色关注.csv',
+    );
+    // The degenerate range must not change the pre-#157 name byte-for-byte:
+    // re-running "today" overwrites the same file instead of creating `(1)`.
+    expect(csvFileName('2026-08-20', '2026-08-20', ['RED'])).toBe(
+      '数据导出-2026-08-20-红色关注.csv',
+    );
   });
 });
 
 describe('contentDispositionFor', () => {
   it('sends an ASCII filename and the RFC 5987 UTF-8 form, in that order', () => {
-    expect(contentDispositionFor('2026-08-20', ['RED'])).toBe(
+    expect(contentDispositionFor('2026-08-20', '2026-08-20', ['RED'])).toBe(
       `attachment; filename="monitor-2026-08-20-RED.csv"; ` +
         `filename*=UTF-8''%E6%95%B0%E6%8D%AE%E5%AF%BC%E5%87%BA-2026-08-20-%E7%BA%A2%E8%89%B2%E5%85%B3%E6%B3%A8.csv`,
     );
   });
 
   it('joins the ASCII leg with `-`, so no download manager reads it as a space', () => {
-    expect(contentDispositionFor('2026-08-20', ['RED', 'YELLOW'])).toContain(
+    expect(contentDispositionFor('2026-08-20', '2026-08-20', ['RED', 'YELLOW'])).toContain(
       'filename="monitor-2026-08-20-RED-YELLOW.csv"',
     );
     // …and the Chinese leg keeps the `+` a human would write.
-    expect(contentDispositionFor('2026-08-20', ['RED', 'YELLOW'])).toContain(
+    expect(contentDispositionFor('2026-08-20', '2026-08-20', ['RED', 'YELLOW'])).toContain(
       `${encodeURIComponent('红色关注+黄色关注')}.csv`,
     );
   });
@@ -334,18 +354,27 @@ describe('contentDispositionFor', () => {
   it('keeps the plain filename leg free of non-ASCII bytes', () => {
     // A client that ignores filename* must still get a usable name, and an
     // intermediary that assumes Latin-1 must still see a valid header.
-    const header = contentDispositionFor('2026-08-20', ['YELLOW']);
+    const header = contentDispositionFor('2026-08-20', '2026-08-20', ['YELLOW']);
     const plain = /filename="([^"]*)"/.exec(header)?.[1] ?? '';
     expect(plain).toBe('monitor-2026-08-20-YELLOW.csv');
     expect(/^[\x20-\x7e]*$/.test(plain)).toBe(true);
+  });
+
+  it('carries a multi-day range into both filename legs (#157)', () => {
+    const header = contentDispositionFor('2026-08-18', '2026-08-20', ['RED']);
+    expect(header).toContain('filename="monitor-2026-08-18_2026-08-20-RED.csv"');
+    const utf8 = /filename\*=UTF-8''([^;]*)$/.exec(header)?.[1] ?? '';
+    expect(decodeURIComponent(utf8)).toBe('数据导出-2026-08-18_2026-08-20-红色关注.csv');
   });
 
   it('reads the same for a two-level selection as csvFileName does', () => {
     // The header and the modal's `anchor.download` name must agree - the twin
     // contract in the module comment. Boundary: '+' in the Chinese leg would be
     // percent-encoded by a naive encoder, so assert on the decoded value.
-    const header = contentDispositionFor('2026-08-20', ['RED', 'YELLOW']);
+    const header = contentDispositionFor('2026-08-20', '2026-08-20', ['RED', 'YELLOW']);
     const utf8 = /filename\*=UTF-8''([^;]*)$/.exec(header)?.[1] ?? '';
-    expect(decodeURIComponent(utf8)).toBe(csvFileName('2026-08-20', ['RED', 'YELLOW']));
+    expect(decodeURIComponent(utf8)).toBe(
+      csvFileName('2026-08-20', '2026-08-20', ['RED', 'YELLOW']),
+    );
   });
 });

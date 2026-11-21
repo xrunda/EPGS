@@ -218,7 +218,8 @@ export function orderExportLevels(levels: readonly string[]): string[] {
 }
 
 /**
- * The download filename, e.g. `数据导出-2026-08-20-红色关注+黄色关注.csv`.
+ * The download filename, e.g. `数据导出-2026-08-20-红色关注+黄色关注.csv`
+ * (a range since #157: `数据导出-2026-08-20_2026-08-26-红色关注.csv`).
  *
  * One name per SELECTION (see `orderExportLevels`), so re-running the same
  * choice overwrites the same file instead of piling up `…(1).csv`.
@@ -228,11 +229,28 @@ export function orderExportLevels(levels: readonly string[]): string[] {
  * download), so the two must produce the same string. The server still sends
  * the header for the clients that DO use it - `curl -OJ`, a direct browser GET.
  */
-export function csvFileName(examDate: string, levels: readonly MonitorLevel[]): string {
+export function csvFileName(
+  examDateFrom: string,
+  examDateTo: string,
+  levels: readonly MonitorLevel[],
+): string {
   const labels = orderExportLevels(levels).map(
     (level) => CSV_LEVEL_LABELS[level as MonitorLevel] ?? level,
   );
-  return `数据导出-${examDate}-${labels.join('+')}.csv`;
+  return `数据导出-${exportDateLabel(examDateFrom, examDateTo)}-${labels.join('+')}.csv`;
+}
+
+/**
+ * The date part of a file name: one date for a single day, `from_to` for a
+ * range. A single day keeps the pre-#157 name byte-for-byte, so a re-run of
+ * "today" overwrites the same file instead of creating a second one.
+ *
+ * `_` rather than `~`/`to`: it is an RFC 5987 `attr-char` (safe unescaped in
+ * Content-Disposition), unchanged by percent-encoding, and it cannot be
+ * confused with the `-` that separates the date from the levels.
+ */
+export function exportDateLabel(examDateFrom: string, examDateTo: string): string {
+  return examDateFrom === examDateTo ? examDateFrom : `${examDateFrom}_${examDateTo}`;
 }
 
 /**
@@ -257,13 +275,17 @@ function encodeAttrValue(value: string): string {
  * because `+` is a legal `attr-char` but reads as a space in some download
  * managers; the Chinese form keeps `+`, which is how a human writes "红+黄".
  *
- * `examDate` has already passed the DTO's `^\d{4}-\d{2}-\d{2}$` check and every
- * entry of `levels` is an enum member, so neither can carry a CR/LF or a `"`
- * into the header. The encoder is belt-and-braces on top of that rather than
- * the defence itself.
+ * `examDateFrom`/`examDateTo` have already passed the DTO's `^\d{4}-\d{2}-\d{2}$`
+ * check and every entry of `levels` is an enum member, so neither can carry a
+ * CR/LF or a `"` into the header. The encoder is belt-and-braces on top of that
+ * rather than the defence itself.
  */
-export function contentDispositionFor(examDate: string, levels: readonly MonitorLevel[]): string {
+export function contentDispositionFor(
+  examDateFrom: string,
+  examDateTo: string,
+  levels: readonly MonitorLevel[],
+): string {
   const ordered = orderExportLevels(levels) as MonitorLevel[];
-  const ascii = `monitor-${examDate}-${ordered.join('-')}.csv`;
-  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeAttrValue(csvFileName(examDate, ordered))}`;
+  const ascii = `monitor-${exportDateLabel(examDateFrom, examDateTo)}-${ordered.join('-')}.csv`;
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeAttrValue(csvFileName(examDateFrom, examDateTo, ordered))}`;
 }

@@ -107,6 +107,13 @@
   gap: 18px;
   padding: 20px 28px 24px;
 }
+/* 起止日期并排（issue #157）：两个日期同属一个条件，分成上下两行会让人以为
+   是两个独立筛选。窄屏（<=420px）由下面的媒体查询改成上下排列。 */
+.export-form__dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
 .export-form__date {
   display: grid;
   gap: 6px;
@@ -230,9 +237,13 @@
   gap: 10px;
 }
 
-/* 极窄屏（手机/小窗）等级改 2×2，四项横排会被压到读不出字。 */
+/* 极窄屏（手机/小窗）等级改 2×2，四项横排会被压到读不出字；起止日期也改成
+   上下排列，避免 native date 控件被压到只剩年份。 */
 @media (max-width: 520px) {
   .export-form__levels {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .export-form__dates {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { BadRequestException } from '@nestjs/common';
 import { MonitorLevel } from '@prisma/client';
 import { MonitorService, MONITOR_EXPORT_MAX_ROWS } from './monitor.service';
 import { MonitorExportTooLargeException } from './errors/monitor-export-too-large.exception';
@@ -354,10 +355,60 @@ describe('MonitorService', () => {
       ];
     }
 
+    it('resolves a multi-day range inclusively on both ends (issue #157)', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-22',
+        levels: ['RED'],
+      });
+
+      // resolveDateRange advances only the UPPER bound by one day, so the end
+      // date's own 23:59 is inside the file and the next day is not.
+      expect(prisma.monitorRecord.findMany.mock.calls[0][0].where.examTime).toEqual({
+        gte: new Date('2026-08-19T16:00:00Z'), // 2026-08-20 00:00 +08:00
+        lt: new Date('2026-08-22T16:00:00Z'), // 2026-08-23 00:00 +08:00 (exclusive)
+      });
+    });
+
+    it('rejects an inverted range with INVALID_DATE_RANGE, before touching the DB', async () => {
+      // Server-side, so a hand-crafted URL cannot get an empty 200 file that
+      // looks like "no records in that period".
+      const error = await service
+        .exportRange({
+          examDateFrom: '2026-08-22',
+          examDateTo: '2026-08-20',
+          levels: ['RED'],
+        })
+        .then(() => null)
+        .catch((thrown) => thrown);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'INVALID_DATE_RANGE' }));
+      expect(prisma.monitorRecord.findMany).not.toHaveBeenCalled();
+    });
+
+    it('allows from === to - the pre-#157 single-day call is just the degenerate range', async () => {
+      prisma.monitorRecord.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.exportRange({
+          examDateFrom: '2026-08-20',
+          examDateTo: '2026-08-20',
+          levels: ['RED'],
+        }),
+      ).resolves.toMatchObject({ rowCount: 0 });
+    });
+
     it('resolves ONE day: examDateFrom === examDateTo, upper bound is the next Shanghai 00:00', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
+      await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: ['RED'],
+      });
 
       const where = prisma.monitorRecord.findMany.mock.calls[0][0].where;
       // Regression guard for the trap: resolveDateRange already advances the
@@ -375,7 +426,11 @@ describe('MonitorService', () => {
     it('carries the whole selection through and nothing else from the filter surface', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', levels: ['RED', 'YELLOW', 'GREEN'] });
+      await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: ['RED', 'YELLOW', 'GREEN'],
+      });
 
       expect(prisma.monitorRecord.findMany.mock.calls[0][0].where).toEqual({
         examTime: {
@@ -393,8 +448,9 @@ describe('MonitorService', () => {
       // dropping the unknown value would export the wrong rows with a 200.
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({
-        examDate: '2026-08-20',
+      await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
         levels: ['RED', 'PURPLE' as MonitorLevel],
       });
 
@@ -410,7 +466,11 @@ describe('MonitorService', () => {
       // this pins that the service keeps the clause rather than dropping it.
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', levels: [] });
+      await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: [],
+      });
 
       const where = prisma.monitorRecord.findMany.mock.calls[0][0].where;
       expect(where.currentLevel).toEqual({ in: [] });
@@ -420,7 +480,10 @@ describe('MonitorService', () => {
     it('applies the caller department scope', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] }, { scope: ['消化内科'] });
+      await service.exportRange(
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: ['RED'] },
+        { scope: ['消化内科'] },
+      );
 
       expect(prisma.monitorRecord.findMany.mock.calls[0][0].where.department).toEqual({
         in: ['消化内科'],
@@ -430,7 +493,11 @@ describe('MonitorService', () => {
     it('reads at most MAX+1 rows, with no pagination and no count round-trip', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
+      await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: ['RED'],
+      });
 
       const args = prisma.monitorRecord.findMany.mock.calls[0][0];
       // +1 is the overflow probe: it distinguishes "exactly MAX" from "more
@@ -446,7 +513,11 @@ describe('MonitorService', () => {
     it('orders the file like the workbench list', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
+      await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: ['RED'],
+      });
 
       expect(prisma.monitorRecord.findMany.mock.calls[0][0].orderBy).toEqual([
         { examTime: { sort: 'desc', nulls: 'last' } },
@@ -458,7 +529,11 @@ describe('MonitorService', () => {
     it('selects the patient phone and the report fields - the one place LIST_SELECT is not enough', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
+      await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: ['RED'],
+      });
 
       const select = prisma.monitorRecord.findMany.mock.calls[0][0].select;
       expect(select.patientPhone).toBe(true);
@@ -487,7 +562,11 @@ describe('MonitorService', () => {
     it('keeps the effective hit set: matches exclude AI-semantic-filtered keywords', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
+      await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: ['RED'],
+      });
 
       const select = prisma.monitorRecord.findMany.mock.calls[0][0].select;
       expect(select.matches.select.keyword).toBe(true);
@@ -497,7 +576,11 @@ describe('MonitorService', () => {
     it('returns the CSV bytes with the row count', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue(twoRows());
 
-      const result = await service.exportDay({ examDate: '2026-08-20', levels: ['RED'] });
+      const result = await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: ['RED'],
+      });
 
       expect(result.rowCount).toBe(2);
       const text = result.body.toString('utf8');
@@ -514,14 +597,22 @@ describe('MonitorService', () => {
       );
 
       await expect(
-        service.exportDay({ examDate: '2026-08-20', levels: ['RED'] }),
+        service.exportRange({
+          examDateFrom: '2026-08-20',
+          examDateTo: '2026-08-20',
+          levels: ['RED'],
+        }),
       ).rejects.toBeInstanceOf(MonitorExportTooLargeException);
     });
 
     it('exports a header-only file for a day with no matching rows', async () => {
       prisma.monitorRecord.findMany.mockResolvedValue([]);
 
-      const result = await service.exportDay({ examDate: '2026-08-20', levels: ['GREEN'] });
+      const result = await service.exportRange({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: ['GREEN'],
+      });
 
       expect(result.rowCount).toBe(0);
       expect(result.body.toString('utf8')).toBe(

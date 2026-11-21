@@ -1,0 +1,34 @@
+# EPGS worker —— 由 deploy/install-systemd.sh 从本模板渲染到
+# /etc/systemd/system/epgs-worker.service。请勿直接编辑渲染后的副本。
+#
+# 与 epgs-api.service 同源（issue #155）。worker 承担 PACS 同步、关键词匹配、
+# AI 判读与企微推送：它停摆时界面看起来正常、数据却是旧的，所以「死了没人
+# 知道」的代价比 api 更大 —— 2026-11-21 事故里它静默停了约 30 小时。
+
+[Unit]
+Description=EPGS worker (PACS sync / matching / push, :3001)
+Documentation=https://github.com/xrunda/EPGS/issues/155
+# 不写 After=postgresql.service 之外的强依赖：Postgres 短暂不可用时
+# worker 自己会重连，不需要连带重启。
+After=network-online.target postgresql.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO_ROOT__
+# 与 start.sh 里的 `env PORT=3001 pnpm --filter worker run start:prod` 等价。
+# 环境变量优先于 .env（dotenv 不覆盖已存在的进程环境），所以不会与
+# apps/worker/.env 里的 PORT 冲突。
+Environment=PORT=3001
+ExecStart=__PNPM_BIN__ --filter worker run start:prod
+KillMode=control-group
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=epgs-worker
+
+[Install]
+WantedBy=multi-user.target

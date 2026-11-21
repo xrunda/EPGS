@@ -57,9 +57,11 @@ jobs:
           bash -n start.sh
 
           pull_line=$(grep -n 'git pull --ff-only' start.sh | head -1 | cut -d: -f1)
-          stop_line=$(grep -n '^stop_all$' start.sh | head -1 | cut -d: -f1)
+          # 取 pull 之后的第一个 stop_all：`bash start.sh stop` 子命令里也有一次停服务
+          # 调用（它本来就不跑 pull，且随即 exit），不能用 head -1 直接取第一处。
+          stop_line=$(awk -v p="$pull_line" '/^[[:space:]]*stop_all$/ && NR > p {print NR; exit}' start.sh)
           echo "git pull at line $pull_line, stop_all at line $stop_line"
-          test -n "$pull_line" && test -n "$stop_line" && [ "$pull_line" -lt "$stop_line" ]
+          test -n "$pull_line" && test -n "$stop_line"
 
           # EADDRINUSE 必须让脚本失败，不能报「启动完成」。
           grep -q 'EADDRINUSE' start.sh
@@ -83,6 +85,53 @@ jobs:
             echo "::error::pull 失败前就把服务停了（issue #153 回归）"
             exit 1
           fi
+
+      # Issue #155: systemd 托管。2026-11-21 的事故根因是 api/worker 以裸
+      # nohup 进程运行——手工拉起后随 SSH 会话消失，全院内网 502 约 30 小时
+      # 无人发现。这里钉住三件事：unit 模板在、安装脚本语法正确、start.sh
+      # 真的会在 unit 存在时切到 systemctl（同时保留 nohup 回退）。
+      - name: Deploy script guards (systemd units)
+        run: |
+          set -euo pipefail
+          for unit in api worker nginx; do
+            test -f "deploy/systemd/epgs-${unit}.service.template"
+          done
+          bash -n deploy/install-systemd.sh
+
+          # 崩溃后必须自动拉起，否则托管就失去意义。
+          grep -q '^Restart=always' deploy/systemd/epgs-api.service.template
+          grep -q '^Restart=always' deploy/systemd/epgs-worker.service.template
+          # systemd 模式下也必须整组杀，避免 #129/#153 的孤儿进程问题。
+          grep -q '^KillMode=control-group' deploy/systemd/epgs-api.service.template
+          # nginx 配置是生成物：启动前必须重新校验语法。
+          grep -q 'ExecStartPre=.*nginx -t' deploy/systemd/epgs-nginx.service.template
+
+          # start.sh 同时具备两条路径：有 unit 走 systemctl，没有则回退 nohup。
+          grep -Eq 'systemctl (start|restart) epgs-api\.service' start.sh
+          grep -q 'nohup pnpm --filter api run start:prod' start.sh
+
+      # Issue #155: 真正渲一遍 unit，确认占位符全部被替换、关键指令落在正确位置。
+      # 渲染失败或残留 __XXX__ 的 unit 会让机器在重启后起不来，必须在 CI 挡住。
+      - name: Render systemd units (issue #155)
+        run: |
+          set -euo pipefail
+          out=$(mktemp -d)
+          UNIT_DIR="$out" RENDER_ONLY=1 \
+            PNPM_BIN=/usr/bin/pnpm NGINX_BIN=/usr/sbin/nginx \
+            bash deploy/install-systemd.sh
+
+          for unit in api worker nginx; do
+            test -s "$out/epgs-${unit}.service"
+            if grep -q '__[A-Z_]*__' "$out/epgs-${unit}.service"; then
+              echo "::error::epgs-${unit}.service 仍有未替换的占位符"
+              grep -n '__[A-Z_]*__' "$out/epgs-${unit}.service"
+              exit 1
+            fi
+          done
+
+          grep -q '^ExecStart=/usr/bin/pnpm --filter api run start:prod$' "$out/epgs-api.service"
+          grep -q '^Environment=PORT=3001$' "$out/epgs-worker.service"
+          grep -q "^PIDFile=$PWD/.run-nginx.pid$" "$out/epgs-nginx.service"
 
       - name: Typecheck
         run: pnpm run typecheck

@@ -37,6 +37,67 @@
 > 该机与旧机的差异**只在 PostgreSQL 形态**（§1.1 上表），其余步骤相同；两台上都可用同一条
 > `bash start.sh` 重启，不需要带 `PG_MODE`。
 
+### 1.2 进程托管：systemd（issue #155）
+
+**背景**：2026-11-21 全院 502 事故（§2.7）。api/worker 此前是 `nohup pnpm … &` 起的裸进程：
+不自启、不崩溃重启、手工拉起时随 SSH 会话消失。事故里两个进程静默停了约 30 小时无人发现。
+
+现在提供三个 systemd unit（模板在 `deploy/systemd/`，由脚本渲染后安装到
+`/etc/systemd/system/`）：
+
+| unit                | 作用                                         | 关键配置                                                         |
+| ------------------- | -------------------------------------------- | ---------------------------------------------------------------- |
+| `epgs-api.service`  | API，`:3000`                                 | `Restart=always`、`RestartSec=5`、`KillMode=control-group`        |
+| `epgs-worker.service` | 同步/匹配/推送，`:3001`                    | 同上 + `Environment=PORT=3001`                                    |
+| `epgs-nginx.service` | 单端口反代，读 `.run-nginx.conf`             | `Type=forking` + `PIDFile`、`ExecStartPre=nginx -t`、`ExecStop=-s quit` |
+
+**安装（一次性，需要 root；建议在成功跑过一次 `start.sh` 之后）**：
+
+```bash
+sudo bash deploy/install-systemd.sh          # 只安装 + enable，不动运行中的服务
+cd /root/EPGS && bash start.sh nopull        # start.sh 检测到 unit 后改用 systemctl 重启
+```
+
+`install-systemd.sh` 会做这几件事：
+
+- 解析 `pnpm` / `nginx` 的**绝对路径**并写进 unit（systemd 的 `ExecStart` 不接受 PATH 查找）
+- 检测并 `disable --now` 发行版自带的 `nginx.service`（它会和本项目独立的 5173 配置抢资源）
+- 渲染三个 unit → `systemctl daemon-reload` → `systemctl enable`
+
+**两种模式并存**：`start.sh` 每次运行都会检查 `/etc/systemd/system/epgs-*.service`。
+存在则走 `systemctl restart`，不存在则退回原来的 `nohup` 路径并在结尾打印提示。
+所以升级部署方式**不需要停服务**，也不会因为漏装 unit 而让脚本失效。
+
+**日志位置变了**：
+
+```bash
+sudo journalctl -u epgs-api -n 200 --no-pager
+sudo journalctl -u epgs-worker -f
+sudo journalctl -u epgs-nginx -n 50 --no-pager
+```
+
+nohup 模式下继续写 `.run-logs/api.log`、`.run-logs/worker.log`。
+
+**验证自愈**（约 5 秒后应自动恢复）：
+
+```bash
+sudo systemctl kill -s KILL epgs-api && sleep 8 && systemctl is-active epgs-api
+```
+
+**回滚到 nohup 模式**：
+
+```bash
+sudo systemctl disable --now epgs-nginx epgs-worker epgs-api
+sudo rm -f /etc/systemd/system/epgs-{api,worker,nginx}.service
+sudo systemctl daemon-reload
+cd /root/EPGS && bash start.sh nopull
+```
+
+> 注意：`.env` 仍由应用自己经 `@nestjs/config` 读取（`pnpm --filter` 会把 cwd 切到包目录），
+> unit 里**没有** `EnvironmentFile` —— 避免 systemd 与 dotenv 对引号/转义/注释的解析差异
+> 形成两份事实来源。
+
+
 ## 2. 故障记录
 
 > **本节是历史记录，不是操作指引。** 里面的 IP（`10.10.10.91`）、路径（`/data/epgs-git`）与容器名都是**旧堡垒机**的；按原样照抄会指到不存在的主机上。当前环境见 §1.1。
@@ -83,6 +144,23 @@
 - start.sh 里那段按端口的清扫**保留为防御**：它仍清得掉改造之前遗留的 watch 孤儿和有人在机器上
   手工起的进程，代价只有一次 `ss`。
 
+### 2.7 api/worker 静默消失，全院 502 约 30 小时（2026-11-21）
+
+- 现象：医院内网登录报「操作失败，请稍后重试」；浏览器 Network 里 `POST /api/auth/login` 是
+  **502 Bad Gateway**（`Server: nginx`）。静态页面能正常打开。
+- 排查：`curl localhost:3000/health` 与 `:3001/health` 均返回 `000`；`uptime -s` 显示机器 58 天未重启；
+  `dmesg` 无 OOM；`.run-pids`、`api.log`、`worker.log` 的 mtime 全部停在 11-20 04:17–04:20。
+- 根因：11-20 的 GnuTLS 事故（#153）里，旧版 `start.sh` 先停服务再 pull，pull 失败后服务已停；
+  抢修时有人在 **SSH 会话里手工**把 api/worker 拉起来——进程没有脱离登录会话，SSH 断开即随之
+  消失。nginx 是 `sudo nginx -c` 起的，独立存活，于是对外持续 502。
+- 影响：11-20 04:20 → 11-21 10:40 约 30 小时内，PACS 同步、关键词匹配、AI 判读、企微推送全部停摆，
+  无人收到任何告警。
+- 修复：issue #155 —— 三个 unit + `deploy/install-systemd.sh`，见 §1.2。
+- 教训：
+  1. **服务进程必须脱离登录会话**。`nohup` 只挡住 SIGHUP 的一部分场景；真正可靠的是 systemd。
+  2. **nginx 活着不等于系统活着**。反代与后端是两条独立生命周期，502 就是在说「后端没了」。
+  3. **「没人知道」比「挂了」更贵**。没有自动拉起与告警，一次手工停服等于整夜瘫痪。
+
 ## 3. start.sh 运维要点
 
 - 用法：`bash start.sh`（git pull + 重启）/ `bash start.sh nopull`（改完 .env 快速重启）/ `bash start.sh stop`
@@ -96,6 +174,7 @@
 - 构建（#129）：一条 `pnpm run build` 构建**全部产物** —— `build:libs`（shared-types / matching-engine / ai-semantic / notification-push）加上 web、api、worker。**每次启动都重新构建，不做「`dist` 已存在就跳过」的优化**：拿陈旧产物启动（代码是上一版、迁移已经跑过）比起得慢几十秒危险得多
 - `LISTEN_PORT` 默认沿用 5173；换端口用 `LISTEN_PORT=xxxx bash start.sh nopull`
 - Nginx：`nginx -t -c` 通过再 reload
+- 进程托管（#155）：安装过 `deploy/install-systemd.sh` 后自动改用 `systemctl restart epgs-{api,worker,nginx}`，日志转 `journalctl -u …`；未安装则保持 nohup 并在结尾提示。详见 §1.2
 - **服务用 `start:prod`（`node dist/main.js`）拉起（#129）**，不再用 `start:dev`（`nest start --watch`）：生产不需要改代码即时生效，而 watch 派生出的 `dist/main` 子进程会在父进程被杀后存活并占住端口（§2.6）。改成 dist 启动后 **api/worker 必须先构建**，这就是上面那条「全部产物」步骤的由来。
 - `.env` 解析路径不受 #129 影响：两个 app 的 `ConfigModule.forRoot` 都**没有**写 `envFilePath`，dotenv 按**进程 cwd** 加载 `.env`；而 `pnpm --filter <pkg> run <script>` 的 cwd 无论哪个脚本都是包目录本身。若哪天改成从仓库根直接 `node apps/api/dist/main.js`，这条就不再成立——需显式指定。
 

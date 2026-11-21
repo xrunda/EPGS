@@ -439,7 +439,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       await plain.get('/api/monitor/summary').expect(401);
       await plain
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', levels: 'RED' })
+        .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED' })
         .expect(401);
       await plain.get('/api/rules').expect(401);
       await plain.get('/api/audit').expect(401);
@@ -614,7 +614,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     for (const key of ['viewer', 'sysAdmin', 'ruleAdmin'] as const) {
       const res = await agents[key]
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', levels: 'RED' })
+        .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED' })
         .expect(403);
       // NOT plain FORBIDDEN: the role gate passed, the grant gate refused.
       expect(res.body.error.code).toBe('PATIENT_DETAIL_REQUIRED');
@@ -630,7 +630,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     await expectForbidden(
       await agents.auditor
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', levels: 'RED' }),
+        .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED' }),
     );
   });
 
@@ -639,7 +639,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     async () => {
       const res = await agents.viewerFull
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', levels: 'RED' })
+        .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED' })
         .expect(200);
 
       expect(res.headers['content-type']).toContain('text/csv');
@@ -674,13 +674,15 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
         take: 1,
       });
       expect(rows).toHaveLength(1);
-      // The row answers "who took a copy of which day and levels, how many
-      // rows" - and holds nothing else. No patient field, and not the file.
-      // An array since #145: one export of "red+yellow" is one row here, and
-      // that row is the only thing that tells an auditor how wide the copy was.
+      // The row answers "who took a copy of which date range and levels, how
+      // many rows" - and holds nothing else. No patient field, and not the
+      // file. An array since #145: one export of "red+yellow" is one row here,
+      // and that row is the only thing that tells an auditor how wide the copy
+      // was. Both ends since #157, so the range is reconstructable too.
       expect(rows[0].meta).toEqual({
         scope: ['消化内科'],
-        examDate: '2026-08-20',
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
         levels: ['RED'],
         rowCount: 1,
       });
@@ -697,7 +699,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
       // export happened". Two levels, one row, the levels in canonical order.
       const res = await agents.viewerFull
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', levels: 'YELLOW,RED' })
+        .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'YELLOW,RED' })
         .expect(200);
 
       expect(res.headers['content-type']).toContain('text/csv');
@@ -724,7 +726,7 @@ describe('Security (e2e, real Postgres): roles, scope, masking, audit', () => {
     // file, not a filtered one.
     const res = await agents.viewerFull
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-20', levels: 'GREEN' })
+      .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'GREEN' })
       .expect(200);
     expect(res.headers['x-row-count']).toBe('0');
     expect(res.text).not.toContain('测试患者丙');

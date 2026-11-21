@@ -852,7 +852,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     expect(impossible.body.error.code).toBe('INVALID_DATE_PARAM');
   });
 
-  // --- Issue #139: the single-day CSV export ------------------------------
+  // --- Issue #139: the CSV export (date range since #157) ------------------
 
   /**
    * The exact column order the file must have. Spelled out as one string so a
@@ -907,7 +907,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     async () => {
       const res = await agent
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', levels: 'RED' })
+        .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED' })
         .expect(200);
 
       expect(res.headers['content-type']).toContain('text/csv');
@@ -971,7 +971,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     try {
       const res = await agent
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', levels: 'RED' })
+        .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED' })
         .expect(200);
 
       // The cell is quoted, and the embedded CRLFs survive verbatim...
@@ -994,7 +994,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // R3 (Shanghai 08-20 00:30) is IN 08-20; R6 (08-19 20:00) is not.
     const day = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-20', levels: 'GREEN' })
+      .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'GREEN' })
       .expect(200);
     expect(day.text).toContain('测试患者丙');
     expect(day.text).not.toContain('测试患者己');
@@ -1002,7 +1002,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // R11 is exactly 2026-08-18T00:00+08: the lower bound is inclusive...
     const midnight = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-18', levels: 'GREEN' })
+      .query({ examDateFrom: '2026-08-18', examDateTo: '2026-08-18', levels: 'GREEN' })
       .expect(200);
     expect(midnight.text).toContain('测试患者癸');
     expect(midnight.text).toContain(',2026-08-18,00:00:00,');
@@ -1013,7 +1013,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // examDateTo = D+1 anywhere would make this day return R11 and R12.
     const previousDay = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-17', levels: 'GREEN' })
+      .query({ examDateFrom: '2026-08-17', examDateTo: '2026-08-17', levels: 'GREEN' })
       .expect(200);
     expect(previousDay.headers['x-row-count']).toBe('0');
     expect(csvDataLines(previousDay.text)).toHaveLength(0);
@@ -1021,7 +1021,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // R12 (08-17 23:59) belongs to 08-17, not to 08-18.
     const lastMinute = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-17', levels: 'UNCLASSIFIED' })
+      .query({ examDateFrom: '2026-08-17', examDateTo: '2026-08-17', levels: 'UNCLASSIFIED' })
       .expect(200);
     expect(lastMinute.text).toContain('测试患者子');
     expect(lastMinute.text).toContain(',2026-08-17,23:59:00,');
@@ -1033,38 +1033,46 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // never a 404 and never an error.
     const res = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-20', levels: 'UNCLASSIFIED' })
+      .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'UNCLASSIFIED' })
       .expect(200);
 
     expect(res.headers['x-row-count']).toBe('0');
     expect(res.text).toBe(`\uFEFF${CSV_HEADER}\r\n`);
   });
 
-  itWithDb('export rejects anything that is not one day and a known level selection', async () => {
-    const cases = [
-      {}, // both missing
-      { examDate: '2026-08-20' }, // no levels
-      { levels: 'RED' }, // no day
-      { examDate: '2026-08-20', levels: 'BLUE' }, // unknown level
-      { examDate: '2026-08-20', levels: 'RED,BLUE' }, // one good, one unknown
-      { examDate: '2026-08-20', levels: 'red' }, // codes are upper-case
-      { examDate: '2026-08-20', levels: '红色关注' }, // the label is not the code
-      { examDate: '2026-08-20', levels: '' }, // asked for, but nothing in it
-      { examDate: '2026-08-20', levels: ', ,' }, // only separators
-      { examDate: '2026/08/20', levels: 'RED' }, // wrong date shape
-      // The pre-#145 contract is deliberately gone rather than aliased: keeping
-      // the singular name would leave the single-level API in place forever.
-      { examDate: '2026-08-20', level: 'RED' },
-      // forbidNonWhitelisted: the workbench's filter surface cannot be smuggled
-      // in through this route, so "one day, the ticks the modal showed" stays a
-      // server rule - a hand-written URL cannot ask for a wider file.
-      { examDate: '2026-08-20', levels: 'RED', page: '1' },
-      { examDate: '2026-08-20', levels: 'RED', department: '消化内科' },
-    ];
-    for (const query of cases) {
-      await agent.get('/api/monitor/export').query(query).expect(400);
-    }
-  });
+  itWithDb(
+    'export rejects anything that is not a valid date range and a known level selection',
+    async () => {
+      const cases = [
+        {}, // both missing
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20' }, // no levels
+        { levels: 'RED' }, // no day
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'BLUE' }, // unknown level
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED,BLUE' }, // one good, one unknown
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'red' }, // codes are upper-case
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: '红色关注' }, // the label is not the code
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: '' }, // asked for, but nothing in it
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: ', ,' }, // only separators
+        { examDateFrom: '2026/08/20', examDateTo: '2026/08/20', levels: 'RED' }, // wrong date shape
+        // The pre-#145 contract is deliberately gone rather than aliased: keeping
+        // the singular name would leave the single-level API in place forever.
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20', level: 'RED' },
+        // forbidNonWhitelisted: the workbench's filter surface cannot be smuggled
+        // in through this route, so "one day, the ticks the modal showed" stays a
+        // server rule - a hand-written URL cannot ask for a wider file.
+        { examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED', page: '1' },
+        {
+          examDateFrom: '2026-08-20',
+          examDateTo: '2026-08-20',
+          levels: 'RED',
+          department: '消化内科',
+        },
+      ];
+      for (const query of cases) {
+        await agent.get('/api/monitor/export').query(query).expect(400);
+      }
+    },
+  );
 
   itWithDb('export carries EVERY ticked level in one file (issue #145)', async () => {
     // Shanghai 08-20: R1/R8/R9 RED, R2/R4/R5/R10 YELLOW, R3 GREEN. Two levels
@@ -1072,7 +1080,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // it must not quietly fall back to the first (or the last) level ticked.
     const res = await agent
       .get('/api/monitor/export')
-      .query({ examDate: '2026-08-20', levels: 'RED,YELLOW' })
+      .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED,YELLOW' })
       .expect(200);
 
     expect(res.headers['x-row-count']).toBe('7');
@@ -1099,11 +1107,19 @@ describe('Monitor API (e2e, real Postgres)', () => {
     // `YELLOW,RED,RED` must yield the same bytes AND the same file name as
     // `RED,YELLOW` - otherwise the same choice piles up `…(1).csv` in Downloads.
     const [canonical, shuffled, repeated] = await Promise.all([
-      agent.get('/api/monitor/export').query({ examDate: '2026-08-20', levels: 'RED,YELLOW' }),
-      agent.get('/api/monitor/export').query({ examDate: '2026-08-20', levels: 'YELLOW,RED' }),
       agent
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', levels: 'YELLOW,RED,RED,YELLOW,RED' }),
+        .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'RED,YELLOW' }),
+      agent
+        .get('/api/monitor/export')
+        .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'YELLOW,RED' }),
+      agent
+        .get('/api/monitor/export')
+        .query({
+          examDateFrom: '2026-08-20',
+          examDateTo: '2026-08-20',
+          levels: 'YELLOW,RED,RED,YELLOW,RED',
+        }),
     ]);
 
     for (const res of [canonical, shuffled, repeated]) {
@@ -1124,7 +1140,11 @@ describe('Monitor API (e2e, real Postgres)', () => {
       // the five files, which is why this day totals 8 and not 9.)
       const all = await agent
         .get('/api/monitor/export')
-        .query({ examDate: '2026-08-20', levels: 'RED,YELLOW,GREEN,UNCLASSIFIED' })
+        .query({
+          examDateFrom: '2026-08-20',
+          examDateTo: '2026-08-20',
+          levels: 'RED,YELLOW,GREEN,UNCLASSIFIED',
+        })
         .expect(200);
 
       expect(all.headers['x-row-count']).toBe('8');
@@ -1134,7 +1154,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
         ['RED', 'YELLOW', 'GREEN', 'UNCLASSIFIED'].map((level) =>
           agent
             .get('/api/monitor/export')
-            .query({ examDate: '2026-08-20', levels: level })
+            .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: level })
             .expect(200),
         ),
       );
@@ -1147,6 +1167,58 @@ describe('Monitor API (e2e, real Postgres)', () => {
       expect(singles[3].headers['x-row-count']).toBe('0');
     },
   );
+
+  itWithDb(
+    'export of a date range is exactly the union of its days, both ends included (issue #157)',
+    async () => {
+      // The strongest statement of correctness is the same partition argument
+      // as #145: a four-day file holds exactly the rows the four single-day
+      // files hold - no more, no fewer. That pins the inclusive lower bound and
+      // the "next day 00:00" exclusive upper bound together.
+      const days = ['2026-08-17', '2026-08-18', '2026-08-19', '2026-08-20'];
+      const levels = 'RED,YELLOW,GREEN,UNCLASSIFIED';
+      const range = await agent
+        .get('/api/monitor/export')
+        .query({ examDateFrom: days[0], examDateTo: days[days.length - 1], levels })
+        .expect(200);
+
+      const perDay = await Promise.all(
+        days.map((day) =>
+          agent
+            .get('/api/monitor/export')
+            .query({ examDateFrom: day, examDateTo: day, levels })
+            .expect(200),
+        ),
+      );
+
+      const rangeLines = csvDataLines(range.text);
+      const dayLines = perDay.flatMap((res) => csvDataLines(res.text));
+      expect([...rangeLines].sort()).toEqual([...dayLines].sort());
+
+      // X-Row-Count is the sum of the days, not just the last day's count.
+      const expected = perDay.reduce((total, res) => total + Number(res.headers['x-row-count']), 0);
+      expect(range.headers['x-row-count']).toBe(String(expected));
+      expect(expected).toBeGreaterThan(0);
+
+      // The file name carries both ends; the ASCII leg is RFC 5987-safe.
+      expect(range.headers['content-disposition']).toContain(
+        'filename="monitor-2026-08-17_2026-08-20-RED-YELLOW-GREEN-UNCLASSIFIED.csv"',
+      );
+      expect(range.headers['content-disposition']).toContain(
+        encodeURIComponent('数据导出-2026-08-17_2026-08-20-红色关注+黄色关注+绿色关注+未分级.csv'),
+      );
+    },
+  );
+
+  itWithDb('export rejects an inverted range with INVALID_DATE_RANGE (issue #157)', async () => {
+    // Server-side: a hand-crafted URL must not receive an empty 200 file that
+    // looks like "no records in that period".
+    const res = await agent
+      .get('/api/monitor/export')
+      .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-17', levels: 'RED' })
+      .expect(400);
+    expect(res.body.error.code).toBe('INVALID_DATE_RANGE');
+  });
 
   // --- Summary ---------------------------------------------------------
 

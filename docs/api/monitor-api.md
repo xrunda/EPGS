@@ -34,7 +34,7 @@
 - **导出不是「日报」**：issue #26 取消的是**导出日报**（定时、按等级聚合、推送的
   上报产物），该取消条款至今有效，见
   [product/read-only-display-spec.md](../product/read-only-display-spec.md) §8。
-  issue #139 新增的是**只读明细导出**：按需、单日、按关注的等级（#145 起可多选）、无聚合、无定时、无推送、
+  issue #139 新增的是**只读明细导出**：按需、起止日期区间（#157 起；此前为单日）、按关注的等级（#145 起可多选）、无聚合、无定时、无推送、
   无任何闭环状态字段。两者不是同一件事，不要因为「都能导出 CSV」把它们合并讨论。
 - **无规则命中 = `UNCLASSIFIED`**：永不自动标注为 `GREEN`。无命中记录同样进入
   列表与汇总，供人工关注。
@@ -100,6 +100,7 @@
 | 错误码                       | HTTP 状态 | 触发场景                                                                                |
 | ---------------------------- | --------- | --------------------------------------------------------------------------------------- |
 | `INVALID_DATE_PARAM`         | 400       | `examDateFrom`/`examDateTo` 格式合法（`YYYY-MM-DD`）但不是真实日历日期，如 `2026-02-31` |
+| `INVALID_DATE_RANGE`         | 400       | 仅导出接口：`examDateFrom > examDateTo`（#157）                                         |
 | （class-validator 校验失败） | 400       | 非法枚举（`level`/`sortBy`/`sortDir`）、日期格式非法、未知查询参数等                    |
 | `MONITOR_RECORD_NOT_FOUND`   | 404       | `GET /api/monitor/exams/:id` 的 id 不存在                                               |
 | `PARSE_UUID_FAILED`          | 400       | `:id` 不是合法 UUID（`ParseUUIDPipe`）                                                  |
@@ -539,20 +540,21 @@ GET /api/monitor/summary?department=%E6%B6%88%E5%8C%96%E5%86%85%E7%A7%91
   桶里，**恒有 `total == red + yellow + green + unclassified`**（空筛时 5 桶默认 0）。
 - 内部用一条 `GROUP BY current_level` 聚合，而不是 5 次 COUNT。
 
-### `GET /api/monitor/export`（issue #139，多等级见 #145）
+### `GET /api/monitor/export`（issue #139；多等级见 #145；日期区间见 #157）
 
-把**一个自然日 + 选定的关注等级（一个或多个）**的患者明细导出成 CSV 文件。
+把**一段日期区间（含两端）+ 选定的关注等级（一个或多个）**的患者明细导出成 CSV 文件。
 
 ```
-GET /api/monitor/export?examDate=2026-08-20&levels=RED,YELLOW
+GET /api/monitor/export?examDateFrom=2026-08-18&examDateTo=2026-08-20&levels=RED,YELLOW
 ```
 
-**查询参数（两个都必填，没有别的）**
+**查询参数（三个都必填，没有别的）**
 
-| 参数       | 类型                                                  | 说明                                                      |
-| ---------- | ----------------------------------------------------- | --------------------------------------------------------- |
-| `examDate` | `^YYYY-MM-DD$`                                        | 检查日期，**单日**（Asia/Shanghai 自然日）                |
-| `levels`   | `RED\|YELLOW\|GREEN\|UNCLASSIFIED` 的**逗号分隔列表** | 关注等级，**至少一个**；去重并归一化到「红→黄→绿→未分级」 |
+| 参数           | 类型                                                  | 说明                                                      |
+| -------------- | ----------------------------------------------------- | --------------------------------------------------------- |
+| `examDateFrom` | `^YYYY-MM-DD$`                                        | 起始检查日期（Asia/Shanghai 自然日，**含**）              |
+| `examDateTo`   | `^YYYY-MM-DD$`                                        | 结束检查日期（Asia/Shanghai 自然日，**含**）              |
+| `levels`       | `RED\|YELLOW\|GREEN\|UNCLASSIFIED` 的**逗号分隔列表** | 关注等级，**至少一个**；去重并归一化到「红→黄→绿→未分级」 |
 
 - `levels` 是**一个**逗号分隔的参数（`?levels=RED,YELLOW`），不是重复参数；重复
   参数形式（`?levels=RED&levels=YELLOW`）也接受，因为 Nest 交给 DTO 的就是数组。
@@ -562,20 +564,23 @@ GET /api/monitor/export?examDate=2026-08-20&levels=RED,YELLOW
 - **`?levels=` 空、只写分隔符、缺参、未知等级值（含小写 `red`、中文 `红色关注`）
   一律 400。** 未知值**不**被静默丢掉：丢掉会让 `?levels=RED,PURPLE` 变成「200 但
   只导了红色」，调用方拿到文件却永远不知道另一半请求被无视。
-- **旧的 `?level=RED`（单数）现在返回 400，这是有意的**：保留别名会把「单等级」这份
-  契约永远留在 API 里，而它已经不是这个接口的意思了。
-- **#145 把「一天的全部患者打成一个文件」变成可达成**（勾满四个等级），所以下面的
-  10000 行上限从「永不触发的护栏」变成可能真的挡住一次请求——它仍然是 400，
-  **不截断**。
+- **旧的 `?level=RED`（单数）与 `?examDate=`（单日）现在都返回 400，这是有意的**：
+  保留别名会把旧契约永远留在 API 里，而它们已经不是这个接口的意思了。
+- **起止顺序在服务端校验**：`examDateFrom > examDateTo` → 400
+  `INVALID_DATE_RANGE`（`MonitorService.exportRange`）。手工拼 URL 也绕不过去，
+  不会拿到一个「空但 200」的文件被误读成「该时期没有记录」。
+- **#145/#157 共同把 10000 行上限从「永不触发的护栏」变成可能真的挡住一次请求**
+  （勾满四个等级 × 一段日期），它仍然是 400、**不截断**；提示让调用方缩短区间或
+  减少等级。
 
-- **「单日」的语义就是 `examDateFrom = examDateTo = examDate`，绝对不要写成
-  `examDate` 到「次日」。** `resolveDateRange`（`apps/api/src/monitor/monitor-time.ts`）
-  已经把上界推到次日 `00:00+08`，再传 `D..D+1` 会导出**两天**。工作台的「近一日」
-  预设同样是 `from = to = today`。
-- DTO 是新写的两字段必填 DTO，**不复用** `MonitorFiltersQueryDto`：
+- **单日就是 `examDateFrom = examDateTo`，绝对不要写成「次日」。**
+  `resolveDateRange`（`apps/api/src/monitor/monitor-time.ts`）已经把上界推到
+  结束日的次日 `00:00+08`，再传 `D..D+1` 会导出**两天**。工作台的「近一日」预设
+  同样是 `from = to = today`。单日导出时文件名与 #157 之前**逐字节相同**。
+- DTO 是独立的三字段必填 DTO，**不复用** `MonitorFiltersQueryDto`：
   class-validator 会继承 `@IsOptional()` 的元数据，子类无法把字段改回必填；
-  且复用等于把「单日 + 选定的等级」这条业务规则只留在前端。`main.ts` 已开
-  `forbidNonWhitelisted`，所以 `?department=`、`?page=1`、`?examDateFrom=` 之类
+  且复用等于把「区间 + 选定的等级」这条业务规则只留在前端。`main.ts` 已开
+  `forbidNonWhitelisted`，所以 `?department=`、`?page=1`、`?examDate=` 之类
   一律 **400**——既有的筛选面挤不进这个口子。
 - `examTime` 为 `NULL` 的记录**永不出现**（日范围是 `exam_time` 上的
   `gte`/`lt`，`NULL` 不满足任何区间比较）。
@@ -616,6 +621,9 @@ GET /api/monitor/export?examDate=2026-08-20&levels=RED,YELLOW
 - 多等级时的文件名：中文那截用 `+` 连接（`数据导出-2026-08-20-红色关注+黄色关注.csv`），
   ASCII 那截用 `-` 连接（`monitor-2026-08-20-RED-YELLOW.csv`）——ASCII 段里放 `,`
   会被读成 header 列表分隔符。文件名只由**选择**决定，与调用方传参顺序无关。
+- 时间那截（#157）：单日仍是 `2026-08-20`，跨日改成 `2026-08-18_2026-08-20`
+  （`_` 是 RFC 5987 的 `attr-char`，原样可用，也不会和分隔等级的 `-` 混淆）。
+  单日文件名与 #157 之前**逐字节相同**，重导同一天仍是覆盖同一个文件。
 - `Cache-Control: no-store` 不是可选项：一份患者名单不得被任何中间层留存。
 - `X-Row-Count` 只带行数、不带任何患者信息，是给界面区分「没有符合条件的记录」与
   「这就是你的文件」用的。它叫这个泛名是为了避开 `log-sanitization.spec.ts` 的

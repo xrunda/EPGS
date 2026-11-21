@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { MonitorLevel, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListExamsQueryDto } from './dto/list-exams.query.dto';
@@ -65,23 +65,27 @@ const DEFAULT_EXAM_ORDER_BY: Prisma.MonitorRecordOrderByWithRelationInput[] = [
 ];
 
 /**
- * Hard ceiling on one export (issue #139; re-judged by #145).
+ * Hard ceiling on one export (issue #139; re-judged by #145 and #157).
  *
  * MonitorExportTooLargeException is still a corruption guard rather than a
- * normal path - but #145 made "all four levels" selectable, which is every
- * record of the day, so the guard is now reachable in principle where it used
- * to be unreachable. It stays at 10_000 because the caller always has something
- * to narrow (export fewer levels, or a different day), and because a truncated
- * file that looks complete is worse than a refusal: an endoscopy centre's whole
- * day is low thousands of rows, so this is still several times the worst
- * expected case and roughly 1.5 MB of UTF-8.
+ * normal path - but #145 made "all four levels" selectable and #157 made a
+ * multi-day range selectable, so the guard is now reachable in ordinary use
+ * where it never was for one day/one level. It stays at 10_000 because the
+ * caller always has something to narrow (a shorter range, fewer levels), and
+ * because a truncated file that looks complete is worse than a refusal: an
+ * endoscopy centre's whole day is low thousands of rows, so this is still
+ * several times the worst expected single day and roughly 1.5 MB of UTF-8.
+ * The over-limit response says exactly that instead of the old "contact the
+ * administrator" dead end.
  */
 export const MONITOR_EXPORT_MAX_ROWS = 10_000;
 
-/** Issue #139 export input: one Shanghai day + the selected attention levels (#145 made it multi). */
+/** Issue #139 export input: a Shanghai date range + the selected attention levels (#145 multi-level, #157 range). */
 export interface MonitorExportQuery {
-  /** The single Asia/Shanghai calendar day, inclusive of both ends. */
-  examDate: string;
+  /** Inclusive first Asia/Shanghai calendar day, YYYY-MM-DD. */
+  examDateFrom: string;
+  /** Inclusive last Asia/Shanghai calendar day, YYYY-MM-DD (same value as `from` for a single day). */
+  examDateTo: string;
   /** One to four attention levels, already de-duplicated and ordered by the DTO. */
   levels: MonitorLevel[];
 }
@@ -392,14 +396,20 @@ export class MonitorService {
   }
 
   /**
-   * One Shanghai day at the selected attention levels, as a finished CSV file
-   * (issue #139; several levels since #145).
+   * A Shanghai date range at the selected attention levels, as a finished CSV
+   * file (issue #139; several levels since #145, a range since #157).
    *
-   * `examDateTo` is passed as the SAME day as `examDateFrom`, never +1:
-   * resolveDateRange already advances the upper bound to the start of the NEXT
-   * Shanghai day, so `D..D` is exactly one day and `D..D+1` would silently
-   * export two. The web's "近一日" preset sends the same single day for the
-   * same reason.
+   * `examDateTo` is the LAST day to include, never +1: resolveDateRange already
+   * advances the upper bound to the start of the NEXT Shanghai day, so
+   * `2026-08-20..2026-08-20` is exactly one day and `D..D+1` is two. The
+   * single-day behaviour is the `from === to` case and is unchanged, including
+   * the file name.
+   *
+   * The range order is validated HERE, not in the DTO (class-validator has no
+   * cross-field comparison): `from > to` is a 400 INVALID_DATE_RANGE for every
+   * caller, including a hand-crafted URL. Lexicographic comparison is exact for
+   * YYYY-MM-DD; impossible calendar dates are rejected by resolveDateRange
+   * with its own INVALID_DATE_PARAM.
    *
    * No `skip` and no `count`: the row count is rows.length, and the +1 on
    * `take` is an overflow PROBE - exceeding the ceiling throws rather than
@@ -410,17 +420,27 @@ export class MonitorService {
    * ties by level) rather than being grouped per level: the file is meant to be
    * read next to the screen, which shows the same interleaving.
    *
-   * Deliberately parameterless apart from the day, the levels and the caller's
-   * scope: this is not a second, unbounded filter surface (see
+   * Deliberately parameterless apart from the range, the levels and the
+   * caller's scope: this is not a second, unbounded filter surface (see
    * ExportExamsQueryDto), and it takes no maskPatient option because a masked
    * export is a mode that must not exist - see EXPORT_SELECT.
    */
-  async exportDay(
+  async exportRange(
     query: MonitorExportQuery,
     opts?: MonitorQueryOptions,
   ): Promise<MonitorExportResult> {
+    if (query.examDateFrom > query.examDateTo) {
+      throw new BadRequestException({
+        code: 'INVALID_DATE_RANGE',
+        message: `起始日期（${query.examDateFrom}）不能晚于结束日期（${query.examDateTo}）。`,
+      });
+    }
     const where = this.buildWhere(
-      { examDateFrom: query.examDate, examDateTo: query.examDate, levels: query.levels },
+      {
+        examDateFrom: query.examDateFrom,
+        examDateTo: query.examDateTo,
+        levels: query.levels,
+      },
       opts?.scope,
     );
     const rows = await this.prisma.monitorRecord.findMany({

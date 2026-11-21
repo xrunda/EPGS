@@ -40,9 +40,11 @@ import { MonitorExamDetailDto, MonitorSummaryDto, PaginatedMonitorExams } from '
  * than as JSON: GET /api/monitor/export. It stays read-only - nothing is
  * written except its own audit row - but because a file leaves the system
  * intact, it is gated one step tighter than the list (the `patientDetail`
- * grant) and every call is recorded as EXAM_EXPORT. It is not a reintroduction
- * of the "导出日报" that issue #26 cancelled: no aggregation, no schedule, no
- * push, no closed-loop state.
+ * grant) and every call is recorded as EXAM_EXPORT. Issue #157 widened its
+ * time condition from one day to an inclusive date range; the filter surface
+ * is still just {range, levels}. It is not a reintroduction of the "导出日报"
+ * that issue #26 cancelled: no aggregation, no schedule, no push, no
+ * closed-loop state.
  */
 @ApiTags('monitor')
 @Controller('api/monitor')
@@ -174,11 +176,11 @@ export class MonitorController {
   @Get('export')
   @ApiOperation({
     summary:
-      'Export one Shanghai day at the selected attention levels as a CSV file (issue #139, multi-level since #145). ' +
+      'Export a Shanghai date range at the selected attention levels as a CSV file (issue #139, multi-level since #145, range since #157). ' +
       'Requires the patientDetail grant: the file carries the raw patient phone. ' +
-      'Never contains reportContent/diagnosis.',
+      'Never contains a masked phone or a removed report body.',
   })
-  async exportDay(
+  async exportRange(
     @Query() query: ExportExamsQueryDto,
     @CurrentUser() user: AccessUser | null,
     @Req() request: Request,
@@ -193,8 +195,12 @@ export class MonitorController {
     // the flag here would suggest one exists and invite someone to "fix" the
     // omitted branch - the grant checked above already decided this call is a
     // detail-level read.
-    const { rowCount, body } = await this.monitorService.exportDay(
-      { examDate: query.examDate, levels: query.levels },
+    const { rowCount, body } = await this.monitorService.exportRange(
+      {
+        examDateFrom: query.examDateFrom,
+        examDateTo: query.examDateTo,
+        levels: query.levels,
+      },
       { scope: user.departmentScope },
     );
 
@@ -209,7 +215,10 @@ export class MonitorController {
       // the ONLY record that a copy left the system.
       meta: {
         scope: user.departmentScope,
-        examDate: query.examDate,
+        // Both ends since #157: recording only one would let an auditor
+        // reconstruct neither the width of the file nor which days it covered.
+        examDateFrom: query.examDateFrom,
+        examDateTo: query.examDateTo,
         // The selection, as an array (#145) - one export of "red+yellow" is one
         // row here, which is what tells an auditor afterwards how wide the file
         // that left the system was.
@@ -231,7 +240,7 @@ export class MonitorController {
     response.setHeader('X-Row-Count', String(rowCount));
     return new StreamableFile(body, {
       type: 'text/csv; charset=utf-8',
-      disposition: contentDispositionFor(query.examDate, query.levels),
+      disposition: contentDispositionFor(query.examDateFrom, query.examDateTo, query.levels),
       length: body.length,
     });
   }

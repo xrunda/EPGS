@@ -104,7 +104,8 @@ jobs:
           # systemd 模式下也必须整组杀，避免 #129/#153 的孤儿进程问题。
           grep -q '^KillMode=control-group' deploy/systemd/epgs-api.service.template
           # nginx 配置是生成物：启动前必须重新校验语法。
-          grep -q 'ExecStartPre=.*nginx -t' deploy/systemd/epgs-nginx.service.template
+          # 模板里 nginx 路径是占位符（__NGINX_BIN__），不能直接按 "nginx -t" 匹配。
+          grep -q '^ExecStartPre=.* -t -c ' deploy/systemd/epgs-nginx.service.template
 
           # start.sh 同时具备两条路径：有 unit 走 systemctl，没有则回退 nohup。
           grep -Eq 'systemctl (start|restart) epgs-api\.service' start.sh

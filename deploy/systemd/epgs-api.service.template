@@ -1,0 +1,38 @@
+# EPGS API —— 由 deploy/install-systemd.sh 从本模板渲染到
+# /etc/systemd/system/epgs-api.service。请勿直接编辑渲染后的副本：下次执行
+# 安装脚本会被覆盖。
+#
+# 为什么需要它（issue #155）：2026-11-21 院内事故中，api/worker 是以
+# `nohup pnpm ... &` 起的裸进程。抢修时有人直接在 SSH 会话里把它们拉起来，
+# 会话一断进程就随之消失；nginx 独立存活，于是对外持续 502 约 30 小时，
+# 没有任何人收到通知。交给 systemd 之后：随机器自启、崩溃后 5 秒自动拉起、
+# 日志进入 journald。
+
+[Unit]
+Description=EPGS API (NestJS, :3000)
+Documentation=https://github.com/xrunda/EPGS/issues/155
+After=network-online.target postgresql.service
+Wants=network-online.target
+# 不因短时间内反复重启就进入 failed 并永久放弃：数据库维护、迁移期间启动
+# 失败是正常现象，数据库恢复后服务应当自己起来。
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO_ROOT__
+# 与 start.sh 保持完全一致的启动方式。pnpm 会把工作目录切到 apps/api，
+# 应用经 @nestjs/config 读取 apps/api/.env —— 这里刻意不用 EnvironmentFile
+# 重复注入，避免 systemd 与 dotenv 对引号/转义/注释的解析差异造成两份事实来源。
+ExecStart=__PNPM_BIN__ --filter api run start:prod
+# 整个 cgroup 一起终止：issue #129/#153 的教训是 pnpm 派生的 node 子进程会
+# 漏网继续占着 3000，导致新进程 EADDRINUSE 而 /health 200 来自旧进程（假绿）。
+KillMode=control-group
+TimeoutStopSec=20
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=epgs-api
+
+[Install]
+WantedBy=multi-user.target

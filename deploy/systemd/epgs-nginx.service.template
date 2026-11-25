@@ -1,0 +1,36 @@
+# EPGS nginx 单端口反向代理 —— 由 deploy/install-systemd.sh 从本模板渲染到
+# /etc/systemd/system/epgs-nginx.service。请勿直接编辑渲染后的副本。
+#
+# 注意：这份 unit 管理的不是发行版的 /etc/nginx/nginx.conf，而是 start.sh
+# 每次部署时从 deploy/nginx.conf.template 渲染出的 .run-nginx.conf
+# （自包含配置，内联 types{}、显式 pid，用 `nginx -c` 直接加载）。
+# 因此 ExecStartPre 必须再跑一次 `nginx -t`：配置是生成物，语法错误要在
+# 启动阶段暴露，而不是让一个半坏的反代继续对外服务。
+
+[Unit]
+Description=EPGS nginx single-port reverse proxy
+Documentation=https://github.com/xrunda/EPGS/issues/155
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+# nginx 默认以 master/worker 守护进程形态运行，所以是 forking 型服务。
+# PIDFile 必须与 .run-nginx.conf 里的 `pid` 指令指向同一个文件。
+Type=forking
+PIDFile=__PID_FILE__
+ExecStartPre=__NGINX_BIN__ -t -c __NGINX_CONF__
+ExecStart=__NGINX_BIN__ -c __NGINX_CONF__
+ExecReload=__NGINX_BIN__ -s reload -c __NGINX_CONF__
+# 用 quit 而不是 stop：等当前请求处理完再退出，避免正在登录/导出的用户被切断。
+ExecStop=__NGINX_BIN__ -s quit -c __NGINX_CONF__
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=20
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=epgs-nginx
+
+[Install]
+WantedBy=multi-user.target

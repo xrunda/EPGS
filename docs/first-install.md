@@ -211,6 +211,20 @@ curl -s http://localhost:3001/health          # worker
 ss -tlnp | grep ":$LISTEN_PORT"               # nginx 对外端口
 ```
 
+### 8.1 可选：交给 systemd 托管（推荐，issue #155）
+
+默认的 `nohup` 方式满足「跑起来」，但进程不随机器自启、崩溃不自动拉起，且**手工在 SSH 会话里
+启动时会随会话结束而消失**（2026-11-21 事故，见 deployment.md §2.7）。首次安装验证通过后建议一次性切换：
+
+```bash
+sudo bash deploy/install-systemd.sh
+cd /root/EPGS && bash start.sh nopull   # 检测到 unit 后改用 systemctl 启动
+```
+
+之后日志在 `journalctl -u epgs-api` / `-u epgs-worker`，不再写 `.run-logs/`。安装条件、验证自愈、
+回滚步骤见 [deployment.md](./deployment.md) §1.2。
+
+
 ## 9. 首次同步
 
 worker 起来后会按 `SYNC_INTERVAL_MINUTES` 自己跑；也可以手工触发一次：

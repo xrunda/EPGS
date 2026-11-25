@@ -1,4 +1,5 @@
-import { MonitorLevel } from '@prisma/client';
+import { MatchField, MonitorLevel } from '@prisma/client';
+import { deriveSiteDisease } from './site-disease';
 import { formatShanghaiDateTime } from './monitor-time';
 
 /**
@@ -49,7 +50,18 @@ export interface CsvExamRow {
   /** Issue #151: the diagnosis snapshot, verbatim from the record. */
   diagnosis: string | null;
   orderingDoctor: string | null;
-  matches: { keyword: string }[];
+  /**
+   * Issue #159: the effective hits are now enough to derive `部位+病名`.
+   * Level/field/offset are optional because legacy rows and test fixtures may
+   * not carry them; the derivation falls back to a full-text search.
+   */
+  matches: {
+    keyword: string;
+    level?: MonitorLevel | null;
+    matchedField?: MatchField | null;
+    matchStart?: number | null;
+    matchEnd?: number | null;
+  }[];
 }
 
 /**
@@ -77,6 +89,9 @@ export const CSV_LEVEL_LABELS: Record<MonitorLevel, string> = {
  * 报告内容 and 诊断 (issue #151) are appended AFTER it so the twelve columns a
  * reader already knows keep their positions and the two long-text columns sit
  * at the tail - the first screens in Excel stay compact and filterable.
+ * `部位+病名` (issue #159) is appended last: it is derived from the two columns
+ * immediately before it, so a reader can always check the derivation against
+ * its sources without changing any existing column's position.
  *
  * The two names are word-identical to the drawer's section titles (报告内容 /
  * 诊断): a column whose header does not match the place the reader learned the
@@ -100,6 +115,7 @@ const CSV_HEADERS = [
   '手机号',
   '报告内容',
   '诊断',
+  '部位+病名',
 ] as const;
 
 /**
@@ -164,6 +180,15 @@ function toCells(row: CsvExamRow): string {
     // that starts with `=` cannot execute on open.
     cell(row.reportContent),
     cell(row.diagnosis),
+    // Issue #159: a derived, deterministic cell - never a model call. It sits
+    // after the two source columns so the reader can check it against them.
+    cell(
+      deriveSiteDisease({
+        reportContent: row.reportContent,
+        diagnosis: row.diagnosis,
+        matches: row.matches,
+      }),
+    ),
   ].join(',');
 }
 

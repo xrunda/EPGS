@@ -860,7 +860,7 @@ describe('Monitor API (e2e, real Postgres)', () => {
    * discovered by whoever opens the file in Excel.
    */
   const CSV_HEADER =
-    '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号,报告内容,诊断';
+    '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号,报告内容,诊断,部位+病名';
 
   /**
    * Data lines only (drops the BOM-prefixed header and the trailing blank).
@@ -933,14 +933,14 @@ describe('Monitor API (e2e, real Postgres)', () => {
       // 检查时间 is HH:mm:ss, the same string the workbench column shows - the
       // file and the screen must not disagree about the same instant.
       expect(r1).toContain(
-        '红色关注,测试患者甲,男,消化内科,12-1,住院（I）,王医生,电子胃镜检查,2026-08-20,16:15:00,腺癌、息肉样,13800000000,胃窦见一处隆起性病变，病理提示黏膜内腺癌。,胃腺癌（早期）。',
+        '红色关注,测试患者甲,男,消化内科,12-1,住院（I）,王医生,电子胃镜检查,2026-08-20,16:15:00,腺癌、息肉样,13800000000,胃窦见一处隆起性病变，病理提示黏膜内腺癌。,胃腺癌（早期）。,胃窦+腺癌',
       );
 
       // No patient field may be missing-but-looked-like-data: a NULL renders as
       // an empty cell, never a dash (the dash is a screen decision, not a value).
       const r8 = lines.find((line) => line.includes('测试患者庚'));
       expect(r8).toContain(
-        '红色关注,测试患者庚,,消化内科,12-8,住院（I）,,电子胃镜检查,2026-08-20,18:00:00,浸润癌,,贲门见浸润性病变，考虑浸润癌。,贲门浸润癌。',
+        '红色关注,测试患者庚,,消化内科,12-8,住院（I）,,电子胃镜检查,2026-08-20,18:00:00,浸润癌,,贲门见浸润性病变，考虑浸润癌。,贲门浸润癌。,贲门+浸润癌',
       );
       expect(r8).not.toContain('—');
 
@@ -1113,13 +1113,11 @@ describe('Monitor API (e2e, real Postgres)', () => {
       agent
         .get('/api/monitor/export')
         .query({ examDateFrom: '2026-08-20', examDateTo: '2026-08-20', levels: 'YELLOW,RED' }),
-      agent
-        .get('/api/monitor/export')
-        .query({
-          examDateFrom: '2026-08-20',
-          examDateTo: '2026-08-20',
-          levels: 'YELLOW,RED,RED,YELLOW,RED',
-        }),
+      agent.get('/api/monitor/export').query({
+        examDateFrom: '2026-08-20',
+        examDateTo: '2026-08-20',
+        levels: 'YELLOW,RED,RED,YELLOW,RED',
+      }),
     ]);
 
     for (const res of [canonical, shuffled, repeated]) {

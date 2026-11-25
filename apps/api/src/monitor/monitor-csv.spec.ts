@@ -9,7 +9,7 @@ import {
 } from './monitor-csv';
 
 const HEADER =
-  '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号,报告内容,诊断';
+  '关注等级,患者姓名,性别,科室,床号,患者类型,开单医生,检查项目,检查日期,检查时间,命中关键词,手机号,报告内容,诊断,部位+病名';
 
 const BOM = '﻿';
 
@@ -67,7 +67,7 @@ describe('buildExamsCsv (issue #139)', () => {
   it('renders one row with the on-screen column values', () => {
     expect(dataLines([baseRow])).toEqual([
       HEADER,
-      '红色关注,张三丰,男,消化内科,12-1,住院（I）,王医生,电子胃镜检查,2026-08-20,16:15:30,腺癌、高级别上皮内瘤变,13800000000,胃窦见一处隆起性病变，病理提示黏膜内腺癌。,胃腺癌（早期）。',
+      '红色关注,张三丰,男,消化内科,12-1,住院（I）,王医生,电子胃镜检查,2026-08-20,16:15:30,腺癌、高级别上皮内瘤变,13800000000,胃窦见一处隆起性病变，病理提示黏膜内腺癌。,胃腺癌（早期）。,胃窦+腺癌',
     ]);
   });
 
@@ -123,7 +123,7 @@ describe('buildExamsCsv (issue #139)', () => {
       expect(row).toBe(
         '红色关注,张三丰,,,,' +
           '住院（I）' +
-          ',,电子胃镜检查,2026-08-20,16:15:30,腺癌、高级别上皮内瘤变,,,',
+          ',,电子胃镜检查,2026-08-20,16:15:30,腺癌、高级别上皮内瘤变,,,,部位未明+腺癌',
       );
       expect(row).not.toContain('—');
     });
@@ -158,10 +158,10 @@ describe('buildExamsCsv (issue #139)', () => {
         { ...baseRow, matches: [{ keyword: '腺癌' }, { keyword: '低级别' }, { keyword: '息肉' }] },
       ]);
       expect(row).toContain('腺癌、低级别、息肉');
-      // One cell, not three columns. 14 columns since #151 (the two report
-      // columns at the tail); the report body has no ASCII comma here, so a
-      // naive split still counts cells correctly.
-      expect(row.split(',')).toHaveLength(14);
+      // One cell, not three columns. 15 columns since #159 (the two report
+      // columns and the derived site+disease at the tail); the report body has
+      // no ASCII comma here, so a naive split still counts cells correctly.
+      expect(row.split(',')).toHaveLength(15);
     });
   });
 
@@ -172,7 +172,9 @@ describe('buildExamsCsv (issue #139)', () => {
       // drawer per patient.
       const [, row] = dataLines([baseRow]);
       expect(
-        row.endsWith(',13800000000,胃窦见一处隆起性病变，病理提示黏膜内腺癌。,胃腺癌（早期）。'),
+        row.endsWith(
+          ',13800000000,胃窦见一处隆起性病变，病理提示黏膜内腺癌。,胃腺癌（早期）。,胃窦+腺癌',
+        ),
       ).toBe(true);
     });
 
@@ -180,7 +182,7 @@ describe('buildExamsCsv (issue #139)', () => {
       const [, row] = dataLines([{ ...baseRow, reportContent: null, diagnosis: null }]);
       // A pre-#137-style legacy record may have neither; the cell stays empty
       // rather than growing a dash.
-      expect(row.endsWith(',13800000000,,')).toBe(true);
+      expect(row.endsWith(',13800000000,,,部位未明+腺癌')).toBe(true);
     });
 
     it('quotes a multi-line report body per RFC 4180, so the row stays one line', () => {
@@ -199,7 +201,7 @@ describe('buildExamsCsv (issue #139)', () => {
     it('guards the report body against formula injection like any other cell', () => {
       const [, row] = dataLines([{ ...baseRow, reportContent: '=HYPERLINK("http://x")' }]);
       // The guard runs before quoting: the apostrophe is the Excel text marker.
-      expect(row.endsWith(`,"'=HYPERLINK(""http://x"")",胃腺癌（早期）。`)).toBe(true);
+      expect(row.endsWith(`,"'=HYPERLINK(""http://x"")",胃腺癌（早期）。,胃+腺癌`)).toBe(true);
     });
   });
 

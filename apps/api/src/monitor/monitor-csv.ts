@@ -61,6 +61,8 @@ export interface CsvExamRow {
     matchedField?: MatchField | null;
     matchStart?: number | null;
     matchEnd?: number | null;
+    /** Issue #161: lets the derivation skip hits from retired rule versions. */
+    rule?: { isEnabled: boolean } | null;
   }[];
 }
 

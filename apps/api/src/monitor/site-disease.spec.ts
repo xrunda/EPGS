@@ -140,6 +140,52 @@ describe('deriveSiteDisease (issue #159)', () => {
     ).toBe('贲门+浸润癌');
   });
 
+  it('ignores a retired rule version when choosing the anchor (issue #161)', () => {
+    // reclassify adds new hits but never deletes the old ones. A retired
+    // 食管裂孔疝 RED hit must not describe a report whose current red is 癌.
+    expect(
+      deriveSiteDisease({
+        reportContent: '胃窦见菜花样肿物；食管下段见疝囊。',
+        diagnosis: '胃癌（进展期）。',
+        matches: [
+          {
+            keyword: '食管裂孔疝',
+            level: 'RED',
+            matchedField: 'IMPRESSION',
+            matchStart: null,
+            matchEnd: null,
+            rule: { isEnabled: false },
+          },
+          {
+            keyword: '癌',
+            level: 'RED',
+            matchedField: 'IMPRESSION',
+            matchStart: null,
+            matchEnd: null,
+            rule: { isEnabled: true },
+          },
+        ],
+      }),
+    ).toBe('胃窦+癌');
+  });
+
+  it('falls back to all matches when every rule version is retired', () => {
+    expect(
+      deriveSiteDisease({
+        reportContent: '胃窦见一处隆起。',
+        diagnosis: '胃窦腺癌。',
+        matches: [
+          {
+            keyword: '腺癌',
+            level: 'RED',
+            matchedField: 'IMPRESSION',
+            rule: { isEnabled: false },
+          },
+        ],
+      }),
+    ).toBe('胃窦+腺癌');
+  });
+
   it('handles a multi-line body without crossing the line break', () => {
     expect(
       deriveSiteDisease({

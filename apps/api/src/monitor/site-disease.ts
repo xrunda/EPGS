@@ -31,6 +31,14 @@ export interface SiteDiseaseMatch {
   matchedField?: MatchField | null;
   matchStart?: number | null;
   matchEnd?: number | null;
+  /**
+   * Issue #161: `reclassify:once` adds hits for the current rule versions but
+   * never deletes the old ones. A disabled version's hit must not become the
+   * anchor - otherwise a report that mentions both a tumour and (say) a hiatal
+   * hernia would be labelled from the retired red rule. `undefined` (legacy
+   * rows / fixtures with no rule relation) is treated as eligible.
+   */
+  rule?: { isEnabled: boolean } | null;
 }
 
 export interface SiteDiseaseInput {
@@ -209,9 +217,17 @@ function refineSite(site: string, texts: readonly (string | null)[]): string {
 }
 
 function pickAnchor(matches: readonly SiteDiseaseMatch[]): SiteDiseaseMatch | null {
+  // Issue #161: a retired rule version's hit is still in monitor_match (the
+  // reclassify adds, never deletes). It must not outrank a current hit - and
+  // because it is older it would also come first in matchedAt order. If every
+  // match is disabled (legacy row with no current rule) fall back to all of
+  // them rather than returning an empty anchor.
+  const eligible = matches.filter((match) => match.rule?.isEnabled !== false);
+  const pool = eligible.length > 0 ? eligible : matches;
+
   let best: SiteDiseaseMatch | null = null;
   let bestRank = Number.POSITIVE_INFINITY;
-  for (const match of matches) {
+  for (const match of pool) {
     const rank = LEVEL_RANK[match.level ?? 'UNCLASSIFIED'] ?? 3;
     if (rank < bestRank) {
       best = match;

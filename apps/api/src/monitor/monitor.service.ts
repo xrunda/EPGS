@@ -195,6 +195,10 @@ export class MonitorService {
         matchedField: true,
         matchStart: true,
         matchEnd: true,
+        // Issue #161: reclassify adds hits for new rule versions without
+        // deleting the old ones; the derivation must ignore retired versions or
+        // a "食管裂孔疝" hit would outrank the tumour it is meant to describe.
+        rule: { select: { isEnabled: true } },
       },
       orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
     },

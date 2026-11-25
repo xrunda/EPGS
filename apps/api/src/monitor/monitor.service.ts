@@ -180,6 +180,24 @@ export class MonitorService {
     patientPhone: true,
     reportContent: true,
     diagnosis: true,
+    /**
+     * Issue #159: the `部位+病名` column is derived from the effective hits, so
+     * the export needs more than LIST_SELECT's keyword+matchedAt: the level
+     * picks the anchor, the field picks which text to read, and the offsets
+     * pick the nearest site. This override lives on EXPORT_SELECT only - the
+     * workbench list and the alert-link list keep their narrower select.
+     */
+    matches: {
+      where: { semanticFiltered: false },
+      select: {
+        keyword: true,
+        level: true,
+        matchedField: true,
+        matchStart: true,
+        matchEnd: true,
+      },
+      orderBy: [{ matchedAt: 'asc' }, { id: 'asc' }],
+    },
   } as const satisfies Prisma.MonitorRecordSelect;
 
   private static readonly LEVEL_KEYS: Record<MonitorLevel, keyof Omit<MonitorSummaryDto, 'total'>> =
